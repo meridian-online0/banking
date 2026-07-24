@@ -155,13 +155,24 @@ export async function deleteNotification(notificationId) {
    convenience, not a security boundary — same caveat database.js
    gives for its userId params.
 
+   CHANNEL NAMING: the header bell (assets/js/notifications.js's
+   subscribeToNewNotifications) already subscribes to a channel
+   named `notifications:${userId}` on every logged-in page,
+   including notifications.html. Supabase JS dedupes channels by
+   topic — calling supabase.channel() again with an identical topic
+   returns the SAME already-subscribed channel instance rather than
+   a new one, and calling .on() on an already-subscribed channel
+   throws. So this module deliberately uses a different topic
+   prefix to avoid colliding with the bell's channel when both are
+   active on the same page.
+
    Returns the channel so callers can unsubscribe on teardown, if
    the page they're used from ever needs to (notifications-center.js
    currently doesn't, since it lives for the page's lifetime).
    ----------------------------------------------------------- */
 export function subscribeToNotifications(userId, { onInsert, onUpdate, onDelete } = {}) {
   const channel = supabase
-    .channel(`notifications:${userId}`)
+    .channel(`notification-center:${userId}`)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
