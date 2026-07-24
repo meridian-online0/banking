@@ -452,6 +452,26 @@
     transform: translateY(100%);
   }
 
+
+
+   .notification-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 22, 40, 0.45);
+    z-index: 840; /* below .notification-dropdown's 850, above .app-header's 800 */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+  }
+
+  .notification-sheet-backdrop.is-open {
+    opacity: 1;
+    visibility: visible;
+  }
+
+
+   
+
   .notification-dropdown.is-open {
     transform: translateY(0);
   }
