@@ -5,7 +5,9 @@
      1. Auth guard (redirect to login if no session) + reveal of
         content hidden by the auth-pending class (see auth-guard.js)
      2. Shared app-header bits: avatar initial, name, notification
-        badge, user menu dropdown, log out
+        badge, user menu dropdown, log out — deferred until the
+        app-navbar component (loaded separately by components.js)
+        has actually landed in the DOM, see waitForNavbar() below
      3. Fetching the signed-in user's accounts and rendering them
         into the grid, with a skeleton state while loading and an
         empty state if they have none yet
@@ -75,6 +77,28 @@ function showToast(message, variant = 'success') {
     toast.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
     setTimeout(() => toast.remove(), 220);
   }, 3200);
+}
+
+/* -----------------------------------------------------------
+   Wait for the app-navbar component
+   accounts.html loads its header from components/app-navbar.html
+   via components.js's loadComponents(), which runs as its own
+   module and dispatches `component:loaded` on `document` once
+   injection finishes. That can resolve before OR after this
+   module's own async init (requireAuth() is a network round-trip,
+   the component fetch is usually local/fast — but neither order
+   is guaranteed). This checks whether the navbar markup is
+   already in the DOM first, and only falls back to listening for
+   the event if it isn't there yet, so it's correct either way.
+   ----------------------------------------------------------- */
+function waitForNavbar() {
+  return new Promise((resolve) => {
+    if ($('.app-user-menu')) {
+      resolve();
+      return;
+    }
+    document.addEventListener('component:loaded', () => resolve(), { once: true });
+  });
 }
 
 /* -----------------------------------------------------------
@@ -464,9 +488,14 @@ function initAddAccountModal() {
   // assets/js/auth-guard.js for the fast pre-check that hid it.
   document.body.classList.remove('auth-pending');
 
-  populateHeader();
-  initUserMenu();
-  initLogout();
+  // Header-dependent init waits for the app-navbar component to
+  // actually be in the DOM — see waitForNavbar() above.
+  waitForNavbar().then(() => {
+    populateHeader();
+    initUserMenu();
+    initLogout();
+  });
+
   initTabFilter();
   initCopyDelegation();
   initModalDismissal();
