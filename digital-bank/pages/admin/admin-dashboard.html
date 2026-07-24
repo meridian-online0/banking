@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Dashboard — Meridian Admin</title>
+<link rel="stylesheet" href="../../assets/css/admin.css">
+</head>
+<!--
+  data-auth="pending" hides <main> until requireAdmin() (called at
+  the top of admin-dashboard.js) confirms a valid admin session and
+  reveals the page — same hide-until-confirmed contract as the
+  customer app's settings.html, just reusing that attribute name
+  rather than inventing a third one on top of admin-login.html's
+  data-admin-auth. admin.css needs:
+
+    [data-auth="pending"] .admin-main { visibility: hidden; }
+    [data-auth="pending"] .admin-page-loader { display: flex; }
+    [data-auth="ready"]   .admin-page-loader { display: none; }
+-->
+<body class="admin-body" data-auth="pending">
+
+  <div class="admin-page-loader" aria-hidden="true">
+    <span class="admin-page-loader-mark"></span>
+  </div>
+
+  <div data-component="admin-navbar"></div>
+
+  <main class="admin-main">
+    <div class="admin-container">
+
+      <!-- =================================================
+           KPI row — each card links straight into the
+           filtered view of the page it summarizes (see
+           admin-dashboard.js buildKpiCards()).
+           ================================================= -->
+      <section class="admin-kpi-grid" id="kpi-grid" aria-label="Key metrics">
+        <!-- populated by admin-dashboard.js; skeleton shown until then -->
+        <div class="admin-kpi-card admin-kpi-card--skeleton"></div>
+        <div class="admin-kpi-card admin-kpi-card--skeleton"></div>
+        <div class="admin-kpi-card admin-kpi-card--skeleton"></div>
+        <div class="admin-kpi-card admin-kpi-card--skeleton"></div>
+        <div class="admin-kpi-card admin-kpi-card--skeleton"></div>
+        <div class="admin-kpi-card admin-kpi-card--skeleton"></div>
+      </section>
+
+      <p class="admin-inline-error" id="kpi-error" role="alert" aria-live="polite" hidden></p>
+
+      <!-- =================================================
+           Recent admin activity — thin slice of
+           admin_audit_logs, full history lives on
+           admin-audit-log.html. Kept intentionally small here:
+           just enough to answer "what just happened" without
+           duplicating that page's filters.
+           ================================================= -->
+      <section class="admin-panel" aria-labelledby="recent-activity-heading">
+        <div class="admin-panel-head">
+          <h2 id="recent-activity-heading">Recent admin activity</h2>
+          <a href="admin-audit-log.html" class="admin-link-arrow">View full log</a>
+        </div>
+        <ul class="admin-activity-list" id="recent-activity-list">
+          <li class="admin-activity-skeleton"></li>
+          <li class="admin-activity-skeleton"></li>
+          <li class="admin-activity-skeleton"></li>
+        </ul>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module" src="./admin-dashboard.js"></script>
+</body>
+</html>
