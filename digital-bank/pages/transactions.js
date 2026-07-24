@@ -3,9 +3,10 @@
    Script: pages/transactions.js
    Loaded as a module by transactions.html only. Handles:
      1. Auth guard + shared header wiring (greeting avatar,
-        notification badge, user menu, log out — same pattern
-        as dashboard.js; there's no shared header module yet,
-        see components/components.js's header note)
+        notification badge, user menu, log out — deferred until
+        the app-navbar component, loaded separately by
+        components.js, has actually landed in the DOM; see
+        waitForNavbar() below)
      2. Loading the user's accounts and building the account /
         currency filter options from real data
      3. Fetching + merging transactions across one or all accounts
@@ -111,8 +112,29 @@ function directionFor(tx) {
 }
 
 /* -----------------------------------------------------------
+   Wait for the app-navbar component
+   transactions.html loads its header from components/app-navbar.html
+   via components.js's loadComponents(), which runs as its own
+   module and dispatches `component:loaded` on `document` once
+   injection finishes. That can resolve before OR after this
+   module's own async init (requireAuth() is a network round-trip,
+   the component fetch is usually local/fast — but neither order
+   is guaranteed). This checks whether the navbar markup is
+   already in the DOM first, and only falls back to listening for
+   the event if it isn't there yet, so it's correct either way.
+   ----------------------------------------------------------- */
+function waitForNavbar() {
+  return new Promise((resolve) => {
+    if ($('.app-user-menu')) {
+      resolve();
+      return;
+    }
+    document.addEventListener('component:loaded', () => resolve(), { once: true });
+  });
+}
+
+/* -----------------------------------------------------------
    Header: greeting avatar, notification badge, user menu, logout
-   (mirrors dashboard.js — no shared module for this yet)
    ----------------------------------------------------------- */
 async function populateUserChrome() {
   const { data: profile } = await getMyProfile();
@@ -738,10 +760,19 @@ function initFilters() {
   const user = await requireAuth();
   if (!user) return; // requireAuth() already redirected to login.html
 
-  initUserMenu();
-  initLogout();
+  // Reveal content now that a real session is confirmed — see
+  // assets/js/auth-guard.js for the fast pre-check that hid it.
+  document.body.classList.remove('auth-pending');
+
   initDetailPanelMobileControls();
-  populateUserChrome();
+
+  // Header-dependent init waits for the app-navbar component to
+  // actually be in the DOM — see waitForNavbar() above.
+  waitForNavbar().then(() => {
+    populateUserChrome();
+    initUserMenu();
+    initLogout();
+  });
 
   const { data: accounts, error } = await getMyAccounts();
   if (error) {
