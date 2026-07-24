@@ -1,0 +1,425 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   supabase/admin.js
+
+   PURPOSE
+   -------
+   The admin-side counterpart to supabase/database.js — every
+   pages/admin/*.js page script imports from here instead of
+   calling `supabase.from(...)` or `supabase.rpc(...)` directly.
+   Same reason database.js exists for the customer app: one place
+   that knows the actual table/column shapes, so a schema change
+   only needs updating here.
+
+   PATTERN
+   -------
+   Every export returns { data, error } — error is a friendly
+   string or null, never a thrown exception — same convention as
+   supabase/auth.js. Mutating exports (freezeAccount, approveKyc,
+   reverseTransaction, ...) call the SECURITY DEFINER RPCs from
+   admin_schema.sql via wrap(supabase.rpc(...)) rather than
+   `.update()`/`.delete()` — this file deliberately contains ZERO
+   direct writes to accounts, transactions, cards, or
+   user_profiles.role. The one exception is support ticket
+   assignment/resolution (see section 7), which admin_schema.sql's
+   own comments call out as a plain RLS-gated UPDATE rather than an
+   RPC, since a support reply isn't a sensitive-enough mutation to
+   need the audit-log treatment the money/status RPCs get.
+
+   ASSUMPTIONS FLAGGED BELOW (schema not directly seen — verify
+   before relying on these in production, same spirit as
+   settings.js's own "SCHEMA NOTES" block):
+
+     - support_tickets.status values assumed to be
+       'open' | 'assigned' | 'resolved' | 'closed'. Adjust the
+       filter functions below if your actual values differ.
+     - KYC "pending" is read as user_profiles.account_status =
+       'Pending' (set at signup in auth.js's signUpUser()).
+       admin_approve_kyc()/admin_reject_kyc() move it to
+       'active'/'rejected' respectively — there is no separate kyc
+       table, KYC status IS account_status.
+     - There is currently NO fraud/AML/velocity-flag table in the
+       schema — admin-risk.html's "flag/velocity alerts" have
+       nothing to query yet. getRiskFlags() below is a stub that
+       returns an empty result with a console.warn, not fabricated
+       data. A future migration (e.g. `risk_flags` table +
+       whatever detection populates it) needs to land before that
+       page can show anything real.
+   ============================================================= */
+
+import { supabase } from './config.js';
+import { getCurrentUser } from './auth.js';
+
+/* -----------------------------------------------------------
+   wrap() — normalizes a Supabase call (query builder promise or
+   .rpc() promise) into { data, error }. Supabase's client already
+   resolves rather than throws on most failures, but wrap() also
+   catches anything that does throw (network failure, a bad .rpc()
+   name, etc.) so no admin page script needs its own try/catch for
+   the common case.
+   ----------------------------------------------------------- */
+export async function wrap(promise) {
+  try {
+    const { data, error } = await promise;
+    if (error) {
+      return { data: null, error: friendlyAdminError(error) };
+    }
+    return { data, error: null };
+  } catch (err) {
+    return { data: null, error: friendlyAdminError(err) };
+  }
+}
+
+function friendlyAdminError(error) {
+  const message = error?.message || 'Something went wrong. Please try again.';
+  // Postgres RAISE EXCEPTION messages from the RPCs in
+  // admin_schema.sql (e.g. 'Not authorized.', 'A reason is
+  // required to reject KYC.') already read fine as-is, so this
+  // only rewrites a couple of low-level messages that wouldn't.
+  if (message.toLowerCase().includes('failed to fetch')) {
+    return 'Could not reach the server. Check your connection and try again.';
+  }
+  if (message.toLowerCase().includes('jwt')) {
+    return 'Your admin session has expired. Please sign in again.';
+  }
+  return message;
+}
+
+/**
+ * Resolves to an explicit userId if one is passed, otherwise the
+ * currently signed-in admin's own id. Mirrors the resolveUserId()
+ * pattern used elsewhere in the app for functions that default to
+ * "the current user" but can be called on someone else's behalf —
+ * useful here for things like "log this action as me" call sites
+ * that already have a userId in scope vs. ones that don't.
+ */
+export async function resolveUserId(userId) {
+  if (userId) return userId;
+  const { data: user } = await getCurrentUser();
+  return user?.id ?? null;
+}
+
+/* -----------------------------------------------------------
+   1. Dashboard KPIs
+   -----------------------------------------------------------
+   One composite call so admin-dashboard.js can render the KPI row
+   with a single await instead of six separate ones. Each count is
+   still its own lightweight query (head:true, count only — no rows
+   pulled over the wire) rather than one giant query.
+   ----------------------------------------------------------- */
+export async function getDashboardStats() {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const [
+    totalUsers,
+    balances,
+    txToday,
+    pendingKyc,
+    openTickets,
+  ] = await Promise.all([
+    supabase.from('user_profiles').select('id', { count: 'exact', head: true }),
+    supabase.from('accounts').select('balance, currency'),
+    supabase.from('transactions').select('id', { count: 'exact', head: true }).gte('created_at', startOfToday.toISOString()),
+    supabase.from('user_profiles').select('id', { count: 'exact', head: true }).eq('account_status', 'Pending'),
+    supabase.from('support_tickets').select('id', { count: 'exact', head: true }).in('status', ['open', 'assigned']),
+  ]);
+
+  const firstError = [totalUsers, balances, txToday, pendingKyc, openTickets].find((r) => r.error);
+  if (firstError) {
+    return { data: null, error: friendlyAdminError(firstError.error) };
+  }
+
+  // Sum balances per currency rather than a single misleading total
+  // across currencies — { USD: 1234.56, EUR: 900.00, ... }
+  const balanceByCurrency = (balances.data || []).reduce((acc, row) => {
+    acc[row.currency] = (acc[row.currency] || 0) + Number(row.balance || 0);
+    return acc;
+  }, {});
+
+  return {
+    data: {
+      totalUsers: totalUsers.count ?? 0,
+      balanceByCurrency,
+      transactionsToday: txToday.count ?? 0,
+      pendingKyc: pendingKyc.count ?? 0,
+      openTickets: openTickets.count ?? 0,
+      // No schema source for this yet — see file header note.
+      activeRiskFlags: null,
+    },
+    error: null,
+  };
+}
+
+/* -----------------------------------------------------------
+   2. Users — admin-users.html / admin-user-detail.html
+   ----------------------------------------------------------- */
+
+/**
+ * @param {Object} [filters]
+ * @param {string} [filters.search] - matches against first_name, last_name, email
+ * @param {string} [filters.status] - user_profiles.account_status
+ * @param {number} [filters.page] - 1-indexed
+ * @param {number} [filters.pageSize]
+ */
+export async function listUsers({ search, status, page = 1, pageSize = 25 } = {}) {
+  let query = supabase.from('user_profiles').select('*', { count: 'exact' });
+
+  if (status) query = query.eq('account_status', status);
+  if (search) {
+    query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
+  }
+
+  const from = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) return { data: null, error: friendlyAdminError(error) };
+  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+}
+
+/**
+ * 360 view for admin-user-detail.html: profile + accounts + cards +
+ * recent transactions + login history, fetched in parallel. Notes
+ * (a free-text admin notes field) aren't in the schema yet — see
+ * TODO below.
+ */
+export async function getUserDetail(userId) {
+  const [profile, accounts, cards, sessions] = await Promise.all([
+    supabase.from('user_profiles').select('*').eq('id', userId).single(),
+    supabase.from('accounts').select('*').eq('user_id', userId),
+    supabase.from('cards').select('*').eq('user_id', userId),
+    supabase.from('login_sessions').select('*').eq('user_id', userId).order('login_time', { ascending: false }).limit(20),
+  ]);
+
+  if (profile.error) return { data: null, error: friendlyAdminError(profile.error) };
+
+  const accountIds = (accounts.data || []).map((a) => a.id);
+  let transactions = [];
+  if (accountIds.length) {
+    const { data: txData } = await supabase
+      .from('transactions')
+      .select('*')
+      .or(accountIds.map((id) => `sender_account.eq.${id}`).concat(accountIds.map((id) => `receiver_account.eq.${id}`)).join(','))
+      .order('created_at', { ascending: false })
+      .limit(50);
+    transactions = txData || [];
+  }
+
+  return {
+    data: {
+      profile: profile.data,
+      accounts: accounts.data || [],
+      cards: cards.data || [],
+      recentTransactions: transactions,
+      loginSessions: sessions.data || [],
+      // TODO: admin_notes has no table yet — add one (e.g.
+      // admin_user_notes: id, user_id, admin_id, note, created_at)
+      // before admin-user-detail.html's notes panel can persist
+      // anything real.
+      notes: [],
+    },
+    error: null,
+  };
+}
+
+/* -----------------------------------------------------------
+   3. Transactions — admin-transactions.html
+   ----------------------------------------------------------- */
+export async function listTransactions({ status, currency, search, page = 1, pageSize = 25 } = {}) {
+  let query = supabase.from('transactions').select('*', { count: 'exact' });
+
+  if (status) query = query.eq('status', status);
+  if (currency) query = query.eq('currency', currency);
+  if (search) query = query.ilike('transaction_reference', `%${search}%`);
+
+  const from = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) return { data: null, error: friendlyAdminError(error) };
+  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+}
+
+export async function reverseTransaction(transactionId, reason) {
+  return wrap(supabase.rpc('admin_reverse_transaction', {
+    p_transaction_id: transactionId,
+    p_reason: reason,
+  }));
+}
+
+/* -----------------------------------------------------------
+   4. KYC queue — admin-kyc.html
+   -----------------------------------------------------------
+   No separate kyc table — the queue IS user_profiles filtered to
+   account_status = 'Pending' (see file header note).
+   ----------------------------------------------------------- */
+export async function listKycQueue({ page = 1, pageSize = 25 } = {}) {
+  const from = (page - 1) * pageSize;
+  const { data, error, count } = await supabase
+    .from('user_profiles')
+    .select('*', { count: 'exact' })
+    .eq('account_status', 'Pending')
+    .order('created_at', { ascending: true }) // oldest-waiting first
+    .range(from, from + pageSize - 1);
+
+  if (error) return { data: null, error: friendlyAdminError(error) };
+  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+}
+
+export async function approveKyc(userId, reason) {
+  return wrap(supabase.rpc('admin_approve_kyc', { p_user_id: userId, p_reason: reason ?? null }));
+}
+
+export async function rejectKyc(userId, reason) {
+  return wrap(supabase.rpc('admin_reject_kyc', { p_user_id: userId, p_reason: reason }));
+}
+
+/* -----------------------------------------------------------
+   5. Cards — admin-cards.html
+   ----------------------------------------------------------- */
+export async function listCards({ status, search, page = 1, pageSize = 25 } = {}) {
+  let query = supabase.from('cards').select('*', { count: 'exact' });
+
+  if (status) query = query.eq('card_status', status);
+  if (search) query = query.ilike('id', `%${search}%`); // adjust if cards has a display-friendly reference column
+
+  const from = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) return { data: null, error: friendlyAdminError(error) };
+  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+}
+
+export async function setCardStatus(cardId, status, reason) {
+  return wrap(supabase.rpc('admin_set_card_status', {
+    p_card_id: cardId,
+    p_status: status,
+    p_reason: reason,
+  }));
+}
+
+/* -----------------------------------------------------------
+   6. Accounts — freeze/unfreeze, called from admin-user-detail.html
+   or admin-users.html row actions
+   ----------------------------------------------------------- */
+export async function freezeAccount(accountId, reason) {
+  return wrap(supabase.rpc('admin_freeze_account', { p_account_id: accountId, p_reason: reason }));
+}
+
+export async function unfreezeAccount(accountId, reason) {
+  return wrap(supabase.rpc('admin_unfreeze_account', { p_account_id: accountId, p_reason: reason }));
+}
+
+/* -----------------------------------------------------------
+   7. Support tickets — admin-support.html
+   -----------------------------------------------------------
+   Plain RLS-gated read/update, NOT an RPC — see admin_schema.sql
+   section 8's comment on why this one mutation is allowed to be a
+   direct .update() while everything else above goes through a
+   SECURITY DEFINER function.
+   ----------------------------------------------------------- */
+export async function listSupportTickets({ status, assignedTo, page = 1, pageSize = 25 } = {}) {
+  let query = supabase.from('support_tickets').select('*', { count: 'exact' });
+
+  if (status) query = query.eq('status', status);
+  if (assignedTo) query = query.eq('assigned_admin_id', assignedTo);
+
+  const from = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) return { data: null, error: friendlyAdminError(error) };
+  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+}
+
+export async function assignTicket(ticketId, adminId) {
+  return wrap(
+    supabase.from('support_tickets').update({ assigned_admin_id: adminId }).eq('id', ticketId)
+  );
+}
+
+export async function resolveTicket(ticketId, resolutionNote) {
+  return wrap(
+    supabase.from('support_tickets')
+      .update({ status: 'resolved', resolution_note: resolutionNote })
+      .eq('id', ticketId)
+  );
+}
+
+/* -----------------------------------------------------------
+   8. Risk / fraud — admin-risk.html
+   -----------------------------------------------------------
+   STUB. No schema table exists for fraud/AML flags or velocity
+   alerts yet — see file header note. Returns an empty result
+   rather than fabricated rows, and warns loudly in the console so
+   this doesn't get mistaken for "no flags today" once a real table
+   exists and someone forgets to wire it up here.
+   ----------------------------------------------------------- */
+export async function getRiskFlags() {
+  console.warn('[Meridian Admin] getRiskFlags() is a stub — no risk_flags table exists in the schema yet.');
+  return { data: { rows: [], total: 0 }, error: null };
+}
+
+/* -----------------------------------------------------------
+   9. Reports — admin-reports.html
+   -----------------------------------------------------------
+   Volume/revenue/growth over a date range. Kept intentionally
+   simple (raw aggregation in JS over a bounded query) rather than
+   a Postgres view, since the exact metrics admin-reports.html ends
+   up wanting are still likely to change during that page's build.
+   Revisit as a SQL view/materialized view if this gets slow at
+   real data volumes.
+   ----------------------------------------------------------- */
+export async function getVolumeReport({ from, to }) {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('amount, fee, currency, created_at, status')
+    .gte('created_at', from)
+    .lte('created_at', to);
+
+  if (error) return { data: null, error: friendlyAdminError(error) };
+
+  const byCurrency = {};
+  for (const tx of data) {
+    if (tx.status === 'Reversed') continue; // don't double-count reversed originals
+    const bucket = (byCurrency[tx.currency] ||= { volume: 0, fees: 0, count: 0 });
+    bucket.volume += Number(tx.amount || 0);
+    bucket.fees += Number(tx.fee || 0);
+    bucket.count += 1;
+  }
+
+  return { data: { byCurrency, rangeFrom: from, rangeTo: to }, error: null };
+}
+
+/* -----------------------------------------------------------
+   10. Audit log — admin-audit-log.html
+   ----------------------------------------------------------- */
+export async function listAdminAuditLog({ adminId, targetTable, search, page = 1, pageSize = 50 } = {}) {
+  let query = supabase.from('admin_audit_logs').select('*', { count: 'exact' });
+
+  if (adminId) query = query.eq('admin_id', adminId);
+  if (targetTable) query = query.eq('target_table', targetTable);
+  if (search) query = query.ilike('reason', `%${search}%`);
+
+  const from = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) return { data: null, error: friendlyAdminError(error) };
+  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+}
+
+/* -----------------------------------------------------------
+   11. Role management — admin-settings.html, superadmin only.
+   The RPC itself enforces is_superadmin() server-side regardless
+   of what the UI allows — see admin_schema.sql section 9.
+   ----------------------------------------------------------- */
+export async function setUserRole(userId, role, reason) {
+  return wrap(supabase.rpc('admin_set_user_role', {
+    p_user_id: userId,
+    p_role: role,
+    p_reason: reason,
+  }));
+}
