@@ -35,17 +35,17 @@
 import { $, $$, getInitials } from './utils.js';
 
 /* -----------------------------------------------------------
-   Resolve supabase/auth.js relative to whichever page loaded us
+   Fixed — resolves relative to auth-ui.js's own location
+   (assets/js/), NOT the page that imports it. Dynamic import()
+   specifiers always resolve against the importing module's URL,
+   so this must not branch on window.location.pathname.
    ----------------------------------------------------------- */
-function resolveSupabaseBase() {
-  const inPagesDir = window.location.pathname.includes('/pages/');
-  return inPagesDir ? '../supabase/' : 'supabase/';
-}
+const SUPABASE_BASE = '../supabase/';
 
 let authModulePromise = null;
 function loadAuthModule() {
   if (!authModulePromise) {
-    authModulePromise = import(`${resolveSupabaseBase()}auth.js`);
+    authModulePromise = import(`${SUPABASE_BASE}auth.js`);
   }
   return authModulePromise;
 }
