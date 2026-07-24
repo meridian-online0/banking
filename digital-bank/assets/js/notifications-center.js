@@ -3,12 +3,17 @@
    Notification Center page logic: assets/js/notifications-center.js
    Powers pages/notifications.html only. The navbar dropdown on
    every other page is handled by assets/js/notifications.js.
+
+   NOTE on relative paths: this file lives at assets/js/, two
+   directories deep from the project root, so it needs '../../'
+   to reach the root-level supabase/ folder — a single '../' only
+   reaches assets/, which has no supabase/ folder of its own.
    ============================================================= */
 
 import { $, $$, debounce, formatTimestamp } from './utils.js';
 import { toastError, toastSuccess } from './notifications.js';
-import { requireAuth } from '../supabase/auth.js';
-import { getAccountById } from '../supabase/database.js';
+import { requireAuth } from '../../supabase/auth.js';
+import { getAccountById } from '../../supabase/database.js';
 import {
   getNotifications,
   markAsRead,
@@ -18,7 +23,7 @@ import {
   deleteNotification,
   subscribeToNotifications,
   NOTIFICATION_CATEGORIES,
-} from '../supabase/notifications.js';
+} from '../../supabase/notifications.js';
 
 const PAGE_SIZE = 20;
 
