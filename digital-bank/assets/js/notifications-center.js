@@ -68,6 +68,20 @@ function cacheEls() {
   els.detailDelete = $('#notif-detail-delete');
 }
 
+/**
+ * Toggles both the `hidden` attribute AND inline `style.display`.
+ * Mirrors showBodyState() in assets/js/notifications.js —
+ * notifications.css gives these state elements an explicit display
+ * value, which beats the browser's default `[hidden] { display: none }`
+ * rule on its own, so `hidden` alone doesn't actually hide them once
+ * another state has been shown.
+ */
+function setHidden(el, hidden) {
+  if (!el) return;
+  el.hidden = hidden;
+  el.style.display = hidden ? 'none' : '';
+}
+
 function buildCategoryChips() {
   NOTIFICATION_CATEGORIES.forEach(({ value, label }) => {
     const btn = document.createElement('button');
@@ -161,11 +175,11 @@ async function fetchPage({ reset = false } = {}) {
   if (reset) {
     state.offset = 0;
     state.items = [];
-    els.list.hidden = true;
-    els.empty.hidden = true;
-    els.error.hidden = true;
-    els.loading.hidden = false;
-    els.loadMoreWrap.hidden = true;
+    setHidden(els.list, true);
+    setHidden(els.empty, true);
+    setHidden(els.error, true);
+    setHidden(els.loading, false);
+    setHidden(els.loadMoreWrap, true);
   }
 
   const { data, error, count } = await getNotifications(state.userId, {
@@ -178,10 +192,10 @@ async function fetchPage({ reset = false } = {}) {
   });
 
   state.loading = false;
-  els.loading.hidden = true;
+  setHidden(els.loading, true);
 
   if (error) {
-    els.error.hidden = false;
+    setHidden(els.error, false);
     return;
   }
 
@@ -191,16 +205,16 @@ async function fetchPage({ reset = false } = {}) {
   state.offset += data.length;
 
   if (!state.items.length) {
-    els.empty.hidden = false;
-    els.list.hidden = true;
-    els.loadMoreWrap.hidden = true;
+    setHidden(els.empty, false);
+    setHidden(els.list, true);
+    setHidden(els.loadMoreWrap, true);
     return;
   }
 
-  els.empty.hidden = true;
-  els.list.hidden = false;
+  setHidden(els.empty, true);
+  setHidden(els.list, false);
   renderGroupedList(data, { append: isAppend });
-  els.loadMoreWrap.hidden = state.offset >= state.total;
+  setHidden(els.loadMoreWrap, state.offset >= state.total);
 }
 
 /* -----------------------------------------------------------
