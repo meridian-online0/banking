@@ -174,7 +174,22 @@ function setBadgeCount(badge, count) {
   badge.style.display = count > 0 ? 'flex' : 'none';
 }
 
+const MOBILE_SHEET_QUERY = '(max-width: 640px)';
+
 function openDropdown(els) {
+  // On mobile, .notification-dropdown becomes position:fixed to act as a
+  // bottom sheet — but .app-header (its ancestor) sets backdrop-filter,
+  // which creates a new containing block and makes "fixed" resolve
+  // against the header instead of the real viewport. Reparenting to
+  // <body> while open removes it from that ancestor chain so fixed
+  // positioning behaves correctly. Desktop's position:absolute doesn't
+  // need this — it stays put and keeps anchoring off .notification-bell-wrap.
+  if (window.matchMedia(MOBILE_SHEET_QUERY).matches && els.dropdown.parentElement !== document.body) {
+    els.dropdownHome = els.dropdown.parentElement;
+    els.dropdownNextSibling = els.dropdown.nextSibling;
+    document.body.appendChild(els.dropdown);
+  }
+
   els.dropdown.setAttribute('aria-hidden', 'false');
   els.toggle.setAttribute('aria-expanded', 'true');
   els.dropdown.classList.add('is-open');
@@ -184,6 +199,14 @@ function closeDropdown(els) {
   els.dropdown.setAttribute('aria-hidden', 'true');
   els.toggle.setAttribute('aria-expanded', 'false');
   els.dropdown.classList.remove('is-open');
+
+  // Move it back where it came from so desktop's position:absolute
+  // (anchored to .notification-bell-wrap) still works next time.
+  if (els.dropdownHome) {
+    els.dropdownHome.insertBefore(els.dropdown, els.dropdownNextSibling);
+    els.dropdownHome = null;
+    els.dropdownNextSibling = null;
+  }
 }
 
 function isDropdownOpen(els) {
