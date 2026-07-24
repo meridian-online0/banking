@@ -40,7 +40,16 @@ import { $, $$, getInitials } from './utils.js';
    specifiers always resolve against the importing module's URL,
    so this must not branch on window.location.pathname.
    ----------------------------------------------------------- */
-const SUPABASE_BASE = '../supabase/';
+// const SUPABASE_BASE = '../supabase/';
+
+// let authModulePromise = null;
+// function loadAuthModule() {
+//   if (!authModulePromise) {
+//     authModulePromise = import(`${SUPABASE_BASE}auth.js`);
+//   }
+//   return authModulePromise;
+// }
+const SUPABASE_BASE = '../../supabase/';
 
 let authModulePromise = null;
 function loadAuthModule() {
