@@ -6,18 +6,34 @@
      2. Personalized greeting + real last-login line, both from
         the signed-in user's profile / login_sessions row
      3. Notification badge count
-     4. User menu dropdown + mobile nav toggle
-     5. Log out
-     6. Total balance + account strip, built from real accounts
-     7. Recent transactions, spending breakdown, savings goals,
+     4. Header identity — name + avatar, deferred until the
+        app-navbar component (loaded separately by components.js)
+        has actually landed in the DOM; see waitForNavbar() below.
+        Avatar rendering mirrors profile.js's paintAvatar(): shows
+        the uploaded profile photo when there is one, initials
+        otherwise — dashboard previously only ever showed initials
+        and never checked profile.profile_photo at all.
+     5. User menu dropdown + mobile nav toggle + log out — also
+        deferred behind waitForNavbar() (previously these ran
+        immediately, racing components.js's fetch() for the
+        app-navbar partial; on a slow connection they'd each
+        silently find nothing and never retry)
+     6. Total balance + account strip, built from real accounts —
+        amounts render currency-sign-first ($1,234.56) rather than
+        with a trailing unit
+     7. Hide-balance toggle — masks the total balance and
+        account-strip amounts with "••••••", persisted in
+        localStorage; see initBalanceVisibilityToggle() /
+        applyBalanceVisibility()
+     8. Recent transactions, spending breakdown, savings goals,
         and card preview — all scoped to the user's primary
         (first-opened) account. See the note above
         renderPrimaryAccountSections() for why.
-     8. Live crypto ticker (band under the header)
-     9. "Market pulse" panel — live crypto prices + finance
+     9. Live crypto ticker (band under the header)
+    10. "Market pulse" panel — live crypto prices + finance
         headlines, with an honestly-labelled fallback if either
         feed is unreachable (never fakes "live" data)
-    10. Automation showcase — animates a real stat (total saved
+    11. Automation showcase — animates a real stat (total saved
         across the user's goals) into the sidebar upsell card
    ============================================================= */
 
@@ -47,6 +63,13 @@ function currencySymbol(code) {
 
 function formatAmount(value) {
   return Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** Currency-sign-first formatting ("$1,234.56", "€980.00") — the
+ *  standard everywhere on the dashboard now, instead of a mix of
+ *  bare numbers and numbers with a trailing currency code. */
+function formatMoney(value, currency) {
+  return `${currencySymbol(currency)}${formatAmount(value)}`;
 }
 
 function capitalizeWords(str) {
@@ -119,6 +142,29 @@ function showToast(message, variant = 'error') {
 }
 
 /* -----------------------------------------------------------
+   Wait for the app-navbar component
+   dashboard.html loads its header from components/app-navbar.html
+   via components.js's loadComponents(), which runs as its own
+   module and dispatches `component:loaded` on `document` once
+   injection finishes. That can resolve before OR after this
+   module's own async init — calling header-dependent functions
+   before the partial lands means they each query for elements
+   that aren't in the DOM yet and silently no-op. This checks
+   whether the navbar markup is already in the DOM first, and only
+   falls back to listening for the event if it isn't there yet, so
+   it's correct either way. Same pattern as accounts.js/profile.js.
+   ----------------------------------------------------------- */
+function waitForNavbar() {
+  return new Promise((resolve) => {
+    if ($('.app-user-menu')) {
+      resolve();
+      return;
+    }
+    document.addEventListener('component:loaded', () => resolve(), { once: true });
+  });
+}
+
+/* -----------------------------------------------------------
    Greeting + last login
    ----------------------------------------------------------- */
 function timeOfDayGreeting() {
@@ -183,17 +229,37 @@ async function populateNotificationBadge() {
 }
 
 /* -----------------------------------------------------------
-   Header: name, avatar
+   Header: name + avatar
+   Avatar handling now mirrors profile.js's paintAvatar(): an
+   uploaded profile photo renders as an <img>, falling back to
+   initials only when there isn't one. Previously this only ever
+   set initials and never looked at profile.profile_photo.
    ----------------------------------------------------------- */
+function initials(firstName, lastName) {
+  const a = (firstName || '').trim().charAt(0);
+  const b = (lastName || '').trim().charAt(0);
+  return (a + b).toUpperCase() || 'M';
+}
+
+function paintAvatar(url, firstName, lastName) {
+  const label = initials(firstName, lastName);
+  $$('.avatar-initial--sm, .avatar-initial--lg').forEach((el) => {
+    if (url) {
+      el.innerHTML = `<img class="avatar-photo" src="${url}" alt="">`;
+    } else {
+      el.textContent = label;
+    }
+  });
+}
+
 async function populateHeaderIdentity() {
   const { data: profile } = await getMyProfile();
   const nameEl = $('.app-user-name');
-  const avatarEl = $('.app-user-trigger .avatar-initial');
   const firstName = profile?.first_name || '';
   const lastName = profile?.last_name || '';
 
   if (nameEl) nameEl.textContent = `${firstName} ${lastName}`.trim() || 'Your account';
-  if (avatarEl) avatarEl.textContent = (firstName[0] || 'M').toUpperCase();
+  paintAvatar(profile?.profile_photo, firstName, lastName);
 }
 
 /* -----------------------------------------------------------
@@ -278,13 +344,62 @@ function initLogout() {
 }
 
 /* -----------------------------------------------------------
+   Hide-balance toggle
+   Masks every [data-sensitive-amount] element (the total balance
+   + account-strip amounts) with "••••••". State persists across
+   reloads via localStorage. Re-apply after any render that
+   rewrites those elements' innerHTML (renderBalanceAndAccounts
+   creates new account-strip nodes each call), since the stored
+   "real" value lives in a data attribute on the element itself.
+   ----------------------------------------------------------- */
+const BALANCE_HIDDEN_KEY = 'meridian-hide-balance';
+const MASK = '••••••';
+let balanceHidden = localStorage.getItem(BALANCE_HIDDEN_KEY) === 'true';
+
+function balanceToggleIcon(hidden) {
+  return hidden
+    ? '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true" width="18" height="18"><path d="M3 3l14 14M8.3 8.4a2.4 2.4 0 0 0 3.3 3.3M6 6.2C3.6 7.6 2 10 2 10s3 5.5 8 5.5c1.4 0 2.7-.4 3.8-1M10 4.5c5 0 8 5.5 8 5.5s-.6 1.1-1.7 2.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    : '<svg viewBox="0 0 20 20" fill="none" aria-hidden="true" width="18" height="18"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10Z" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="2.4" stroke="currentColor" stroke-width="1.4"/></svg>';
+}
+
+function applyBalanceVisibility(hidden) {
+  const btn = $('#toggle-balance-visibility');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(hidden));
+    btn.setAttribute('aria-label', hidden ? 'Show balance' : 'Hide balance');
+    btn.innerHTML = balanceToggleIcon(hidden);
+  }
+
+  $$('[data-sensitive-amount]').forEach((el) => {
+    if (hidden) {
+      if (el.dataset.realHtml === undefined) el.dataset.realHtml = el.innerHTML;
+      el.innerHTML = MASK;
+    } else if (el.dataset.realHtml !== undefined) {
+      el.innerHTML = el.dataset.realHtml;
+      delete el.dataset.realHtml;
+    }
+  });
+}
+
+function initBalanceVisibilityToggle() {
+  const btn = $('#toggle-balance-visibility');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    balanceHidden = !balanceHidden;
+    localStorage.setItem(BALANCE_HIDDEN_KEY, String(balanceHidden));
+    applyBalanceVisibility(balanceHidden);
+  });
+}
+
+/* -----------------------------------------------------------
    Total balance + account strip
    Uses every account the user has, since the balance card is
    meant to represent their whole portfolio, not just one
-   currency.
+   currency. Amounts render currency-sign-first via formatMoney().
    ----------------------------------------------------------- */
 async function renderBalanceAndAccounts(accounts) {
-  const balanceEl = $('.dashboard-balance-card .balance-amount');
+  const balanceEl = $('#dashboard-balance-amount') || $('.dashboard-balance-card .balance-amount');
   const stripEl = $('.account-strip');
   const addItem = stripEl ? stripEl.querySelector('.account-strip-item--add') : null;
 
@@ -293,7 +408,7 @@ async function renderBalanceAndAccounts(accounts) {
   if (!accounts.length) {
     if (balanceEl) {
       unskeleton(balanceEl);
-      balanceEl.innerHTML = '0<small>.00 USD</small>';
+      balanceEl.innerHTML = '$0<small>.00</small>';
     }
     return;
   }
@@ -302,7 +417,7 @@ async function renderBalanceAndAccounts(accounts) {
     const { data: totalData } = await getTotalBalance(undefined, 'USD');
     unskeleton(balanceEl);
     const [intPart, decPart = '00'] = Number(totalData?.total || 0).toFixed(2).split('.');
-    balanceEl.innerHTML = `${Number(intPart).toLocaleString('en-US')}<small>.${decPart} USD</small>`;
+    balanceEl.innerHTML = `${currencySymbol(totalData?.currency || 'USD')}${Number(intPart).toLocaleString('en-US')}<small>.${decPart}</small>`;
   }
 
   if (stripEl) {
@@ -315,7 +430,7 @@ async function renderBalanceAndAccounts(accounts) {
         <span class="account-strip-flag">${currencySymbol(account.currency)}</span>
         <div>
           <strong>${account.currency} account</strong>
-          <span>${formatAmount(account.balance)}</span>
+          <span data-sensitive-amount>${formatMoney(account.balance, account.currency)}</span>
         </div>
       `;
       fragment.appendChild(item);
@@ -324,6 +439,10 @@ async function renderBalanceAndAccounts(accounts) {
     if (addItem) stripEl.insertBefore(fragment, addItem);
     else stripEl.appendChild(fragment);
   }
+
+  // Re-apply the persisted hide/show state — the elements above
+  // were just recreated, so any earlier masking is gone.
+  applyBalanceVisibility(balanceHidden);
 }
 
 /* -----------------------------------------------------------
@@ -371,14 +490,14 @@ async function renderRecentTransactions(accountId) {
         <strong>${tx.description || tx.transaction_reference || 'Transaction'}</strong>
         <span>${capitalizeWords(tx.transaction_type)}</span>
       </div>
-      <span class="amt ${isIncoming ? 'pos' : ''}">${isIncoming ? '+' : '-'}${currencySymbol(tx.currency)}${formatAmount(tx.amount)}</span>
+      <span class="amt ${isIncoming ? 'pos' : ''}">${isIncoming ? '+' : '-'}${formatMoney(tx.amount, tx.currency)}</span>
       <time>${formatTxTime(tx.created_at)}</time>
     `;
     listEl.appendChild(row);
   });
 }
 
-async function renderSpendingBreakdown(accountId) {
+async function renderSpendingBreakdown(accountId, currency) {
   const listEl = $('.spend-breakdown');
   if (!listEl) return;
 
@@ -411,13 +530,13 @@ async function renderSpendingBreakdown(accountId) {
     row.innerHTML = `
       <span class="spend-row-label">${capitalizeWords(type)}</span>
       <span class="spend-bar-track"><span class="spend-bar-fill" style="width:${pct}%"></span></span>
-      <span class="mono">${formatAmount(amount)}</span>
+      <span class="mono">${formatMoney(amount, currency)}</span>
     `;
     listEl.appendChild(row);
   });
 }
 
-async function renderSavingsGoals(accountId) {
+async function renderSavingsGoals(accountId, currency) {
   const goalItems = Array.from(document.querySelectorAll('.goal-item'));
   const container = goalItems.length ? goalItems[0].parentElement : null;
   goalItems.forEach((el) => el.remove());
@@ -443,7 +562,7 @@ async function renderSavingsGoals(accountId) {
     item.innerHTML = `
       <div class="goal-item-head">
         <strong>${goal.goal_name}</strong>
-        <span class="mono">${formatAmount(current)} / ${formatAmount(target)}</span>
+        <span class="mono">${formatMoney(current, currency)} / ${formatMoney(target, currency)}</span>
       </div>
       <span class="goal-bar-track"><span class="goal-bar-fill" style="width:${pct}%"></span></span>
     `;
@@ -496,11 +615,12 @@ async function renderPrimaryAccountSections(accounts) {
   }
 
   const primaryAccountId = accounts[0].id;
+  const primaryCurrency = accounts[0].currency;
 
   await Promise.all([
     renderRecentTransactions(primaryAccountId),
-    renderSpendingBreakdown(primaryAccountId),
-    renderSavingsGoals(primaryAccountId),
+    renderSpendingBreakdown(primaryAccountId, primaryCurrency),
+    renderSavingsGoals(primaryAccountId, primaryCurrency),
     renderCardPreview(primaryAccountId),
   ]);
 }
@@ -653,7 +773,8 @@ async function initMarketNewsPanel() {
    Enhances the existing "Automate your money" upsell card with a
    real, animated stat pulled from the user's own savings goals —
    total currently automated and how many goals it's spread
-   across — instead of a generic static pitch.
+   across — instead of a generic static pitch. Prefix now uses the
+   funding account's own currency symbol rather than a hardcoded $.
    ============================================================= */
 function animateCount(el, target, { prefix = '', duration = 1100 } = {}) {
   if (!el) return;
@@ -669,7 +790,7 @@ function animateCount(el, target, { prefix = '', duration = 1100 } = {}) {
   requestAnimationFrame(tick);
 }
 
-async function enhanceAutomationShowcase(accountId) {
+async function enhanceAutomationShowcase(accountId, currency) {
   const upsell = $('.dashboard-upsell');
   if (!upsell) return;
 
@@ -697,7 +818,7 @@ async function enhanceAutomationShowcase(accountId) {
     <span class="automation-stat-value mono" id="automation-stat-value">0</span>
     <span class="automation-stat-label">saved automatically across ${goals.length} goal${goals.length === 1 ? '' : 's'}</span>
   `;
-  animateCount($('#automation-stat-value', statRow), total, { prefix: '$' });
+  animateCount($('#automation-stat-value', statRow), total, { prefix: currencySymbol(currency || 'USD') });
 }
 
 /* -----------------------------------------------------------
@@ -709,18 +830,24 @@ async function enhanceAutomationShowcase(accountId) {
 
   populateGreeting();
   populateLastLogin(user.id);
-  populateHeaderIdentity();
-  populateNotificationBadge();
-  initUserMenu();
-  initMobileNav();
-  initLogout();
   initDashboardTicker();
   initMarketNewsPanel();
+  initBalanceVisibilityToggle();
+
+  // Header-dependent init waits for the app-navbar component to
+  // actually be in the DOM — see waitForNavbar() above.
+  waitForNavbar().then(() => {
+    populateHeaderIdentity();
+    populateNotificationBadge();
+    initUserMenu();
+    initMobileNav();
+    initLogout();
+  });
 
   const { data: accounts, error } = await getMyAccounts(user.id);
   if (error) showToast("Couldn't load your accounts. Please refresh.");
 
   await renderBalanceAndAccounts(accounts || []);
   await renderPrimaryAccountSections(accounts || []);
-  await enhanceAutomationShowcase(accounts?.[0]?.id);
+  await enhanceAutomationShowcase(accounts?.[0]?.id, accounts?.[0]?.currency);
 })();
