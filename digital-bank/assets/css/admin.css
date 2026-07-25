@@ -787,6 +787,198 @@
   background: var(--admin-bg);
 }
 
+
+
+
+
+
+/* -----------------------------------------------------------
+   Admin login page — components/admin-login.html
+   Not inside .admin-main (no sidebar/topbar on this page), so
+   these are scoped to .admin-login-body instead, but still pull
+   every color/radius/shadow from the same --admin-* tokens above.
+   ----------------------------------------------------------- */
+.admin-login-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.admin-login-shell {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+}
+
+/* Hide the form while redirectIfAdminAuthenticated() checks for an
+   existing session — matches the [data-admin-auth="pending"] hook
+   named in admin-login.html's own comment. */
+[data-admin-auth="pending"] .admin-login-card {
+  visibility: hidden;
+}
+
+[data-admin-auth="pending"] .admin-login-loader {
+  display: flex;
+}
+
+[data-admin-auth="ready"] .admin-login-loader {
+  display: none;
+}
+
+.admin-login-loader {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-login-loader-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid var(--admin-border);
+  border-top-color: var(--admin-accent);
+  animation: admin-login-spin 0.7s linear infinite;
+}
+
+@keyframes admin-login-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-login-loader-mark {
+    animation: none;
+  }
+}
+
+.admin-login-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-lg);
+  box-shadow: var(--admin-shadow);
+  padding: 2.25rem 2rem;
+}
+
+.admin-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 2rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--admin-text);
+}
+
+.admin-login-brand svg {
+  width: 30px;
+  height: 30px;
+  color: var(--admin-accent);
+  flex-shrink: 0;
+}
+
+.admin-login-brand em {
+  font-style: normal;
+  color: var(--admin-text-muted);
+  font-weight: 500;
+}
+
+.admin-login-form h1 {
+  font-size: 1.25rem;
+  color: var(--admin-text);
+  margin: 0 0 0.4rem;
+}
+
+.admin-login-subtitle {
+  font-size: 0.85rem;
+  color: var(--admin-text-muted);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.admin-login-error {
+  display: none;
+  font-size: 0.82rem;
+  color: var(--admin-danger);
+  background: var(--admin-danger-soft);
+  border-radius: var(--admin-radius-sm);
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-login-error:not(:empty) {
+  display: block;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.admin-field span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--admin-text-muted);
+}
+
+.admin-field input {
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-text);
+  padding: 0.65rem 0.8rem;
+  font-size: 0.9rem;
+  transition: border-color 0.15s ease;
+}
+
+.admin-field input:focus {
+  outline: none;
+  border-color: var(--admin-accent);
+}
+
+.admin-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--admin-radius-sm);
+  padding: 0.7rem 1rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.admin-btn--primary {
+  background: var(--admin-accent);
+  color: #fff;
+  margin-top: 0.4rem;
+}
+
+.admin-btn--primary:hover {
+  background: #3d6af0;
+}
+
+.admin-btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-btn--text {
+  background: transparent;
+  color: var(--admin-text-muted);
+  margin-top: 0.5rem;
+  font-weight: 500;
+}
+
+.admin-btn--text:hover {
+  color: var(--admin-text);
+}
+
 /* -----------------------------------------------------------
    Responsive — sidebar collapses to an off-canvas panel; topbar
    toggle button (data-admin-nav-toggle) shows below 960px.
