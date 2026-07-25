@@ -94,6 +94,29 @@ function esc(str) {
 }
 
 /* -----------------------------------------------------------
+   Initials / avatar rendering (same pattern as profile.js /
+   settings.js) — shows the uploaded profile photo when one
+   exists, falling back to the person's initials otherwise.
+   ----------------------------------------------------------- */
+function initials(firstName, lastName) {
+  const a = (firstName || '').trim().charAt(0);
+  const b = (lastName || '').trim().charAt(0);
+  return (a + b).toUpperCase() || 'M';
+}
+
+function paintAvatar(url, firstName, lastName) {
+  const label = initials(firstName, lastName);
+
+  $$('.avatar-initial--sm, .avatar-initial--lg').forEach((el) => {
+    if (url) {
+      el.innerHTML = `<img class="avatar-photo" src="${url}" alt="">`;
+    } else {
+      el.textContent = label;
+    }
+  });
+}
+
+/* -----------------------------------------------------------
    Toasts (same pattern as the other pages)
    ----------------------------------------------------------- */
 function showToast(message, variant = 'error') {
@@ -188,12 +211,11 @@ async function populateNotificationBadge() {
 async function populateHeaderIdentity() {
   const { data: profile } = await getMyProfile();
   const nameEl = $('.app-user-name');
-  const avatarEl = $('.app-user-trigger .avatar-initial');
   const firstName = profile?.first_name || '';
   const lastName = profile?.last_name || '';
 
   if (nameEl) nameEl.textContent = `${firstName} ${lastName}`.trim() || 'Your account';
-  if (avatarEl) avatarEl.textContent = (firstName[0] || 'M').toUpperCase();
+  paintAvatar(profile?.profile_photo, firstName, lastName);
 }
 
 /* -----------------------------------------------------------
