@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KYC queue — Meridian Admin</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<link rel="stylesheet" href="../../assets/css/dashboard.css">
+<link rel="stylesheet" href="../../assets/css/components.css">
+<link rel="stylesheet" href="../../assets/css/admin.css">
+</head>
+<body class="app-body admin-body" data-auth="pending">
+
+<div class="auth-loader" aria-hidden="true"><span class="auth-loader-mark"></span></div>
+
+<div data-component="admin-navbar"></div>
+
+<main id="main-content" class="admin-main">
+  <div class="container">
+
+    <div class="page-head page-head--split">
+      <div>
+        <h1>KYC queue</h1>
+        <p>Accounts awaiting verification, oldest first. Review each profile before approving or rejecting.</p>
+      </div>
+    </div>
+
+    <div class="admin-stat-row" id="kyc-summary" aria-live="polite">
+      <div class="admin-stat-card admin-stat-card--warning">
+        <span class="admin-stat-label">Awaiting review</span>
+        <span class="admin-stat-value" id="stat-pending">—</span>
+      </div>
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Oldest waiting</span>
+        <span class="admin-stat-value" id="stat-oldest">—</span>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         QUEUE TABLE — no status filter needed, this list IS the
+         pending queue (see admin.js's listKycQueue() note). A
+         search box is still useful when support asks "has so-and-so
+         come through yet".
+         ========================================================= -->
+    <div class="admin-toolbar">
+      <div class="admin-search-field">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.4"/><path d="m14 14-3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <input type="search" id="kyc-search" placeholder="Filter by name or email…" aria-label="Filter queue">
+      </div>
+      <span class="admin-toolbar-count" id="kyc-count" aria-live="polite"></span>
+    </div>
+
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th scope="col">Applicant</th>
+            <th scope="col">Email</th>
+            <th scope="col">Country</th>
+            <th scope="col">Waiting since</th>
+            <th scope="col"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="kyc-table-body" aria-live="polite">
+          <tr class="admin-table-skeleton-row"><td colspan="5">Loading queue…</td></tr>
+        </tbody>
+      </table>
+
+      <p class="admin-table-empty" id="kyc-empty" hidden>The queue is empty.</p>
+    </div>
+
+    <div class="admin-pagination" id="kyc-pagination" aria-live="polite">
+      <button type="button" class="btn btn-ghost btn-sm" id="kyc-prev-page" disabled>Previous</button>
+      <span id="kyc-page-indicator">Page 1</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="kyc-next-page" disabled>Next</button>
+    </div>
+
+  </div>
+</main>
+
+<!-- =========================================================
+     APPLICANT DETAIL DRAWER
+     ========================================================= -->
+<div class="admin-drawer-overlay" id="kyc-drawer-overlay" aria-hidden="true">
+  <aside class="admin-drawer" role="dialog" aria-modal="true" aria-labelledby="kyc-drawer-title">
+    <div class="admin-drawer-head">
+      <div class="admin-drawer-identity">
+        <span class="avatar-initial" id="kyc-drawer-avatar">·</span>
+        <div>
+          <h2 id="kyc-drawer-title">—</h2>
+          <span id="kyc-drawer-subtitle" class="admin-drawer-subtitle">—</span>
+        </div>
+      </div>
+      <button type="button" class="modal-close" id="kyc-drawer-close" aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="admin-drawer-body" id="kyc-drawer-body">
+      <!-- injected by admin-kyc.js -->
+    </div>
+  </aside>
+</div>
+
+<!-- =========================================================
+     APPROVE MODAL — reason optional (admin_approve_kyc accepts
+     NULL), but the field is still offered so an approval note can
+     land in the audit log same as a rejection can.
+     ========================================================= -->
+<div class="modal-overlay" id="approve-modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="approve-modal-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="approve-modal-title">Approve KYC</h3>
+        <p>The account will be activated immediately.</p>
+      </div>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <form id="approve-modal-form" novalidate>
+      <div class="field">
+        <label for="approve-modal-reason">Note <span class="field-optional">(optional)</span></label>
+        <textarea id="approve-modal-reason" rows="2" placeholder="Optional — logged to the audit trail"></textarea>
+      </div>
+
+      <p class="field-hint" id="approve-modal-error" style="color:var(--red); display:none; margin-bottom:1rem;"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="approve-modal-submit">Approve</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- =========================================================
+     REJECT MODAL — reason required, admin_reject_kyc() rejects
+     an empty one server-side; validated client-side too so the
+     admin isn't surprised by a round trip.
+     ========================================================= -->
+<div class="modal-overlay" id="reject-modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reject-modal-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="reject-modal-title">Reject KYC</h3>
+        <p>The applicant will be notified their account was not approved.</p>
+      </div>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <form id="reject-modal-form" novalidate>
+      <div class="field">
+        <label for="reject-modal-reason">Reason</label>
+        <textarea id="reject-modal-reason" rows="3" placeholder="Required — logged to the audit trail and cannot be blank" required></textarea>
+        <span class="field-error" role="alert"></span>
+      </div>
+
+      <p class="field-hint" id="reject-modal-error" style="color:var(--red); display:none; margin-bottom:1rem;"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-danger" id="reject-modal-submit">Reject</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+<script src="../../assets/js/main.js"></script>
+<script type="module" src="admin-kyc.js"></script>
+</body>
+</html>
