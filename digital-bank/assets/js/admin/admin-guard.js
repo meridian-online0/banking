@@ -69,8 +69,8 @@
    at the bottom, the admin equivalent of redirectIfAuthenticated().
    ============================================================= */
 
-import { getCurrentSession, getCurrentUser, onAuthStateChange } from '../../supabase/auth.js';
-import { supabase } from '../../supabase/config.js';
+import { getCurrentSession, getCurrentUser, onAuthStateChange } from '../../../supabase/auth.js';
+import { supabase } from '../../../supabase/config.js';
 
 /* -----------------------------------------------------------
    Paths — relative to pages/admin/*.html, NOT pages/*.html.
