@@ -1,0 +1,113 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   assets/css/admin-reports.css
+   SCOPE: pages/admin/admin-reports.html only.
+   ============================================================= */
+
+.admin-range-presets {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.admin-preset-btn {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.4rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-preset-btn:hover {
+  color: var(--admin-text);
+}
+
+.admin-preset-btn.is-active {
+  border-color: var(--admin-accent);
+  color: var(--admin-accent);
+  background: var(--admin-accent-soft);
+}
+
+.admin-btn-sm {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  width: auto;
+}
+
+.admin-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text-muted);
+}
+
+.admin-btn--ghost:hover {
+  border-color: var(--admin-text-muted);
+  color: var(--admin-text);
+}
+
+.admin-currency-row {
+  display: grid;
+  grid-template-columns: 90px 1fr auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--admin-border-soft);
+}
+
+.admin-currency-row:last-child {
+  border-bottom: none;
+}
+
+.admin-currency-code {
+  font-family: var(--admin-font-mono);
+  font-weight: 700;
+  color: var(--admin-text);
+  font-size: 0.9rem;
+}
+
+.admin-currency-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--admin-border);
+  overflow: hidden;
+}
+
+.admin-currency-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--admin-accent);
+}
+
+.admin-currency-volume {
+  font-family: var(--admin-font-mono);
+  font-weight: 600;
+  color: var(--admin-text);
+  font-size: 0.9rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-currency-meta {
+  font-size: 0.76rem;
+  color: var(--admin-text-muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .admin-stat-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .admin-currency-row {
+    grid-template-columns: 70px 1fr;
+    row-gap: 0.3rem;
+  }
+  .admin-currency-volume,
+  .admin-currency-meta {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
