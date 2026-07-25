@@ -18,12 +18,20 @@
         list, all reading from getMarketPrices()'s cache.
      6. A single buy/sell modal (side toggle rather than two
         separate modals) wired to buyInvestment() / sellInvestment().
+
+   NOTE ON THE SHARED HEADER (components/app-navbar.html):
+   The header is injected by components.js, which also auto-boots
+   the notification center (assets/js/notifications.js) against
+   the bell button — this page never touches the notification
+   badge itself, to avoid a second source of truth fighting with
+   notifications.js over the same DOM node. See populateHeader()
+   and initUserMenu() below for the two things that had to change
+   to work correctly against that shared markup.
    ============================================================= */
 
 import { requireAuth, signOutUser } from '../supabase/auth.js';
 import {
   getMyProfile,
-  getUnreadNotificationCount,
   getMyAccounts,
   getMyInvestments,
   getInvestmentOrders,
@@ -89,7 +97,15 @@ function showToast(message, variant = 'success') {
 }
 
 /* -----------------------------------------------------------
-   Header (identical pattern to accounts.js / transfer.js)
+   Header identity (name + avatar initial only)
+   -----------------------------------------------------------
+   The unread-notification badge is intentionally NOT touched
+   here. components/app-navbar.html's [data-notification-badge]
+   element is owned end-to-end by notifications.js, which
+   components.js boots automatically once the navbar is injected
+   (see the comment at the top of app-navbar.html). Setting it
+   from here too would race with notifications.js and could
+   flash a stale count after a mark-all-read.
    ----------------------------------------------------------- */
 async function populateHeader() {
   const nameEl = $('.app-user-name');
@@ -99,38 +115,55 @@ async function populateHeader() {
   const lastName = profile?.last_name || '';
   if (nameEl) nameEl.textContent = `${firstName} ${lastName}`.trim() || 'Your account';
   if (avatarEl) avatarEl.textContent = (firstName[0] || 'M').toUpperCase();
-
-  const badge = $('.app-icon-btn-badge');
-  if (badge) {
-    const { data: count } = await getUnreadNotificationCount();
-    if (count) {
-      badge.textContent = count > 9 ? '9+' : String(count);
-      badge.style.display = 'flex';
-    } else {
-      badge.style.display = 'none';
-    }
-  }
 }
 
+/**
+ * The injected navbar has TWO elements carrying the `.app-user-menu`
+ * class: the notification bell wrapper (`.app-user-menu.notification-bell-wrap[data-notification-bell]`)
+ * and the actual account dropdown, in that DOM order. A plain
+ * `$('.app-user-menu')` would grab the bell wrapper first and this
+ * would silently never wire up the account dropdown (no
+ * `.app-user-trigger` inside the bell wrapper, so it'd bail out).
+ * Anchoring on `.app-user-trigger` — which only exists once, on the
+ * account button — and walking up to its own `.app-user-menu`
+ * sidesteps that ambiguity entirely regardless of how many
+ * `.app-user-menu`-classed wrappers the header ends up with.
+ */
 function initUserMenu() {
-  const menu = $('.app-user-menu');
-  const trigger = $('.app-user-trigger', menu);
+  const trigger = $('.app-user-trigger');
+  const menu = trigger?.closest('.app-user-menu');
   if (!menu || !trigger) return;
-  const open = () => {
+
+  function open() {
     menu.classList.add('is-open');
     trigger.setAttribute('aria-expanded', 'true');
-    document.addEventListener('click', onOutside);
-    document.addEventListener('keydown', onKey);
-  };
-  const close = () => {
+    document.addEventListener('click', handleOutsideClick);
+    document.addEventListener('keydown', handleKeydown);
+  }
+
+  function close() {
     menu.classList.remove('is-open');
     trigger.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('click', onOutside);
-    document.removeEventListener('keydown', onKey);
-  };
-  const onOutside = (e) => { if (!menu.contains(e.target)) close(); };
-  const onKey = (e) => { if (e.key === 'Escape') { close(); trigger.focus(); } };
-  trigger.addEventListener('click', (e) => { e.stopPropagation(); menu.classList.contains('is-open') ? close() : open(); });
+    document.removeEventListener('click', handleOutsideClick);
+    document.removeEventListener('keydown', handleKeydown);
+  }
+
+  function handleOutsideClick(event) {
+    if (!menu.contains(event.target)) close();
+  }
+
+  function handleKeydown(event) {
+    if (event.key === 'Escape') {
+      close();
+      trigger.focus();
+    }
+  }
+
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (menu.classList.contains('is-open')) close();
+    else open();
+  });
 }
 
 function initLogout() {
