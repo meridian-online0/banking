@@ -1,110 +1,58 @@
 /* =============================================================
-   MERIDIAN — Admin panel
-   assets/css/admin-dashboard.css
-   SCOPE: pages/admin/admin-dashboard.html only. Loaded AFTER
-   admin.css — reuses its surface/border/text aliases and
-   style.css's real --ink/--ivory/--brass/--radius/--shadow/--font
-   tokens rather than redefining any.
+   MERIDIAN — Admin Panel
+   Stylesheet: assets/css/admin-dashboard.css
+   SCOPE: admin-dashboard.html only. Loaded AFTER admin.css, which
+          owns the shared shell (sidebar/topbar/tokens/reset), the
+          table/toolbar/drawer patterns other admin pages reuse, and
+          the auth-guard loader states this page's [data-auth]
+          attribute relies on.
+
+   Everything here is specific to admin-dashboard.html's own
+   markup — the KPI grid and the recent-activity panel — since no
+   other planned admin page currently uses either.
+
+   Contents:
+     1. KPI grid
+     2. Recent activity panel
    ============================================================= */
 
-/* -----------------------------------------------------------
-   Page-level auth reveal — mirrors admin-login.html's pattern,
-   named per the data-auth contract this page's own HTML comment
-   documents (distinct attribute from admin-login's data-admin-auth
-   since this page uses requireAdmin(), not
-   redirectIfAdminAuthenticated()).
-   ----------------------------------------------------------- */
-[data-auth="pending"] .admin-main {
-  visibility: hidden;
-}
-
-[data-auth="pending"] .admin-page-loader {
-  display: flex;
-}
-
-[data-auth="ready"] .admin-page-loader {
-  display: none;
-}
-
-/* -----------------------------------------------------------
-   Container
-   ----------------------------------------------------------- */
-.admin-container {
-  padding: 1.75rem 2rem 3rem;
-  max-width: 1320px;
-  margin: 0 auto;
-}
-
-/* -----------------------------------------------------------
-   KPI grid
-   ----------------------------------------------------------- */
+/* -------------------------------------------------------------
+   1. KPI grid
+   ------------------------------------------------------------- */
 .admin-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.9rem;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
   margin-bottom: 1.75rem;
 }
 
 .admin-kpi-card {
-  background: var(--admin-surface);
-  border: 1px solid var(--admin-border);
+  background: var(--paper);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 1.1rem 1.25rem;
+  padding: 1.25rem 1.4rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  text-decoration: none;
-  color: inherit;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  gap: 0.35rem;
+  min-height: 96px;
 }
-
-.admin-kpi-card:hover {
-  border-color: rgba(181, 138, 68, 0.4);
-  transform: translateY(-2px);
-}
-
-.admin-kpi-card-label {
-  font-size: 0.75rem;
-  color: var(--admin-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.admin-kpi-card-value {
-  font-family: var(--font-mono);
-  font-size: 1.65rem;
-  font-weight: 500;
-  color: var(--ivory);
-  font-variant-numeric: tabular-nums;
-}
-
-.admin-kpi-card-delta {
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.admin-kpi-card-delta--up { color: #3fcf8a; }
-.admin-kpi-card-delta--down { color: #e0857c; }
-
-.admin-kpi-card--warning .admin-kpi-card-value { color: var(--amber); }
-.admin-kpi-card--danger .admin-kpi-card-value { color: #e0857c; }
 
 .admin-kpi-card--skeleton {
-  min-height: 96px;
+  background: var(--line);
+  border-color: transparent;
   position: relative;
   overflow: hidden;
-  background: var(--admin-surface);
 }
 
 .admin-kpi-card--skeleton::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(246, 245, 240, 0.05), transparent);
-  animation: admin-skeleton-sweep 1.6s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: admin-dashboard-skeleton-sweep 1.6s ease-in-out infinite;
 }
 
-@keyframes admin-skeleton-sweep {
+@keyframes admin-dashboard-skeleton-sweep {
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
 }
@@ -116,30 +64,35 @@
   }
 }
 
-/* -----------------------------------------------------------
-   Inline error banner — shown under the KPI row if
-   admin-dashboard.js's fetch fails, without blocking the rest
-   of the page.
-   ----------------------------------------------------------- */
-.admin-inline-error {
-  font-size: 0.85rem;
-  color: #e0857c;
-  background: var(--admin-danger-soft);
-  border-radius: var(--radius-sm);
-  padding: 0.7rem 0.9rem;
-  margin: -0.75rem 0 1.5rem;
+.admin-kpi-label {
+  font-size: 0.78rem;
+  color: var(--slate);
 }
 
-/* -----------------------------------------------------------
-   Generic panel shell — reused by "Recent admin activity" and
-   any future dashboard sections that aren't the KPI grid or a
-   full admin-table.
-   ----------------------------------------------------------- */
+.admin-kpi-value {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.admin-inline-error {
+  font-size: 0.85rem;
+  color: var(--red);
+  background: var(--red-bg);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* -------------------------------------------------------------
+   2. Recent activity panel
+   ------------------------------------------------------------- */
 .admin-panel {
-  background: var(--admin-surface);
-  border: 1px solid var(--admin-border);
-  border-radius: var(--radius-md);
-  padding: 1.5rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 1.6rem 1.75rem;
 }
 
 .admin-panel-head {
@@ -151,97 +104,65 @@
 }
 
 .admin-panel-head h2 {
-  font-size: 1.02rem;
-  color: var(--ivory);
-  margin: 0;
+  font-size: 1.1rem;
 }
 
 .admin-link-arrow {
-  font-size: 0.82rem;
+  font-size: 0.83rem;
   font-weight: 600;
-  color: var(--brass-light);
-  text-decoration: none;
+  color: var(--brass-dark);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s ease;
+  flex-shrink: 0;
 }
 
 .admin-link-arrow:hover {
-  text-decoration: underline;
+  border-color: currentColor;
 }
 
-/* -----------------------------------------------------------
-   Recent activity list
-   ----------------------------------------------------------- */
 .admin-activity-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
 }
 
-.admin-activity-list li:not(.admin-activity-skeleton) {
+.admin-activity-list li {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--admin-border-soft);
-  font-size: 0.85rem;
-  color: var(--ivory);
+  align-items: center;
+  gap: 0.85rem;
+  padding-block: 0.8rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.87rem;
+  color: var(--slate-dark);
 }
 
-.admin-activity-list li:not(.admin-activity-skeleton):last-child {
+.admin-activity-list li:last-child {
   border-bottom: none;
 }
 
-.admin-activity-list time {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 0.76rem;
-  color: var(--admin-text-faint);
-  white-space: nowrap;
-}
-
 .admin-activity-skeleton {
-  height: 42px;
+  height: 2.6rem;
+  background: var(--line);
   border-radius: var(--radius-sm);
-  background: var(--admin-surface-hover);
-  margin-bottom: 0.5rem;
   position: relative;
   overflow: hidden;
+  border-bottom: none !important;
 }
 
 .admin-activity-skeleton::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(246, 245, 240, 0.05), transparent);
-  animation: admin-skeleton-sweep 1.6s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: admin-dashboard-skeleton-sweep 1.6s ease-in-out infinite;
 }
 
-.admin-activity-skeleton:last-child {
-  margin-bottom: 0;
-}
-
-/* -----------------------------------------------------------
-   Responsive
-   ----------------------------------------------------------- */
-@media (max-width: 720px) {
-  .admin-container {
-    padding: 1.25rem 1rem 2.5rem;
-  }
+@media (max-width: 1080px) {
   .admin-kpi-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  .admin-kpi-card-value {
-    font-size: 1.35rem;
-  }
-  .admin-activity-list li:not(.admin-activity-skeleton) {
-    flex-direction: column;
-    gap: 0.25rem;
-  }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 900px) {
   .admin-kpi-grid {
     grid-template-columns: 1fr;
   }
