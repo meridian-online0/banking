@@ -1,0 +1,121 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   assets/css/admin-support.css
+   SCOPE: pages/admin/admin-support.html only. Reuses --admin-*
+   tokens from admin.css; admin-table/admin-drawer/admin-stat-row
+   primitives from admin.css itself.
+   ============================================================= */
+
+.admin-assign-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.admin-assign-row select {
+  flex: 1;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-text);
+  padding: 0 0.6rem;
+  height: 36px;
+  font-size: 0.85rem;
+}
+
+.admin-btn-sm {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  width: auto;
+}
+
+.admin-btn--success {
+  background: var(--admin-success);
+  color: #fff;
+}
+
+.admin-btn--success:hover {
+  opacity: 0.9;
+}
+
+.admin-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text-muted);
+}
+
+.admin-btn--ghost:hover {
+  border-color: var(--admin-text-muted);
+  color: var(--admin-text);
+}
+
+.admin-ticket-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.admin-ticket-msg {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-md);
+  padding: 0.75rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--admin-text);
+}
+
+.admin-ticket-msg--admin {
+  background: var(--admin-accent-soft);
+  border-color: transparent;
+  margin-left: 1.5rem;
+}
+
+.admin-ticket-msg-meta {
+  font-size: 0.72rem;
+  color: var(--admin-text-faint);
+  margin-bottom: 0.3rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.admin-ticket-empty {
+  font-size: 0.85rem;
+  color: var(--admin-text-muted);
+  padding: 1rem 0;
+  text-align: center;
+}
+
+.admin-reply-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.admin-reply-form textarea {
+  background: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-text);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.admin-reply-form textarea:focus {
+  outline: none;
+  border-color: var(--admin-accent);
+}
+
+.admin-reply-form button {
+  align-self: flex-end;
+}
+
+@media (max-width: 720px) {
+  .admin-stat-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
