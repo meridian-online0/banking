@@ -1,1 +1,985 @@
+/* =============================================================
+   MERIDIAN — Admin Panel
+   Stylesheet: assets/css/admin.css
+   SCOPE: Every pages/admin/*.html page, including admin-login.html.
 
+   IMPORTANT — load context differs by page:
+     - admin-login.html loads ONLY this file. No style.css, no
+       reset, no fonts, no design tokens from anywhere else. So
+       this file carries its own font import, its own minimal
+       reset, and its own copy of the core design tokens (section 2)
+       so the login page isn't unstyled HTML.
+     - admin-dashboard.html / admin-cards.html / admin-kyc.html /
+       etc. load style.css + dashboard.css + components.css BEFORE
+       this file. Section 2's tokens are simply re-declarations of
+       the same values already in style.css — harmless, since the
+       values match exactly. Keep them in sync if style.css's
+       tokens ever change.
+
+   This file does NOT redefine anything components.css/dashboard.css
+   already own for logged-in admin pages: .btn*, .modal-*, .field*,
+   .toast*, .avatar-initial*, .app-user-menu/.app-user-trigger/
+   .app-user-dropdown, .status-pill*, .sr-only, .page-head*. Those
+   come from the customer stylesheets on every page except
+   admin-login.html, which has its own .admin-field/.admin-btn
+   instead (section 5) since it has no access to those.
+
+   Contents:
+     1.  Font import & minimal reset (self-sufficient for login)
+     2.  Design tokens — same palette/type as style.css, plus
+         admin-specific layout tokens
+     3.  Base admin body & auth-guard states
+     4.  Shell layout — sidebar + topbar (admin-navbar.html)
+     5.  Login page (admin-login.html)
+     6.  Stat row (cards.html / kyc.html summary counts)
+     7.  Toolbar, search & filters
+     8.  Data table
+     9.  Detail drawer
+     10. Small shared bits (role pill, env tag, field-optional)
+     11. Responsive breakpoints
+
+   NOTE: dashboard KPI grid / recent-activity panel styles live in
+   admin-dashboard.css, not here — they're specific to
+   admin-dashboard.html's markup.
+   ============================================================= */
+
+/* -------------------------------------------------------------
+   1. Font import & minimal reset
+   ------------------------------------------------------------- */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+.admin-body,
+.admin-body *,
+.admin-body *::before,
+.admin-body *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-body img,
+.admin-body svg {
+  display: block;
+  max-width: 100%;
+}
+
+.admin-body button,
+.admin-body input,
+.admin-body select,
+.admin-body textarea {
+  font: inherit;
+  color: inherit;
+}
+
+.admin-body a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.admin-body ul,
+.admin-body ol {
+  list-style: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-body *,
+  .admin-body *::before,
+  .admin-body *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* -------------------------------------------------------------
+   2. Design tokens
+   ------------------------------------------------------------- */
+:root {
+  --ink: #0a1628;
+  --ink-2: #0f2138;
+  --ink-3: #16304e;
+  --ivory: #f6f5f0;
+  --paper: #ffffff;
+  --brass: #b58a44;
+  --brass-light: #d8b876;
+  --brass-dark: #8f6b32;
+  --slate: #5b6b7c;
+  --slate-dark: #1b2836;
+  --line: #e3e0d8;
+  --line-dark: rgba(246, 245, 240, 0.12);
+  --green: #1f8a5f;
+  --green-bg: rgba(31, 138, 95, 0.1);
+  --red: #c0453b;
+  --red-bg: rgba(192, 69, 59, 0.1);
+  --amber: #b3771d;
+  --amber-bg: rgba(179, 119, 29, 0.1);
+  --shadow-soft: 0 20px 60px -20px rgba(10, 22, 40, 0.25);
+  --shadow-card: 0 1px 2px rgba(10, 22, 40, 0.06), 0 12px 32px -16px rgba(10, 22, 40, 0.12);
+
+  --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 24px;
+
+  /* Admin-only layout tokens — the dense operational shell has no
+     equivalent in the marketing/customer token set. */
+  --admin-sidebar-w: 248px;
+  --admin-sidebar-w-collapsed: 0px;
+  --admin-topbar-h: 64px;
+}
+
+.admin-body {
+  font-family: var(--font-body);
+  color: var(--slate-dark);
+  background: var(--ivory);
+  line-height: 1.5;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.admin-body h1,
+.admin-body h2,
+.admin-body h3,
+.admin-body h4 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.admin-body p {
+  color: var(--slate);
+  font-size: 0.92rem;
+}
+
+.admin-body :focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* -------------------------------------------------------------
+   3. Base admin body & auth-guard states
+   ------------------------------------------------------------- */
+.admin-container {
+  width: 100%;
+  max-width: 1320px;
+  margin-inline: auto;
+  padding-inline: 1.75rem;
+}
+
+/* Two loader conventions exist across the pasted templates —
+   admin-dashboard.html uses .admin-page-loader with data-auth,
+   admin-cards.html/admin-kyc.html use .auth-loader with data-auth.
+   Both are styled identically here so either works. Standardize on
+   one in the JS when convenient. */
+[data-auth="pending"] .admin-main {
+  visibility: hidden;
+}
+
+.admin-page-loader,
+.auth-loader {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  align-items: center;
+  justify-content: center;
+  background: var(--ivory);
+}
+
+[data-auth="pending"] .admin-page-loader,
+[data-auth="pending"] .auth-loader {
+  display: flex;
+}
+
+[data-auth="ready"] .admin-page-loader,
+[data-auth="ready"] .auth-loader {
+  display: none;
+}
+
+.admin-page-loader-mark,
+.auth-loader-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--line);
+  border-top-color: var(--brass);
+  animation: admin-spin 0.8s linear infinite;
+}
+
+@keyframes admin-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-page-loader-mark,
+  .auth-loader-mark,
+  .admin-login-loader-mark {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------
+   4. Shell layout — sidebar + topbar
+   ------------------------------------------------------------- */
+.admin-shell-chrome {
+  position: sticky;
+  top: 0;
+  z-index: 700;
+}
+
+.admin-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--admin-sidebar-w);
+  background: var(--ink);
+  color: var(--ivory);
+  display: flex;
+  flex-direction: column;
+  z-index: 750;
+  overflow-y: auto;
+}
+
+.admin-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.35rem 1.5rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ivory);
+  border-bottom: 1px solid var(--line-dark);
+  flex-shrink: 0;
+}
+
+.admin-sidebar-brand .brand-mark {
+  width: 26px;
+  height: 26px;
+  color: var(--brass-light);
+  flex-shrink: 0;
+}
+
+.admin-sidebar-brand em {
+  font-style: normal;
+  color: var(--brass-light);
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.85rem;
+  flex: 1;
+}
+
+.admin-nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.87rem;
+  font-weight: 500;
+  color: rgba(246, 245, 240, 0.68);
+  transition: background-color 0.15s ease, color 0.15s ease;
+  position: relative;
+}
+
+.admin-nav a svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.admin-nav a:hover {
+  background: rgba(246, 245, 240, 0.06);
+  color: var(--ivory);
+}
+
+.admin-nav a.is-active {
+  background: rgba(181, 138, 68, 0.16);
+  color: var(--ivory);
+}
+
+.admin-nav a.is-active::before {
+  content: '';
+  position: absolute;
+  left: -0.85rem;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brass);
+}
+
+.admin-nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(246, 245, 240, 0.12);
+  color: var(--ivory);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.admin-nav-badge--alert {
+  background: var(--red);
+  color: var(--ivory);
+}
+
+.admin-sidebar-foot {
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid var(--line-dark);
+  flex-shrink: 0;
+}
+
+.admin-env-tag {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(246, 245, 240, 0.45);
+}
+
+.admin-topbar {
+  margin-left: var(--admin-sidebar-w);
+  height: var(--admin-topbar-h);
+  background: rgba(246, 245, 240, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-inline: 1.75rem;
+}
+
+.admin-nav-toggle {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.admin-nav-toggle svg {
+  width: 18px;
+  height: 18px;
+  color: var(--ink);
+}
+
+.admin-topbar-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.admin-user-menu .app-user-trigger {
+  padding-right: 0.55rem;
+}
+
+.admin-main {
+  margin-left: var(--admin-sidebar-w);
+  padding-block: 2rem 4rem;
+  min-height: calc(100vh - var(--admin-topbar-h));
+}
+
+/* -------------------------------------------------------------
+   5. Login page
+   ------------------------------------------------------------- */
+.admin-login-body {
+  background: var(--ink);
+}
+
+.admin-login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+[data-admin-auth="pending"] .admin-login-card {
+  visibility: hidden;
+}
+
+.admin-login-loader {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+}
+
+[data-admin-auth="pending"] .admin-login-loader {
+  display: flex;
+}
+
+[data-admin-auth="ready"] .admin-login-loader {
+  display: none;
+}
+
+.admin-login-loader-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--line-dark);
+  border-top-color: var(--brass);
+  animation: admin-spin 0.8s linear infinite;
+}
+
+.admin-login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 2.5rem 2.25rem;
+}
+
+.admin-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--ink);
+  margin-bottom: 2rem;
+}
+
+.admin-login-brand svg {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+
+.admin-login-brand em {
+  font-style: normal;
+  color: var(--brass-dark);
+}
+
+.admin-login-form h1 {
+  font-size: 1.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.admin-login-subtitle {
+  font-size: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.admin-login-error {
+  display: none;
+  font-size: 0.83rem;
+  color: var(--red);
+  background: var(--red-bg);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-login-error:not(:empty) {
+  display: block;
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1.1rem;
+}
+
+.admin-field span {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.admin-field input {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 0.95rem;
+  font-size: 0.92rem;
+  color: var(--slate-dark);
+  width: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-field input:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(181, 138, 68, 0.18);
+}
+
+.admin-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  padding: 0.85rem 1.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  margin-top: 0.4rem;
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.admin-btn--primary {
+  background: var(--ink);
+  color: var(--ivory);
+}
+
+.admin-btn--primary:hover {
+  background: var(--ink-3);
+}
+
+.admin-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------
+   6. Stat row (cards.html / kyc.html summary counts)
+   ------------------------------------------------------------- */
+.admin-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.admin-stat-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.1rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.admin-stat-label {
+  font-size: 0.78rem;
+  color: var(--slate);
+}
+
+.admin-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.admin-stat-card--warning {
+  border-color: rgba(179, 119, 29, 0.35);
+}
+
+.admin-stat-card--warning .admin-stat-value {
+  color: var(--amber);
+}
+
+.admin-stat-card--danger {
+  border-color: rgba(192, 69, 59, 0.3);
+}
+
+.admin-stat-card--danger .admin-stat-value {
+  color: var(--red);
+}
+
+/* -------------------------------------------------------------
+   7. Toolbar, search & filters
+   ------------------------------------------------------------- */
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.admin-search-field {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+}
+
+.admin-search-field svg {
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--slate);
+  pointer-events: none;
+}
+
+.admin-search-field input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.9rem 0.65rem 2.35rem;
+  font-size: 0.88rem;
+  color: var(--slate-dark);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-search-field input:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(181, 138, 68, 0.18);
+}
+
+.admin-toolbar select {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--slate-dark);
+  cursor: pointer;
+}
+
+.admin-toolbar select:focus {
+  outline: none;
+  border-color: var(--brass);
+}
+
+.admin-toolbar-count {
+  font-size: 0.82rem;
+  color: var(--slate);
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+/* -------------------------------------------------------------
+   8. Data table
+   ------------------------------------------------------------- */
+.admin-table-wrap {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table th {
+  text-align: left;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slate);
+  background: var(--ivory);
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.admin-table td {
+  padding: 0.9rem 1.25rem;
+  font-size: 0.87rem;
+  color: var(--slate-dark);
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover td {
+  background: var(--ivory);
+}
+
+.admin-table-skeleton-row td {
+  color: var(--slate);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 2.5rem 1.25rem;
+}
+
+.admin-table-empty {
+  text-align: center;
+  padding: 2.75rem 1.5rem;
+  font-size: 0.88rem;
+  color: var(--slate);
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--slate);
+}
+
+/* -------------------------------------------------------------
+   9. Detail drawer
+   ------------------------------------------------------------- */
+.admin-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 22, 40, 0.45);
+  z-index: 2000;
+  display: flex;
+  justify-content: flex-end;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.admin-drawer-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.admin-drawer {
+  width: 420px;
+  max-width: 100%;
+  height: 100%;
+  background: var(--paper);
+  box-shadow: var(--shadow-soft);
+  padding: 1.75rem;
+  overflow-y: auto;
+  transform: translateX(24px);
+  transition: transform 0.22s ease;
+}
+
+.admin-drawer-overlay.is-open .admin-drawer {
+  transform: translateX(0);
+}
+
+.admin-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.admin-drawer-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.admin-drawer-identity h2 {
+  font-size: 1.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-drawer-subtitle {
+  font-size: 0.82rem;
+  color: var(--slate);
+}
+
+.admin-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Label/value pair inside a drawer body — e.g. "Role" / a tag,
+   "KYC status" / a status pill. Generic enough for any admin-*
+   detail drawer, not just admin-users.html's. */
+.admin-drawer-field p {
+  margin-top: 0.35rem;
+  font-size: 0.92rem;
+  color: var(--slate-dark);
+}
+
+/* -------------------------------------------------------------
+   10. Small shared bits
+   ------------------------------------------------------------- */
+.admin-role-pill {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(181, 138, 68, 0.14);
+  color: var(--brass-dark);
+}
+
+.field-optional {
+  font-weight: 400;
+  color: var(--slate);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* -------------------------------------------------------------
+   11. Responsive breakpoints
+   ------------------------------------------------------------- */
+@media (max-width: 1080px) {
+  .admin-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  :root {
+    --admin-sidebar-w: 240px;
+  }
+  .admin-sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: var(--shadow-soft);
+  }
+  .admin-sidebar.is-open {
+    transform: translateX(0);
+  }
+  .admin-topbar,
+  .admin-main {
+    margin-left: 0;
+  }
+  .admin-nav-toggle {
+    display: flex;
+  }
+  .admin-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .admin-drawer {
+    width: 100%;
+  }
+
+  /* Backdrop behind the open mobile sidebar — dims the content and
+     gives a click-anywhere-outside close target. Requires
+     admin-layout.js's mobile toggle to add .is-open to .admin-sidebar
+     (see the note in section 4); a click on .admin-main while the
+     sidebar is open should close it, same contract as the customer
+     app's own mobile nav. */
+  body:has(.admin-sidebar.is-open) .admin-main {
+    position: relative;
+  }
+  body:has(.admin-sidebar.is-open) .admin-main::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 22, 40, 0.45);
+    z-index: 740;
+  }
+  body:has(.admin-sidebar.is-open) {
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding-inline: 1.1rem;
+  }
+  .admin-topbar {
+    padding-inline: 1.1rem;
+    gap: 0.6rem;
+  }
+  .admin-main {
+    padding-block: 1.5rem 3rem;
+  }
+  .admin-stat-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Toolbar stacks deliberately on narrow screens rather than
+     relying on flex-wrap's default order: search full-width first,
+     filter select and result count on their own row below. */
+  .admin-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .admin-search-field {
+    min-width: 0;
+  }
+  .admin-toolbar select {
+    flex: 1;
+  }
+  .admin-toolbar-count {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  /* Table: hide lower-priority columns AND keep horizontal scroll
+     as a safety net, so a long value in a remaining column (an
+     email address, a full name) never forces the page itself to
+     scroll sideways. */
+  .admin-table-wrap {
+    overflow-x: auto;
+  }
+  .admin-table {
+    min-width: 480px;
+  }
+  .admin-table th:nth-child(n+4),
+  .admin-table td:nth-child(n+4) {
+    display: none;
+  }
+
+  /* Role pill adds noise once the topbar is this tight — the name
+     is already hidden at 720px by .app-user-name's own rule in
+     dashboard.css, so this keeps just the avatar + logout menu. */
+  .admin-role-pill {
+    display: none;
+  }
+
+  .admin-login-card {
+    padding: 2rem 1.5rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-stat-row {
+    grid-template-columns: 1fr;
+  }
+}
