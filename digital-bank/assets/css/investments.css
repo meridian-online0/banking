@@ -14,14 +14,14 @@
 
    Contents:
      1. Page head + quick actions
-     2. Portfolio hero (value, period toggle, P/L)
-     3. Allocation donut (CSS conic-gradient, no chart library)
-     4. Section heads
+     2. Portfolio hero (value, cash line, P/L, allocation donut)
+     3. Investment wallet card + activity feed
+     4. Section heads + bottom two-column grid
      5. Holdings grid
      6. Watchlist
      7. Market movers
-     8. Recent activity
-     9. Buy / Sell modal
+     8. Recent activity (shared row style, wallet + trades)
+     9. Buy/Sell and Deposit/Withdraw modals
      10. Responsive
    ============================================================= */
 
@@ -62,13 +62,62 @@
   min-width: 0;
 }
 
+.portfolio-hero-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
 .portfolio-hero-label {
   font-family: var(--font-mono);
   font-size: 0.76rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: rgba(246, 245, 240, 0.5);
-  margin-bottom: 0.6rem;
+}
+
+/* Hide-balance toggle — sits beside the "Total portfolio value"
+   label. Blurs every .balance-value element on the page (see the
+   .balances-hidden rule below), not just the hero figure. */
+.balance-toggle-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line-dark);
+  background: rgba(246, 245, 240, 0.06);
+  color: rgba(246, 245, 240, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.balance-toggle-btn:hover {
+  background: rgba(246, 245, 240, 0.12);
+  border-color: rgba(246, 245, 240, 0.35);
+  color: var(--ivory);
+}
+
+.balance-toggle-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Anything showing the user's own money — masked with a blur
+   rather than swapped for dots, so layout never reflows when
+   toggled. Market/watchlist prices deliberately don't carry this
+   class since they aren't personal data. */
+.balance-value {
+  transition: filter 0.15s ease;
+}
+
+body.balances-hidden .balance-value {
+  filter: blur(7px);
+  user-select: none;
 }
 
 .portfolio-hero-value {
@@ -108,35 +157,26 @@
   height: 13px;
 }
 
-.portfolio-period-toggle {
-  display: inline-flex;
-  gap: 0.2rem;
-  background: rgba(246, 245, 240, 0.07);
-  border: 1px solid var(--line-dark);
-  border-radius: 999px;
-  padding: 0.25rem;
+/* Wallet cash line under the P/L badge — a quiet reminder of how
+   much dry powder is sitting in the wallet, separate from the
+   invested total above it. */
+.portfolio-hero-cash {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   margin-top: 1.4rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--line-dark);
 }
 
-.portfolio-period-btn {
-  border: none;
-  background: transparent;
-  color: rgba(246, 245, 240, 0.6);
-  font-size: 0.78rem;
-  font-weight: 600;
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease;
+.portfolio-hero-cash span {
+  font-size: 0.82rem;
+  color: rgba(246, 245, 240, 0.55);
 }
 
-.portfolio-period-btn:hover {
+.portfolio-hero-cash strong {
+  font-size: 1.05rem;
   color: var(--ivory);
-}
-
-.portfolio-period-btn.is-active {
-  background: var(--brass);
-  color: var(--ink);
 }
 
 /* -------------------------------------------------------------
@@ -155,7 +195,6 @@
   height: 132px;
   border-radius: 50%;
   flex-shrink: 0;
-  /* background-image set inline per-render as a conic-gradient by investments.js */
 }
 
 .allocation-donut::after {
@@ -224,7 +263,7 @@
 }
 
 /* -------------------------------------------------------------
-   4. Section heads
+   4. Section heads + bottom grid
    ------------------------------------------------------------- */
 .invest-section-head {
   display: flex;
@@ -240,6 +279,87 @@
 
 .invest-section {
   margin-bottom: 2.25rem;
+}
+
+.wallet-section-grid {
+  grid-template-columns: 1fr 1.1fr;
+  align-items: stretch;
+}
+
+.invest-bottom-grid {
+  grid-template-columns: 1.3fr 1fr;
+  align-items: start;
+}
+
+/* -------------------------------------------------------------
+   3b. Investment wallet card + activity feed
+   ------------------------------------------------------------- */
+.wallet-card {
+  background: linear-gradient(155deg, var(--ink) 0%, var(--ink-3) 100%);
+  color: var(--ivory);
+  border: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-card .profile-card-head h3 {
+  color: var(--ivory);
+}
+
+.wallet-card .tx-summary-label {
+  color: rgba(246, 245, 240, 0.55);
+}
+
+.wallet-balance {
+  font-family: var(--font-mono);
+  font-size: 2.1rem;
+  font-weight: 500;
+  margin-bottom: 0.65rem;
+}
+
+.wallet-balance-note {
+  font-size: 0.85rem;
+  color: rgba(246, 245, 240, 0.62);
+  margin-bottom: 1.4rem;
+  max-width: 42ch;
+}
+
+.wallet-card-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: auto;
+}
+
+.wallet-card-actions .btn {
+  flex: 1;
+}
+
+.wallet-card .btn-ghost {
+  border-color: rgba(246, 245, 240, 0.28);
+  color: var(--ivory);
+}
+
+.wallet-card .btn-ghost:hover {
+  border-color: var(--ivory);
+  background: rgba(246, 245, 240, 0.08);
+}
+
+.wallet-activity-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-activity-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.wallet-activity-row:last-child {
+  border-bottom: none;
 }
 
 /* -------------------------------------------------------------
@@ -400,6 +520,13 @@
   border-radius: var(--radius-md);
   padding: 1.1rem;
   position: relative;
+  cursor: pointer;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.watchlist-card:hover {
+  border-color: rgba(181, 138, 68, 0.35);
+  transform: translateY(-2px);
 }
 
 .watchlist-card-remove {
@@ -546,7 +673,8 @@
 }
 
 /* -------------------------------------------------------------
-   8. Recent activity
+   8. Recent activity rows (used for both trades and wallet
+      deposits/withdrawals — same visual language throughout)
    ------------------------------------------------------------- */
 .invest-activity-list {
   display: flex;
@@ -612,7 +740,7 @@
 }
 
 /* -------------------------------------------------------------
-   9. Buy / Sell modal
+   9. Buy/Sell + Deposit/Withdraw modals
    ------------------------------------------------------------- */
 .trade-modal-asset {
   display: flex;
@@ -643,6 +771,12 @@
   font-family: var(--font-mono);
 }
 
+.trade-wallet-available {
+  font-size: 0.82rem;
+  color: var(--slate);
+  margin-bottom: 1.25rem;
+}
+
 .trade-side-toggle {
   display: inline-flex;
   width: 100%;
@@ -666,12 +800,14 @@
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.trade-side-btn.is-active[data-side="buy"] {
+.trade-side-btn.is-active[data-side="buy"],
+.trade-side-btn.is-active[data-direction="deposit"] {
   background: var(--green);
   color: var(--ivory);
 }
 
-.trade-side-btn.is-active[data-side="sell"] {
+.trade-side-btn.is-active[data-side="sell"],
+.trade-side-btn.is-active[data-direction="withdrawal"] {
   background: var(--red);
   color: var(--ivory);
 }
@@ -735,6 +871,10 @@
   .portfolio-hero-donut-col {
     justify-content: flex-start;
   }
+  .wallet-section-grid,
+  .invest-bottom-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -757,6 +897,9 @@
   .portfolio-hero-value {
     font-size: 2.1rem;
   }
+  .wallet-card-actions {
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 480px) {
@@ -767,5 +910,8 @@
   .portfolio-hero-donut-col {
     flex-direction: column;
     align-items: flex-start;
+  }
+  .wallet-balance {
+    font-size: 1.7rem;
   }
 }
