@@ -472,7 +472,7 @@ export async function getTicketDetail(ticketId) {
 export async function listAdminUsers() {
   const { data, error } = await supabase
     .from('user_profiles')
-    .select('id, first_name, last_name, role')
+    .select('id, first_name, last_name, email, role')
     .in('role', ['support', 'admin', 'superadmin'])
     .order('first_name', { ascending: true });
   if (error) return { data: null, error: friendlyAdminError(error) };
