@@ -4,21 +4,35 @@
 
    Bridges supabase/auth.js to the DOM. This module doesn't talk to
    Supabase directly — it imports the wrapped functions from
-   supabase/auth.js and uses them to:
+   supabase/auth.js (and, for the profile row, supabase/database.js)
+   and uses them to:
 
      1. Guard app pages (dashboard, accounts, transfer, transactions,
         profile, settings) — bounce to login.html if there's no session.
      2. Bounce an already-logged-in visitor away from login/register.
-     3. Populate the header's user menu (name, initials) from the
-        real session instead of the hard-coded "Amara Okafor" markup.
+     3. Populate the header's user menu (name, avatar/initials) from
+        the real session + profile row, instead of hard-coded markup.
      4. Wire up every "Log out" control so it actually signs out.
      5. Open/close the user menu dropdown itself (.app-user-trigger →
         .app-user-dropdown) — see wireUserMenuToggle() below.
 
-   Import path to supabase/auth.js is resolved at runtime with a
-   dynamic import() (see resolveSupabaseBase below) so this single
-   file works unmodified whether it's loaded from index.html at the
-   site root or from a page under /pages/.
+   AVATAR DISPLAY
+   ---------------
+   Whether a user has uploaded a profile picture (user_profiles.avatar_url)
+   is resolved HERE, once, and applied to every .avatar-initial element
+   across the header/dropdown — not decided per-page. If avatar_url is
+   set, it's rendered as an <img>; otherwise the existing initials
+   fallback is used, and a broken/expired image URL falls back to
+   initials automatically (see renderAvatar()). This is the single
+   place that logic lives — profile.html's own avatar upload flow
+   should just write to user_profiles.avatar_url and let this module
+   pick it up on the next page load, rather than each page rendering
+   the avatar itself.
+
+   Import path to supabase/auth.js and supabase/database.js is
+   resolved at runtime with a dynamic import() (see SUPABASE_BASE
+   below) so this single file works unmodified whether it's loaded
+   from index.html at the site root or from a page under /pages/.
 
    Usage — add to any page, after component markup exists:
 
@@ -28,8 +42,7 @@
    No explicit initAuthUI() call is needed on pages using
    components.js — the auto-init block at the bottom of this file
    listens for 'component:loaded' itself. Just adding the <script>
-   tag is enough. (This was previously missing from dashboard.html,
-   which is why none of this ran there at all.)
+   tag is enough.
    ============================================================= */
 
 import { $, $$, getInitials } from './utils.js';
@@ -40,15 +53,6 @@ import { $, $$, getInitials } from './utils.js';
    specifiers always resolve against the importing module's URL,
    so this must not branch on window.location.pathname.
    ----------------------------------------------------------- */
-// const SUPABASE_BASE = '../supabase/';
-
-// let authModulePromise = null;
-// function loadAuthModule() {
-//   if (!authModulePromise) {
-//     authModulePromise = import(`${SUPABASE_BASE}auth.js`);
-//   }
-//   return authModulePromise;
-// }
 const SUPABASE_BASE = '../../supabase/';
 
 let authModulePromise = null;
@@ -57,6 +61,14 @@ function loadAuthModule() {
     authModulePromise = import(`${SUPABASE_BASE}auth.js`);
   }
   return authModulePromise;
+}
+
+let dbModulePromise = null;
+function loadDbModule() {
+  if (!dbModulePromise) {
+    dbModulePromise = import(`${SUPABASE_BASE}database.js`);
+  }
+  return dbModulePromise;
 }
 
 /* -----------------------------------------------------------
@@ -83,22 +95,61 @@ function isGuestOnlyPage() {
  * header/dropdown — matches the markup already used in dashboard.html,
  * profile.html, settings.html, transactions.html, transfer.html:
  *   .app-user-name          → full name
- *   .app-user-menu .avatar-initial, .profile-avatar-wrap .avatar-initial → initials
+ *   .app-user-menu .avatar-initial, .profile-avatar-wrap .avatar-initial → avatar photo or initials
  *   [data-user-email]       → email, where a page opts in
+ *
+ * `profile` is the user_profiles row (see getMyProfile() in
+ * database.js) — may be null if the fetch failed, in which case
+ * this falls back to auth's own user_metadata for name and shows
+ * initials only (no avatar_url exists there).
  */
-function populateUserChrome(user) {
+function populateUserChrome(user, profile) {
   const meta = user.user_metadata || {};
-  const firstName = meta.first_name || '';
-  const lastName = meta.last_name || '';
+  const firstName = profile?.first_name || meta.first_name || '';
+  const lastName = profile?.last_name || meta.last_name || '';
   const fullName = [firstName, lastName].filter(Boolean).join(' ') || user.email || 'Meridian customer';
   const initials = getInitials(fullName);
+  const avatarUrl = profile?.avatar_url || null;
 
   $$('.app-user-name').forEach((el) => { el.textContent = fullName; });
   $$('.app-user-menu .avatar-initial, .profile-avatar-wrap .avatar-initial').forEach((el) => {
-    el.textContent = initials;
+    renderAvatar(el, avatarUrl, initials);
   });
   $$('[data-user-email]').forEach((el) => { el.textContent = user.email; });
   $$('[data-user-first-name]').forEach((el) => { el.textContent = firstName; });
+}
+
+/**
+ * Renders either the user's uploaded avatar photo or their initials
+ * into a single .avatar-initial element — never both. Swaps rather
+ * than assumes: a page whose avatar_url is stale/deleted (404 from
+ * storage) falls back to initials automatically via the <img>'s
+ * onerror, instead of showing a broken image icon in the header.
+ */
+function renderAvatar(el, avatarUrl, initials) {
+  const existingImg = el.querySelector('img.avatar-image');
+
+  if (avatarUrl) {
+    const img = existingImg || document.createElement('img');
+    img.className = 'avatar-image';
+    img.alt = '';
+    img.onerror = () => {
+      img.remove();
+      el.classList.remove('has-avatar-image');
+      el.textContent = initials;
+    };
+    img.src = avatarUrl;
+
+    if (!existingImg) {
+      el.textContent = ''; // clear the initials text node before inserting the image
+      el.appendChild(img);
+    }
+    el.classList.add('has-avatar-image');
+  } else {
+    if (existingImg) existingImg.remove();
+    el.classList.remove('has-avatar-image');
+    el.textContent = initials;
+  }
 }
 
 /* -----------------------------------------------------------
@@ -223,7 +274,13 @@ export async function initAuthUI() {
     const user = await requireAuth(); // redirects to login.html internally if no session
     if (!user) return;
 
-    populateUserChrome(user);
+    const { getMyProfile } = await loadDbModule();
+    const { data: profile, error: profileError } = await getMyProfile(user.id);
+    if (profileError) {
+      console.warn('[Meridian] Could not load profile for header:', profileError);
+    }
+
+    populateUserChrome(user, profile);
     wireUserMenuToggle();
     wireLogoutControls(signOutUser);
 
