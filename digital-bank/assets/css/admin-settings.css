@@ -1,0 +1,60 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   assets/css/admin-settings.css
+   SCOPE: pages/admin/admin-settings.html only.
+   ============================================================= */
+
+.admin-settings-hint {
+  font-size: 0.85rem;
+  color: var(--admin-text-muted);
+  margin-bottom: 1rem;
+}
+
+.admin-settings-search {
+  margin-bottom: 1rem;
+}
+
+.admin-role-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--admin-neutral-soft);
+  color: var(--admin-text-muted);
+}
+
+.admin-role-badge--support { background: var(--admin-accent-soft); color: var(--admin-accent); }
+.admin-role-badge--admin { background: var(--admin-warning-soft); color: var(--admin-warning); }
+.admin-role-badge--superadmin { background: var(--admin-danger-soft); color: var(--admin-danger); }
+
+.admin-btn-sm {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  width: auto;
+}
+
+.admin-promote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--admin-border-soft);
+}
+
+.admin-promote-row:last-child {
+  border-bottom: none;
+}
+
+.admin-promote-identity strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--admin-text);
+}
+
+.admin-promote-identity span {
+  font-size: 0.78rem;
+  color: var(--admin-text-muted);
+}
