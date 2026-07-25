@@ -727,10 +727,15 @@ function initApiKeyModal() {
   if (!user) return;
   currentUser = user;
 
-  initUserMenu();
-  initLogout();
-  initMobileNav();
-  initUserMenu();
+  // Header-dependent init waits for the app-navbar component to
+  // actually be in the DOM — see waitForNavbar() above.
+  waitForNavbar().then(() => {
+    populateNotificationBadge();
+    initUserMenu();
+    initMobileNav();
+    initLogout();
+  });
+
   initSectionNav();
   initGeneralForm();
   initSignOutEverywhere();
