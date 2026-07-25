@@ -285,15 +285,20 @@ export async function reverseTransaction(transactionId, reason) {
 /* -----------------------------------------------------------
    4. KYC queue — admin-kyc.html
    ----------------------------------------------------------- */
-export async function listKycQueue({ page = 1, pageSize = 25 } = {}) {
-  const from = (page - 1) * pageSize;
-  const { data, error, count } = await supabase
+export async function listKycQueue({ search, page = 1, pageSize = 25 } = {}) {
+  let query = supabase
     .from('user_profiles')
     .select('*', { count: 'exact' })
-    .eq('account_status', 'Pending')
-    .order('created_at', { ascending: true })
-    .range(from, from + pageSize - 1);
+    .eq('account_status', 'Pending');
 
+  if (search) {
+    query = query.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,email.ilike.%${search}%`);
+  }
+
+  const from = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: true }).range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
   if (error) return { data: null, error: friendlyAdminError(error) };
   return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
 }
@@ -309,11 +314,14 @@ export async function rejectKyc(userId, reason) {
 /* -----------------------------------------------------------
    5. Cards — admin-cards.html
    ----------------------------------------------------------- */
-export async function listCards({ status, search, page = 1, pageSize = 25 } = {}) {
+export async function listCards({ status, type, search, page = 1, pageSize = 25 } = {}) {
   let query = supabase.from('cards').select('*', { count: 'exact' });
 
   if (status) query = query.eq('card_status', status);
-  if (search) query = query.ilike('id', `%${search}%`);
+  if (type) query = query.eq('card_type', type);
+  // card_number, not id — the field an admin actually has in hand
+  // (a customer reads out the last 4, or support pastes a full PAN).
+  if (search) query = query.ilike('card_number', `%${search}%`);
 
   const from = (page - 1) * pageSize;
   query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
@@ -321,6 +329,59 @@ export async function listCards({ status, search, page = 1, pageSize = 25 } = {}
   const { data, error, count } = await query;
   if (error) return { data: null, error: friendlyAdminError(error) };
   return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+}
+
+/**
+ * Card + its owning account + that account's holder, for the
+ * admin-cards.html detail drawer. cards has no direct user_id
+ * (see getUserDetail()'s flagged assumption above) — it's reached
+ * via cards.account_id -> accounts.user_id -> user_profiles.
+ */
+export async function getCardDetail(cardId) {
+  const { data: card, error: cardError } = await supabase.from('cards').select('*').eq('id', cardId).single();
+  if (cardError) return { data: null, error: friendlyAdminError(cardError) };
+
+  const { data: account, error: accountError } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('id', card.account_id)
+    .single();
+  if (accountError) return { data: { card, account: null, holder: null }, error: null };
+
+  const { data: holder } = await supabase
+    .from('user_profiles')
+    .select('id, first_name, last_name, email')
+    .eq('id', account.user_id)
+    .maybeSingle();
+
+  return { data: { card, account, holder: holder || null }, error: null };
+}
+
+/**
+ * Counts of cards by status, for admin-cards.html's stat row. Four
+ * lightweight head:true count queries (no rows over the wire) —
+ * same shape as getDashboardStats() above, just scoped to one table.
+ */
+export async function getCardStatusSummary() {
+  const [active, frozen, pending, cancelled] = await Promise.all([
+    supabase.from('cards').select('id', { count: 'exact', head: true }).eq('card_status', 'Active'),
+    supabase.from('cards').select('id', { count: 'exact', head: true }).eq('card_status', 'Frozen'),
+    supabase.from('cards').select('id', { count: 'exact', head: true }).eq('card_status', 'Pending'),
+    supabase.from('cards').select('id', { count: 'exact', head: true }).eq('card_status', 'Cancelled'),
+  ]);
+
+  const firstError = [active, frozen, pending, cancelled].find((r) => r.error);
+  if (firstError) return { data: null, error: friendlyAdminError(firstError.error) };
+
+  return {
+    data: {
+      active: active.count ?? 0,
+      frozen: frozen.count ?? 0,
+      pending: pending.count ?? 0,
+      cancelled: cancelled.count ?? 0,
+    },
+    error: null,
+  };
 }
 
 export async function setCardStatus(cardId, status, reason) {
