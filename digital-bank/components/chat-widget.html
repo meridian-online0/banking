@@ -1,0 +1,103 @@
+<!-- =========================================================
+     COMPONENT: Live support chat widget (floating button + panel)
+     Injected on every authenticated customer page EXCEPT
+     login.html, register.html, settings.html, profile.html —
+     see CHAT_WIDGET_EXCLUDED_PAGES in assets/js/chat-widget.js.
+
+     Loaded by mountChatWidget() in assets/js/chat-widget.js,
+     booted from components/components.js the same way the
+     notification bell is booted after app-navbar loads (see
+     bootChatWidget() added to components.js). Do not copy this
+     markup into individual pages — edit it here only.
+
+     This connects to a REAL human agent, not a bot — the header
+     copy and the first message (sent server-side, see
+     chat_thread_welcome_message() in chat_schema.sql) both say
+     so explicitly. Supports sending pictures and documents as
+     attachments (see attach button in the input row) alongside
+     plain text.
+     ========================================================= -->
+<div id="chat-widget-root" class="chat-widget" data-chat-widget>
+  <button
+    id="chat-widget-button"
+    class="chat-widget-button"
+    type="button"
+    aria-haspopup="dialog"
+    aria-expanded="false"
+    aria-controls="chat-widget-panel"
+    aria-label="Open support chat"
+    data-chat-toggle
+  >
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="chat-widget-icon chat-widget-icon-open">
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h-1A2.5 2.5 0 0 1 2 13.5v-8A2.5 2.5 0 0 1 4.5 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="chat-widget-icon chat-widget-icon-close">
+      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <span class="chat-widget-badge" data-chat-unread-badge hidden>0</span>
+  </button>
+
+  <div
+    id="chat-widget-panel"
+    class="chat-widget-panel"
+    role="dialog"
+    aria-modal="false"
+    aria-label="Support chat"
+    aria-hidden="true"
+    hidden
+  >
+    <header class="chat-widget-header">
+      <div class="chat-widget-header-info">
+        <span class="chat-widget-status-dot" aria-hidden="true"></span>
+        <div>
+          <p class="chat-widget-title">Meridian Support</p>
+          <p class="chat-widget-subtitle">Live agent &middot; available 24/7</p>
+        </div>
+      </div>
+      <button class="chat-widget-close" type="button" aria-label="Close chat" data-chat-close>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+
+    <div class="chat-widget-messages" data-chat-messages aria-live="polite">
+      <div class="chat-widget-loading" data-chat-loading>Connecting you to support&hellip;</div>
+    </div>
+
+    <div class="chat-widget-file-preview" data-chat-file-preview hidden>
+      <div class="chat-widget-file-preview-thumb" data-chat-file-preview-thumb aria-hidden="true"></div>
+      <span class="chat-widget-file-preview-name" data-chat-file-preview-name></span>
+      <button type="button" class="chat-widget-file-remove" data-chat-file-remove aria-label="Remove attachment">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <form class="chat-widget-input-row" data-chat-form>
+      <input
+        type="file"
+        id="chat-widget-file-input"
+        data-chat-file-input
+        accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.doc,.docx"
+        hidden
+      />
+      <button
+        type="button"
+        class="chat-widget-attach"
+        data-chat-attach
+        aria-label="Attach a picture or document"
+      >
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M13.5 6.5 8 12a2.5 2.5 0 1 1-3.5-3.5L10 3a4 4 0 1 1 5.66 5.66L9.5 15" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <textarea
+        class="chat-widget-input"
+        data-chat-input
+        placeholder="Type a message&hellip;"
+        rows="1"
+        maxlength="2000"
+        aria-label="Message"
+      ></textarea>
+      <button class="chat-widget-send" type="submit" aria-label="Send message" data-chat-send disabled>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 10L17 3l-5 14-2.5-6L2.5 10Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      </button>
+    </form>
+  </div>
+</div>
