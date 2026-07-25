@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Users — Meridian Admin</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<link rel="stylesheet" href="../../assets/css/dashboard.css">
+<link rel="stylesheet" href="../../assets/css/components.css">
+<link rel="stylesheet" href="../../assets/css/admin.css">
+</head>
+<body class="app-body admin-body" data-auth="pending">
+
+<div class="auth-loader" aria-hidden="true"><span class="auth-loader-mark"></span></div>
+
+<!-- =========================================================
+     ADMIN SIDEBAR + TOPBAR
+     Loaded from components/admin-navbar.html by admin-layout.js.
+     Do not hardcode this markup here — edit components/admin-navbar.html.
+     ========================================================= -->
+<div data-component="admin-navbar"></div>
+
+<main id="main-content" class="admin-main">
+  <div class="container">
+
+    <div class="page-head page-head--split">
+      <div>
+        <h1>Users</h1>
+        <p>Every Meridian customer and staff account. Search, filter, and open a profile for full detail.</p>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         FILTER BAR
+         ========================================================= -->
+    <div class="admin-toolbar">
+      <div class="admin-search-field">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.4"/><path d="m14 14-3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <input type="search" id="user-search" placeholder="Search name or email…" aria-label="Search users">
+      </div>
+
+      <select id="status-filter" aria-label="Filter by status">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="Pending">Pending KYC</option>
+        <option value="rejected">Rejected</option>
+        <option value="frozen">Frozen</option>
+      </select>
+
+      <span class="admin-toolbar-count" id="user-count" aria-live="polite"></span>
+    </div>
+
+    <!-- =========================================================
+         USERS TABLE — populated by admin-users.js
+         ========================================================= -->
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Email</th>
+            <th scope="col">Status</th>
+            <th scope="col">Role</th>
+            <th scope="col">Joined</th>
+            <th scope="col"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="users-table-body" aria-live="polite">
+          <tr class="admin-table-skeleton-row"><td colspan="6">Loading users…</td></tr>
+        </tbody>
+      </table>
+
+      <p class="admin-table-empty" id="users-empty" hidden>No users match these filters.</p>
+    </div>
+
+    <!-- =========================================================
+         PAGINATION
+         ========================================================= -->
+    <div class="admin-pagination" id="users-pagination" aria-live="polite">
+      <button type="button" class="btn btn-ghost btn-sm" id="users-prev-page" disabled>Previous</button>
+      <span id="users-page-indicator">Page 1</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="users-next-page" disabled>Next</button>
+    </div>
+
+  </div>
+</main>
+
+<!-- =========================================================
+     USER DETAIL DRAWER
+     Side panel, not a full-page nav — reused shape for
+     admin-transactions.html / admin-kyc.html detail views.
+     ========================================================= -->
+<div class="admin-drawer-overlay" id="user-drawer-overlay" aria-hidden="true">
+  <aside class="admin-drawer" role="dialog" aria-modal="true" aria-labelledby="user-drawer-title">
+    <div class="admin-drawer-head">
+      <div class="admin-drawer-identity">
+        <span class="avatar-initial" id="user-drawer-avatar">·</span>
+        <div>
+          <h2 id="user-drawer-title">—</h2>
+          <span id="user-drawer-email" class="admin-drawer-subtitle">—</span>
+        </div>
+      </div>
+      <button type="button" class="modal-close" id="user-drawer-close" aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="admin-drawer-body" id="user-drawer-body">
+      <!-- injected by admin-users.js: profile summary, accounts,
+           cards, recent transactions, login sessions -->
+    </div>
+  </aside>
+</div>
+
+<!-- =========================================================
+     CONFIRMATION MODAL — freeze / unfreeze account
+     Typed-confirmation not required for freeze/unfreeze (that's
+     reserved for the most dangerous actions, e.g. role changes on
+     admin-settings.html) — a reason plus an explicit confirm click
+     is the bar here.
+     ========================================================= -->
+<div class="modal-overlay" id="confirm-modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="confirm-modal-title">Confirm action</h3>
+        <p id="confirm-modal-copy">—</p>
+      </div>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <form id="confirm-modal-form" novalidate>
+      <div class="field">
+        <label for="confirm-modal-reason">Reason</label>
+        <textarea id="confirm-modal-reason" rows="3" placeholder="Required — logged to the audit trail" required></textarea>
+        <span class="field-error" role="alert"></span>
+      </div>
+
+      <p class="field-hint" id="confirm-modal-error" style="color:var(--red); display:none; margin-bottom:1rem;"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-primary" id="confirm-modal-submit">Confirm</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+<script src="../../assets/js/main.js"></script>
+<script type="module" src="admin-users.js"></script>
+</body>
+</html>
