@@ -5,7 +5,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Investments — Meridian</title>
-<meta name="description" content="Buy and sell crypto, track your portfolio, and watch the market — all funded from your Meridian accounts.">
+<meta name="description" content="Fund your investment wallet, then buy and sell crypto and track your portfolio.">
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="../assets/css/style.css">
@@ -19,14 +19,9 @@
 <a class="skip-link" href="#main-content">Skip to main content</a>
 
 <!-- =========================================================
-     LOGGED-IN APP HEADER
-     Loaded from components/app-navbar.html by components.js —
-     also carries the notification bell ([data-notification-bell])
-     and boots the notification center automatically once injected.
-     Do not hardcode the header markup here — edit
-     components/app-navbar.html instead. Same include as
-     dashboard.html, so the header, notification bell/dropdown,
-     and user menu behave identically on both pages.
+     LOGGED-IN APP HEADER — same include as dashboard.html, so the
+     header, notification bell/dropdown, user menu, and mobile nav
+     toggle behave identically on both pages.
      ========================================================= -->
 <div data-component="app-navbar"></div>
 
@@ -36,7 +31,7 @@
     <div class="page-head page-head--split">
       <div>
         <h1>Investments</h1>
-        <p>Crypto, funded straight from your Meridian accounts. Prices refresh automatically.</p>
+        <p>Fund your investment wallet from any Meridian account, then buy and sell crypto. Prices refresh automatically.</p>
       </div>
       <div class="invest-quick-actions">
         <button type="button" class="btn btn-primary" id="open-buy-modal">
@@ -44,7 +39,7 @@
           Buy
         </button>
         <button type="button" class="btn btn-ghost" id="open-sell-modal">Sell</button>
-        <a href="accounts.html" class="btn btn-ghost">Deposit</a>
+        <button type="button" class="btn btn-ghost" id="open-deposit-modal">Deposit</button>
       </div>
     </div>
 
@@ -53,9 +48,19 @@
          ========================================================= -->
     <section class="portfolio-hero">
       <div class="portfolio-hero-value-col">
-        <div class="portfolio-hero-label">Total portfolio value</div>
-        <div class="portfolio-hero-value mono">$<span id="portfolio-total-value">0.00</span></div>
-        <span class="portfolio-hero-pl" id="portfolio-pl-badge">+$0.00 (+0.00%) all time</span>
+        <div class="portfolio-hero-label-row">
+          <div class="portfolio-hero-label">Total portfolio value</div>
+          <button type="button" class="balance-toggle-btn" id="balance-toggle-btn" aria-pressed="false" aria-label="Hide balances">
+            <svg class="icon-eye" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M1.5 10S4.5 4 10 4s8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.3" stroke="currentColor" stroke-width="1.4"/></svg>
+            <svg class="icon-eye-off" viewBox="0 0 20 20" fill="none" aria-hidden="true" style="display:none;"><path d="M3 3l14 14M8.3 8.4a2.3 2.3 0 0 0 3.3 3.3M6.2 6.1C3.8 7.4 2 10 2 10s3 6 8 6c1.4 0 2.6-.4 3.6-1M12.6 5.2C11.8 4.9 11 4.7 10 4.7c-.4 0-.8 0-1.2.1M15.4 7.3c1.4 1.3 2.6 2.7 2.6 2.7s-1 2-2.8 3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="portfolio-hero-value mono balance-value">$<span id="portfolio-total-value">0.00</span></div>
+        <span class="portfolio-hero-pl balance-value" id="portfolio-pl-badge">+$0.00 (+0.00%) all time</span>
+        <div class="portfolio-hero-cash">
+          <span>Wallet cash available</span>
+          <strong class="mono balance-value" id="portfolio-cash-value">$0.00</strong>
+        </div>
       </div>
       <div class="portfolio-hero-donut-col">
         <div class="allocation-donut" id="allocation-donut">
@@ -65,6 +70,33 @@
           </div>
         </div>
         <div class="allocation-legend" id="allocation-legend"></div>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         INVESTMENT WALLET
+         ========================================================= -->
+    <section class="invest-section">
+      <div class="grid wallet-section-grid">
+        <div class="profile-card wallet-card">
+          <div class="profile-card-head">
+            <h3>Investment wallet</h3>
+            <span class="tx-summary-label">USD cash</span>
+          </div>
+          <div class="wallet-balance mono skeleton balance-value" id="wallet-balance">$0.00</div>
+          <p class="wallet-balance-note">This is what your buys and sells draw from — deposit from any Meridian account to fund it, or withdraw back out any time.</p>
+          <div class="wallet-card-actions">
+            <button type="button" class="btn btn-primary" id="open-deposit-modal-inline">Deposit</button>
+            <button type="button" class="btn btn-ghost" id="open-withdraw-modal">Withdraw</button>
+          </div>
+        </div>
+
+        <div class="profile-card">
+          <div class="profile-card-head">
+            <h3>Wallet activity</h3>
+          </div>
+          <div class="wallet-activity-list skeleton" id="wallet-activity-list" style="min-height:120px;"></div>
+        </div>
       </div>
     </section>
 
@@ -107,12 +139,12 @@
       </div>
     </section>
 
-    <div class="grid" style="grid-template-columns: 1.3fr 1fr; align-items:start;">
+    <div class="grid invest-bottom-grid">
       <!-- ===================== RECENT ACTIVITY ===================== -->
       <section class="invest-section">
         <div class="profile-card">
           <div class="profile-card-head">
-            <h3>Recent activity</h3>
+            <h3>Recent trades</h3>
           </div>
           <div class="invest-activity-list" id="invest-activity-list">
             <div class="skeleton" style="height:56px;border-radius:10px;margin-bottom:0.6rem;"></div>
@@ -140,14 +172,15 @@
 </main>
 
 <!-- =========================================================
-     BUY / SELL MODAL
+     BUY / SELL MODAL — funded entirely from the investment wallet,
+     so there's no funding-account picker here anymore.
      ========================================================= -->
 <div class="modal-overlay" id="trade-modal" aria-hidden="true">
   <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
     <div class="modal-head">
       <div>
         <h3 id="trade-modal-title">Trade</h3>
-        <p>Funded instantly from the account you choose below.</p>
+        <p>Funded instantly from your investment wallet.</p>
       </div>
       <button type="button" class="modal-close" data-close-modal aria-label="Close">
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -173,8 +206,7 @@
         <select id="trade-asset-select"></select>
       </div>
 
-      <p class="field-label-static">Funding account</p>
-      <div class="account-strip" id="trade-account-strip" role="radiogroup" aria-label="Account to trade with" style="margin-bottom:1.25rem;"></div>
+      <p class="trade-wallet-available" id="trade-wallet-available">Available: $0.00 in your investment wallet</p>
 
       <div class="field trade-qty-field">
         <label for="trade-qty-input">Quantity</label>
@@ -192,7 +224,7 @@
           <span class="mono" id="trade-summary-fee">—</span>
         </div>
         <div class="trade-summary-row is-total">
-          <span id="trade-summary-total-label">Total to pay</span>
+          <span id="trade-summary-total-label">Total from wallet</span>
           <span class="mono" id="trade-summary-total">—</span>
         </div>
       </div>
@@ -200,6 +232,45 @@
       <p class="field-hint" id="trade-error" style="color:var(--red); display:none; margin-bottom:1rem;"></p>
 
       <button type="submit" class="btn btn-primary btn-block" id="trade-submit-btn">Buy</button>
+    </form>
+  </div>
+</div>
+
+<!-- =========================================================
+     DEPOSIT / WITHDRAW MODAL — moves money between a currency
+     account and the investment wallet.
+     ========================================================= -->
+<div class="modal-overlay" id="wallet-modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="wallet-modal-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="wallet-modal-title">Investment wallet</h3>
+        <p>Move money between a currency account and your investment wallet.</p>
+      </div>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="trade-side-toggle" id="wallet-direction-toggle">
+      <button type="button" class="trade-side-btn is-active" data-direction="deposit">Deposit</button>
+      <button type="button" class="trade-side-btn" data-direction="withdrawal">Withdraw</button>
+    </div>
+
+    <form id="wallet-form" novalidate>
+      <p class="field-label-static" id="wallet-account-label">From account</p>
+      <div class="account-strip" id="wallet-account-strip" role="radiogroup" aria-label="Account" style="margin-bottom:1.25rem;"></div>
+
+      <div class="field">
+        <label for="wallet-amount-input" id="wallet-amount-label">Amount</label>
+        <input type="number" id="wallet-amount-input" min="0" step="any" inputmode="decimal" placeholder="0.00" autocomplete="off">
+      </div>
+
+      <p class="field-hint" id="wallet-modal-note" style="margin-bottom:1.25rem;">Enter an amount to see how much lands in your wallet.</p>
+
+      <p class="field-hint" id="wallet-error" style="color:var(--red); display:none; margin-bottom:1rem;"></p>
+
+      <button type="submit" class="btn btn-primary btn-block" id="wallet-submit-btn">Deposit</button>
     </form>
   </div>
 </div>
