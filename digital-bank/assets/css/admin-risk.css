@@ -4,48 +4,13 @@
    SCOPE: pages/admin/admin-risk.html only.
    ============================================================= */
 
-.admin-btn--warning {
-  background: var(--admin-warning);
-  color: var(--admin-bg);
-}
-
-.admin-btn--warning:hover {
-  opacity: 0.9;
-}
-
-.admin-btn--success {
-  background: var(--admin-success);
-  color: #fff;
-}
-
-.admin-btn--success:hover {
-  opacity: 0.9;
-}
-
-.admin-btn--ghost {
-  background: transparent;
-  border: 1px solid var(--admin-border);
-  color: var(--admin-text-muted);
-}
-
-.admin-btn--ghost:hover {
-  border-color: var(--admin-text-muted);
-  color: var(--admin-text);
-}
-
-.admin-btn-sm {
-  padding: 0.5rem 0.9rem;
-  font-size: 0.8rem;
-  width: auto;
-}
-
 .admin-flag-description {
   font-size: 0.88rem;
-  color: var(--admin-text);
+  color: var(--ivory);
   line-height: 1.55;
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-md);
+  border-radius: var(--radius-md);
   padding: 0.85rem 1rem;
 }
 
