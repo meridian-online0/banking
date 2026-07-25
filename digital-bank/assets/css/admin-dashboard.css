@@ -2,8 +2,9 @@
    MERIDIAN — Admin panel
    assets/css/admin-dashboard.css
    SCOPE: pages/admin/admin-dashboard.html only. Loaded AFTER
-   admin.css — reuses its --admin-* tokens (surface, border, text,
-   accent, danger, radius, shadow) rather than redefining any.
+   admin.css — reuses its surface/border/text aliases and
+   style.css's real --ink/--ivory/--brass/--radius/--shadow/--font
+   tokens rather than redefining any.
    ============================================================= */
 
 /* -----------------------------------------------------------
@@ -25,40 +26,8 @@
   display: none;
 }
 
-.admin-page-loader {
-  display: none;
-  position: fixed;
-  inset: 0;
-  align-items: center;
-  justify-content: center;
-  background: var(--admin-bg);
-  z-index: 100;
-}
-
-.admin-page-loader-mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 2.5px solid var(--admin-border);
-  border-top-color: var(--admin-accent);
-  animation: admin-page-spin 0.7s linear infinite;
-}
-
-@keyframes admin-page-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .admin-page-loader-mark {
-    animation: none;
-  }
-}
-
 /* -----------------------------------------------------------
-   Container — admin.css's .admin-main already handles the
-   sidebar/topbar offset; this just constrains and pads the
-   content width inside it, same role as .admin-main .container
-   elsewhere but under the name this page's markup actually uses.
+   Container
    ----------------------------------------------------------- */
 .admin-container {
   padding: 1.75rem 2rem 3rem;
@@ -79,7 +48,7 @@
 .admin-kpi-card {
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-lg);
+  border-radius: var(--radius-md);
   padding: 1.1rem 1.25rem;
   display: flex;
   flex-direction: column;
@@ -90,7 +59,7 @@
 }
 
 .admin-kpi-card:hover {
-  border-color: var(--admin-accent);
+  border-color: rgba(181, 138, 68, 0.4);
   transform: translateY(-2px);
 }
 
@@ -102,9 +71,10 @@
 }
 
 .admin-kpi-card-value {
-  font-size: 1.6rem;
-  font-weight: 700;
-  color: var(--admin-text);
+  font-family: var(--font-mono);
+  font-size: 1.65rem;
+  font-weight: 500;
+  color: var(--ivory);
   font-variant-numeric: tabular-nums;
 }
 
@@ -113,11 +83,11 @@
   font-weight: 600;
 }
 
-.admin-kpi-card-delta--up { color: var(--admin-success); }
-.admin-kpi-card-delta--down { color: var(--admin-danger); }
+.admin-kpi-card-delta--up { color: #3fcf8a; }
+.admin-kpi-card-delta--down { color: #e0857c; }
 
-.admin-kpi-card--warning .admin-kpi-card-value { color: var(--admin-warning); }
-.admin-kpi-card--danger .admin-kpi-card-value { color: var(--admin-danger); }
+.admin-kpi-card--warning .admin-kpi-card-value { color: var(--amber); }
+.admin-kpi-card--danger .admin-kpi-card-value { color: #e0857c; }
 
 .admin-kpi-card--skeleton {
   min-height: 96px;
@@ -130,7 +100,7 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+  background: linear-gradient(90deg, transparent, rgba(246, 245, 240, 0.05), transparent);
   animation: admin-skeleton-sweep 1.6s ease-in-out infinite;
 }
 
@@ -140,7 +110,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .admin-kpi-card--skeleton::after {
+  .admin-kpi-card--skeleton::after,
+  .admin-activity-skeleton::after {
     animation: none;
   }
 }
@@ -152,9 +123,9 @@
    ----------------------------------------------------------- */
 .admin-inline-error {
   font-size: 0.85rem;
-  color: var(--admin-danger);
+  color: #e0857c;
   background: var(--admin-danger-soft);
-  border-radius: var(--admin-radius-sm);
+  border-radius: var(--radius-sm);
   padding: 0.7rem 0.9rem;
   margin: -0.75rem 0 1.5rem;
 }
@@ -167,7 +138,7 @@
 .admin-panel {
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-lg);
+  border-radius: var(--radius-md);
   padding: 1.5rem;
 }
 
@@ -181,14 +152,14 @@
 
 .admin-panel-head h2 {
   font-size: 1.02rem;
-  color: var(--admin-text);
+  color: var(--ivory);
   margin: 0;
 }
 
 .admin-link-arrow {
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--admin-accent);
+  color: var(--brass-light);
   text-decoration: none;
 }
 
@@ -215,7 +186,7 @@
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--admin-border-soft);
   font-size: 0.85rem;
-  color: var(--admin-text);
+  color: var(--ivory);
 }
 
 .admin-activity-list li:not(.admin-activity-skeleton):last-child {
@@ -224,6 +195,7 @@
 
 .admin-activity-list time {
   flex-shrink: 0;
+  font-family: var(--font-mono);
   font-size: 0.76rem;
   color: var(--admin-text-faint);
   white-space: nowrap;
@@ -231,7 +203,7 @@
 
 .admin-activity-skeleton {
   height: 42px;
-  border-radius: var(--admin-radius-sm);
+  border-radius: var(--radius-sm);
   background: var(--admin-surface-hover);
   margin-bottom: 0.5rem;
   position: relative;
@@ -242,18 +214,12 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+  background: linear-gradient(90deg, transparent, rgba(246, 245, 240, 0.05), transparent);
   animation: admin-skeleton-sweep 1.6s ease-in-out infinite;
 }
 
 .admin-activity-skeleton:last-child {
   margin-bottom: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .admin-activity-skeleton::after {
-    animation: none;
-  }
 }
 
 /* -----------------------------------------------------------
@@ -268,6 +234,10 @@
   }
   .admin-kpi-card-value {
     font-size: 1.35rem;
+  }
+  .admin-activity-list li:not(.admin-activity-skeleton) {
+    flex-direction: column;
+    gap: 0.25rem;
   }
 }
 
