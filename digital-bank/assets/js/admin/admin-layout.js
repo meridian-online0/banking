@@ -50,7 +50,7 @@
    convention as components.js.
    ============================================================= */
 
-import { signOutUser } from '../../supabase/auth.js';
+import { signOutUser } from '../../../supabase/auth.js';
 import { canAccess } from './admin-guard.js';
 
 const ADMIN_NAVBAR_PARTIAL_PATH = '../../components/admin-navbar.html';
