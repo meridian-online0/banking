@@ -2,31 +2,33 @@
    MERIDIAN — Investments page
    Script: pages/investments.js
    Loaded as a module by investments.html only. Handles:
-     1. Auth guard + shared app-header bits (same pattern as
-        accounts.js / transfer.js)
-     2. Loading accounts, holdings, watchlist, live market prices,
-        and recent order history in parallel
-     3. Portfolio hero: total value + all-time profit/loss. No
-        daily/weekly/monthly/yearly toggle — that needs a price
-        HISTORY table this MVP doesn't have (market_prices_cache
-        only stores the latest snapshot). Faking those numbers
-        would be worse than not showing them; real periods are a
-        fast-follow once price history is tracked.
-     4. Allocation donut — a plain CSS conic-gradient, no charting
+     1. Auth guard + shared app-header bits (identity, user menu,
+        mobile nav toggle, logout — see the note above initUserMenu()
+        for why the dropdown needs to anchor on .app-user-trigger)
+     2. Investment wallet: balance, deposit (from a currency
+        account) and withdraw (back to one), and a small activity
+        feed of past deposits/withdrawals
+     3. Loading holdings, watchlist, live market prices, and recent
+        order history in parallel — all now scoped to the wallet,
+        not a currency account (see 003_investment_wallet.sql)
+     4. Portfolio hero: total value + all-time profit/loss, plus
+        cash sitting in the wallet. No daily/weekly/monthly/yearly
+        toggle — that needs a price HISTORY table this MVP doesn't
+        have (market_prices_cache only stores the latest snapshot).
+     5. Allocation donut — plain CSS conic-gradient, no charting
         library, built from each holding's live USD value share.
-     5. Holdings, watchlist (with add-by-search), and market-movers
+     6. Holdings, watchlist (with add-by-search), and market-movers
         list, all reading from getMarketPrices()'s cache.
-     6. A single buy/sell modal (side toggle rather than two
-        separate modals) wired to buyInvestment() / sellInvestment().
+     7. A single buy/sell modal (side toggle rather than two modals)
+        wired to buyInvestment() / sellInvestment() — funded
+        entirely from the wallet, so there's no funding-account
+        picker here anymore.
 
    NOTE ON THE SHARED HEADER (components/app-navbar.html):
    The header is injected by components.js, which also auto-boots
    the notification center (assets/js/notifications.js) against
-   the bell button — this page never touches the notification
-   badge itself, to avoid a second source of truth fighting with
-   notifications.js over the same DOM node. See populateHeader()
-   and initUserMenu() below for the two things that had to change
-   to work correctly against that shared markup.
+   the bell button, and now also the mobile nav toggle (previously
+   missing from this page — see initMobileNav() below).
    ============================================================= */
 
 import { requireAuth, signOutUser } from '../supabase/auth.js';
@@ -39,6 +41,10 @@ import {
   addToWatchlist,
   removeFromWatchlist,
   getMarketPrices,
+  getInvestmentWallet,
+  depositToInvestmentWallet,
+  withdrawFromInvestmentWallet,
+  getWalletTransactions,
   getExchangeRate,
   buyInvestment,
   sellInvestment,
@@ -64,15 +70,16 @@ const DONUT_PALETTE = ['#b58a44', '#0a1628', '#1f8a5f', '#b3771d', '#5b6b7c', '#
    ----------------------------------------------------------- */
 let accounts = [];
 let accountsById = {};
+let wallet = { id: null, balance: 0 };
+let walletTx = [];
 let holdings = [];
 let watchlist = [];
 let marketPrices = [];
 let marketBySymbol = {};
 let orders = [];
-let usdRateByCurrency = { USD: 1 }; // USD -> currency
 
 /* -----------------------------------------------------------
-   Toasts (same pattern as accounts.js / transfer.js)
+   Toasts
    ----------------------------------------------------------- */
 function showToast(message, variant = 'success') {
   const stack = $('#toast-stack');
@@ -88,24 +95,15 @@ function showToast(message, variant = 'success') {
     <span>${escapeHtml(message)}</span>
   `;
   stack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('is-visible'));
   setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateY(6px)';
-    toast.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    toast.classList.remove('is-visible');
     setTimeout(() => toast.remove(), 220);
   }, 3200);
 }
 
 /* -----------------------------------------------------------
-   Header identity (name + avatar initial only)
-   -----------------------------------------------------------
-   The unread-notification badge is intentionally NOT touched
-   here. components/app-navbar.html's [data-notification-badge]
-   element is owned end-to-end by notifications.js, which
-   components.js boots automatically once the navbar is injected
-   (see the comment at the top of app-navbar.html). Setting it
-   from here too would race with notifications.js and could
-   flash a stale count after a mark-all-read.
+   Header identity
    ----------------------------------------------------------- */
 async function populateHeader() {
   const nameEl = $('.app-user-name');
@@ -119,15 +117,14 @@ async function populateHeader() {
 
 /**
  * The injected navbar has TWO elements carrying the `.app-user-menu`
- * class: the notification bell wrapper (`.app-user-menu.notification-bell-wrap[data-notification-bell]`)
- * and the actual account dropdown, in that DOM order. A plain
- * `$('.app-user-menu')` would grab the bell wrapper first and this
- * would silently never wire up the account dropdown (no
- * `.app-user-trigger` inside the bell wrapper, so it'd bail out).
- * Anchoring on `.app-user-trigger` — which only exists once, on the
- * account button — and walking up to its own `.app-user-menu`
- * sidesteps that ambiguity entirely regardless of how many
+ * class: the notification bell wrapper and the actual account
+ * dropdown. Anchoring on `.app-user-trigger` — which only exists
+ * once, on the account button — and walking up to its own
+ * `.app-user-menu` sidesteps that ambiguity regardless of how many
  * `.app-user-menu`-classed wrappers the header ends up with.
+ * (dashboard.js previously grabbed `.app-user-menu` directly, which
+ * matched the bell wrapper first and silently broke the account
+ * dropdown/logout — fixed there to match this pattern.)
  */
 function initUserMenu() {
   const trigger = $('.app-user-trigger');
@@ -140,23 +137,17 @@ function initUserMenu() {
     document.addEventListener('click', handleOutsideClick);
     document.addEventListener('keydown', handleKeydown);
   }
-
   function close() {
     menu.classList.remove('is-open');
     trigger.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', handleOutsideClick);
     document.removeEventListener('keydown', handleKeydown);
   }
-
   function handleOutsideClick(event) {
     if (!menu.contains(event.target)) close();
   }
-
   function handleKeydown(event) {
-    if (event.key === 'Escape') {
-      close();
-      trigger.focus();
-    }
+    if (event.key === 'Escape') { close(); trigger.focus(); }
   }
 
   trigger.addEventListener('click', (event) => {
@@ -173,6 +164,74 @@ function initLogout() {
     e.preventDefault();
     await signOutUser();
     window.location.href = link.getAttribute('href');
+  });
+}
+
+/**
+ * Mobile hamburger (.app-nav-toggle) that opens the app nav drawer.
+ * dashboard.js has always wired this; investments.js never called
+ * it, so the hamburger on this page did nothing. Same logic as
+ * dashboard.js's initMobileNav(), kept in sync here.
+ */
+function initMobileNav() {
+  const toggle = $('.app-nav-toggle');
+  const nav = $('.app-nav');
+  if (!toggle || !nav) return;
+
+  toggle.addEventListener('click', () => {
+    const isOpen = nav.classList.toggle('is-mobile-open');
+    toggle.setAttribute('aria-expanded', String(isOpen));
+  });
+  nav.addEventListener('click', (event) => {
+    if (event.target.tagName === 'A') {
+      nav.classList.remove('is-mobile-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!nav.classList.contains('is-mobile-open')) return;
+    if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+      nav.classList.remove('is-mobile-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+/* -----------------------------------------------------------
+   Hide-balance toggle — blurs every element carrying the
+   `.balance-value` class (portfolio total, P/L, wallet cash,
+   wallet balance, holding values, recent trade/wallet amounts).
+   Market prices, watchlist prices, and modal amounts stay visible
+   since those aren't the user's own money. State is remembered
+   per-browser via localStorage so a reload doesn't flash real
+   numbers before the toggle re-applies.
+   ----------------------------------------------------------- */
+const BALANCE_HIDDEN_KEY = 'meridian:balances-hidden';
+
+function applyBalanceVisibility(hidden) {
+  document.body.classList.toggle('balances-hidden', hidden);
+  const btn = $('#balance-toggle-btn');
+  if (!btn) return;
+  btn.setAttribute('aria-pressed', String(hidden));
+  btn.setAttribute('aria-label', hidden ? 'Show balances' : 'Hide balances');
+  const eyeIcon = $('.icon-eye', btn);
+  const eyeOffIcon = $('.icon-eye-off', btn);
+  if (eyeIcon) eyeIcon.style.display = hidden ? 'none' : '';
+  if (eyeOffIcon) eyeOffIcon.style.display = hidden ? '' : 'none';
+}
+
+function initBalanceToggle() {
+  const btn = $('#balance-toggle-btn');
+  if (!btn) return;
+
+  let hidden = false;
+  try { hidden = localStorage.getItem(BALANCE_HIDDEN_KEY) === '1'; } catch (err) { /* private browsing, etc. — default to visible */ }
+  applyBalanceVisibility(hidden);
+
+  btn.addEventListener('click', () => {
+    hidden = !document.body.classList.contains('balances-hidden');
+    applyBalanceVisibility(hidden);
+    try { localStorage.setItem(BALANCE_HIDDEN_KEY, hidden ? '1' : '0'); } catch (err) { /* ignore */ }
   });
 }
 
@@ -201,33 +260,18 @@ function initModalDismissal() {
 }
 
 /* -----------------------------------------------------------
-   USD conversion helpers
+   Portfolio hero (holding values are already USD; invested_amount
+   is stored in USD too, so no per-account currency conversion is
+   needed anymore for the hero or P/L math).
    ----------------------------------------------------------- */
-async function loadRatesForCurrencies(currencies) {
-  const unique = Array.from(new Set(currencies));
-  await Promise.all(
-    unique.map(async (currency) => {
-      if (usdRateByCurrency[currency] != null) return;
-      const { data } = await getExchangeRate('USD', currency);
-      usdRateByCurrency[currency] = Number(data?.exchange_rate ?? 1);
-    })
-  );
-}
-
-function investedUsd(holding) {
-  const account = accountsById[holding.account_id];
-  const rate = usdRateByCurrency[account?.currency || 'USD'] ?? 1;
-  return Number(holding.invested_amount || 0) / rate;
-}
-
 function currentUsd(holding) {
   const price = Number(marketBySymbol[holding.symbol]?.current_price || 0);
   return Number(holding.quantity || 0) * price;
 }
+function investedUsd(holding) {
+  return Number(holding.invested_amount || 0);
+}
 
-/* -----------------------------------------------------------
-   Portfolio hero
-   ----------------------------------------------------------- */
 function renderPortfolioHero() {
   const totalValue = holdings.reduce((sum, h) => sum + currentUsd(h), 0);
   const totalInvested = holdings.reduce((sum, h) => sum + investedUsd(h), 0);
@@ -246,6 +290,9 @@ function renderPortfolioHero() {
     ${isNeg ? '-' : '+'}${formatUsd(Math.abs(pl))} (${isNeg ? '-' : '+'}${Math.abs(plPct).toFixed(2)}%) all time
   `;
 
+  const cashEl = $('#portfolio-cash-value');
+  if (cashEl) cashEl.textContent = formatUsd(wallet.balance);
+
   renderAllocationDonut(totalValue);
 }
 
@@ -261,10 +308,7 @@ function renderAllocationDonut(totalValue) {
     return;
   }
 
-  const sorted = [...holdings]
-    .map((h) => ({ ...h, value: currentUsd(h) }))
-    .sort((a, b) => b.value - a.value);
-
+  const sorted = [...holdings].map((h) => ({ ...h, value: currentUsd(h) })).sort((a, b) => b.value - a.value);
   const top = sorted.slice(0, 5);
   const otherValue = sorted.slice(5).reduce((sum, h) => sum + h.value, 0);
   const slices = otherValue > 0 ? [...top, { symbol: 'Other', value: otherValue, isOther: true }] : top;
@@ -291,6 +335,196 @@ function renderAllocationDonut(totalValue) {
 }
 
 /* -----------------------------------------------------------
+   Investment wallet card + activity
+   ----------------------------------------------------------- */
+function renderWalletCard() {
+  const balanceEl = $('#wallet-balance');
+  if (balanceEl) {
+    balanceEl.classList.remove('skeleton');
+    balanceEl.textContent = formatUsd(wallet.balance);
+  }
+}
+
+function renderWalletActivity() {
+  const list = $('#wallet-activity-list');
+  if (!list) return;
+
+  if (!walletTx.length) {
+    list.classList.remove('skeleton');
+    list.innerHTML = `<p style="font-size:0.88rem;color:var(--slate);">No deposits or withdrawals yet — fund your wallet to start investing.</p>`;
+    return;
+  }
+
+  list.innerHTML = walletTx
+    .map((tx) => {
+      const isDeposit = tx.direction === 'deposit';
+      return `
+        <div class="wallet-activity-row">
+          <span class="invest-activity-icon ${isDeposit ? 'is-buy' : 'is-sell'}">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">${isDeposit
+              ? '<path d="M8 12V4M4 8l4-4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+              : '<path d="M8 4v8M4 8l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'}</svg>
+          </span>
+          <div class="invest-activity-main">
+            <strong class="balance-value">${isDeposit ? 'Deposited' : 'Withdrew'} ${formatUsd(tx.wallet_amount)}</strong>
+            <span>${isDeposit ? 'From' : 'To'} ${escapeHtml(accountsById[tx.account_id]?.currency || '')} account</span>
+          </div>
+          <span class="invest-activity-time">${new Date(tx.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+/* -----------------------------------------------------------
+   Wallet (deposit / withdraw) modal
+   ----------------------------------------------------------- */
+let walletModalState = { direction: 'deposit', accountId: null };
+
+function walletAccountOptions() {
+  const strip = $('#wallet-account-strip');
+  if (!strip) return;
+  if (!accounts.length) {
+    strip.innerHTML = `<p class="balance-note" style="margin:0;">Open a currency account first.</p>`;
+    return;
+  }
+  if (!walletModalState.accountId) walletModalState.accountId = accounts[0].id;
+
+  strip.innerHTML = accounts
+    .map((a) => `
+      <button type="button" class="account-strip-item" data-account-id="${a.id}" role="radio" aria-checked="${String(a.id) === String(walletModalState.accountId)}">
+        <span class="account-strip-flag">${currencySymbol(a.currency)}</span>
+        <div>
+          <strong>${a.currency} account</strong>
+          <span>${formatAmount(a.available_balance ?? a.balance)}</span>
+        </div>
+      </button>
+    `)
+    .join('');
+
+  $$('.account-strip-item', strip).forEach((btn) => {
+    btn.addEventListener('click', () => {
+      walletModalState.accountId = btn.dataset.accountId;
+      walletAccountOptions();
+      recalcWalletSummary();
+    });
+  });
+}
+
+function setWalletDirection(direction) {
+  walletModalState.direction = direction;
+  $$('#wallet-direction-toggle .trade-side-btn').forEach((btn) => btn.classList.toggle('is-active', btn.dataset.direction === direction));
+
+  const isDeposit = direction === 'deposit';
+  $('#wallet-account-label').textContent = isDeposit ? 'From account' : 'To account';
+  $('#wallet-amount-label').textContent = isDeposit ? 'Amount to deposit' : 'Amount to withdraw (USD)';
+  $('#wallet-submit-btn').textContent = isDeposit ? 'Deposit' : 'Withdraw';
+  $('#wallet-submit-btn').className = `btn btn-block ${isDeposit ? 'btn-primary' : 'btn-danger'}`;
+  recalcWalletSummary();
+}
+
+async function recalcWalletSummary() {
+  const note = $('#wallet-modal-note');
+  const account = accountsById[walletModalState.accountId];
+  const amount = Number($('#wallet-amount-input').value) || 0;
+
+  if (!account || !amount) {
+    note.textContent = walletModalState.direction === 'deposit'
+      ? 'Enter an amount to see how much lands in your wallet.'
+      : 'Enter an amount (in USD) to see how much lands in the account.';
+    return;
+  }
+
+  if (walletModalState.direction === 'deposit') {
+    const { data: rateData } = await getExchangeRate(account.currency, 'USD');
+    const usd = amount * Number(rateData?.exchange_rate ?? 1);
+    note.textContent = `≈ ${formatUsd(usd)} will be added to your investment wallet.`;
+  } else {
+    const { data: rateData } = await getExchangeRate('USD', account.currency);
+    const converted = amount * Number(rateData?.exchange_rate ?? 1);
+    note.textContent = `≈ ${currencySymbol(account.currency)}${formatAmount(converted)} will land in your ${account.currency} account.`;
+  }
+}
+
+function openWalletModal(direction) {
+  const modal = $('#wallet-modal');
+  if (!modal) return;
+  walletModalState = { direction, accountId: accounts[0]?.id };
+  walletAccountOptions();
+  setWalletDirection(direction);
+  $('#wallet-amount-input').value = '';
+  $('#wallet-error').style.display = 'none';
+  recalcWalletSummary();
+  openModal(modal);
+}
+
+function initWalletModal() {
+  const modal = $('#wallet-modal');
+  if (!modal) return;
+
+  $$('#wallet-direction-toggle .trade-side-btn').forEach((btn) => btn.addEventListener('click', () => setWalletDirection(btn.dataset.direction)));
+  $('#wallet-amount-input').addEventListener('input', recalcWalletSummary);
+  $$('#open-deposit-modal, #open-deposit-modal-inline').forEach((btn) => btn.addEventListener('click', () => openWalletModal('deposit')));
+  $('#open-withdraw-modal')?.addEventListener('click', () => openWalletModal('withdrawal'));
+
+  $('#wallet-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const errorEl = $('#wallet-error');
+    errorEl.style.display = 'none';
+
+    const amount = Number($('#wallet-amount-input').value);
+    if (!amount || amount <= 0) {
+      errorEl.textContent = 'Enter an amount greater than zero.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    if (!walletModalState.accountId) {
+      errorEl.textContent = 'Choose an account first.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    const submitBtn = $('#wallet-submit-btn');
+    const isDeposit = walletModalState.direction === 'deposit';
+    submitBtn.disabled = true;
+    const original = submitBtn.textContent;
+    submitBtn.textContent = isDeposit ? 'Depositing…' : 'Withdrawing…';
+
+    const action = isDeposit ? depositToInvestmentWallet : withdrawFromInvestmentWallet;
+    const { error } = await action({ accountId: walletModalState.accountId, amount });
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = original;
+
+    if (error) {
+      errorEl.textContent = error;
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    closeModal(modal);
+    showToast(`${isDeposit ? 'Deposited' : 'Withdrew'} ${formatUsd(amount)}${isDeposit ? '' : ' from your wallet'}.`);
+    await refreshWalletAndAccounts();
+  });
+}
+
+async function refreshWalletAndAccounts() {
+  const [{ data: accs }, { data: w }, { data: tx }] = await Promise.all([
+    getMyAccounts(),
+    getInvestmentWallet(),
+    getWalletTransactions(undefined, { limit: 6 }),
+  ]);
+  accounts = accs || [];
+  accountsById = Object.fromEntries(accounts.map((a) => [a.id, a]));
+  wallet = w || { id: null, balance: 0 };
+  walletTx = tx || [];
+  renderWalletCard();
+  renderWalletActivity();
+  renderPortfolioHero();
+  $('#trade-wallet-available') && ($('#trade-wallet-available').textContent = `Available: ${formatUsd(wallet.balance)} in your investment wallet`);
+}
+
+/* -----------------------------------------------------------
    Holdings
    ----------------------------------------------------------- */
 function coinIconHtml(symbol, size = 38) {
@@ -306,7 +540,7 @@ function renderHoldings() {
   if (!grid) return;
 
   if (!holdings.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">You don't own anything yet — use "Buy" above to start your first position.</div>`;
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;">You don't own anything yet — deposit into your wallet, then use "Buy" above to start your first position.</div>`;
     return;
   }
 
@@ -319,7 +553,7 @@ function renderHoldings() {
       const isNeg = pl < 0;
       const meta = marketBySymbol[h.symbol];
       return `
-        <article class="holding-card" data-symbol="${h.symbol}" data-account-id="${h.account_id}">
+        <article class="holding-card" data-symbol="${h.symbol}">
           <div class="holding-card-head">
             ${coinIconHtml(h.symbol)}
             <div>
@@ -327,7 +561,7 @@ function renderHoldings() {
               <span>${escapeHtml(h.symbol)}</span>
             </div>
           </div>
-          <div class="holding-value">${formatUsd(value)}</div>
+          <div class="holding-value balance-value">${formatUsd(value)}</div>
           <div class="holding-meta-row">
             <span class="holding-qty">${formatQty(h.quantity)} ${escapeHtml(h.symbol)}</span>
             <span class="holding-pl${isNeg ? ' is-negative' : ''}">${isNeg ? '-' : '+'}${plPct.toFixed(1)}%</span>
@@ -338,7 +572,7 @@ function renderHoldings() {
     .join('');
 
   $$('.holding-card', grid).forEach((card) => {
-    card.addEventListener('click', () => openTradeModal({ symbol: card.dataset.symbol, accountId: card.dataset.accountId, side: 'sell' }));
+    card.addEventListener('click', () => openTradeModal({ symbol: card.dataset.symbol, side: 'sell' }));
   });
 }
 
@@ -500,7 +734,7 @@ function renderMarketMovers() {
 }
 
 /* -----------------------------------------------------------
-   Recent activity
+   Recent trade activity (always USD now — no account currency lookup)
    ----------------------------------------------------------- */
 function renderActivity() {
   const list = $('#invest-activity-list');
@@ -514,8 +748,6 @@ function renderActivity() {
   list.innerHTML = orders
     .map((o) => {
       const isBuy = o.side === 'buy';
-      const account = accountsById[o.account_id];
-      const currency = account?.currency || 'USD';
       return `
         <div class="invest-activity-row">
           <span class="invest-activity-icon ${isBuy ? 'is-buy' : 'is-sell'}">
@@ -525,9 +757,9 @@ function renderActivity() {
           </span>
           <div class="invest-activity-main">
             <strong>${isBuy ? 'Bought' : 'Sold'} ${formatQty(o.quantity)} ${escapeHtml(o.symbol)}</strong>
-            <span>${escapeHtml(o.name || o.symbol)} · ${currencySymbol(currency)}${formatAmount(o.price_per_unit)} / ${escapeHtml(o.symbol)}</span>
+            <span>${escapeHtml(o.name || o.symbol)} · ${formatUsd(o.price_per_unit)} / ${escapeHtml(o.symbol)}</span>
           </div>
-          <span class="invest-activity-amount">${currencySymbol(currency)}${formatAmount(o.amount)}</span>
+          <span class="invest-activity-amount balance-value">${formatUsd(o.amount)}</span>
           <span class="invest-activity-time">${new Date(o.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
         </div>
       `;
@@ -536,39 +768,9 @@ function renderActivity() {
 }
 
 /* -----------------------------------------------------------
-   Trade (buy/sell) modal
+   Trade (buy/sell) modal — funded entirely from the wallet
    ----------------------------------------------------------- */
-let tradeState = { symbol: null, side: 'buy', accountId: null };
-
-function tradeAccountOptions() {
-  const strip = $('#trade-account-strip');
-  if (!strip) return;
-  if (!accounts.length) {
-    strip.innerHTML = `<p class="balance-note" style="margin:0;">Open a currency account before trading.</p>`;
-    return;
-  }
-  if (!tradeState.accountId) tradeState.accountId = accounts[0].id;
-
-  strip.innerHTML = accounts
-    .map((a) => `
-      <button type="button" class="account-strip-item" data-account-id="${a.id}" role="radio" aria-checked="${String(a.id) === String(tradeState.accountId)}">
-        <span class="account-strip-flag">${currencySymbol(a.currency)}</span>
-        <div>
-          <strong>${a.currency} account</strong>
-          <span>${formatAmount(a.available_balance ?? a.balance)}</span>
-        </div>
-      </button>
-    `)
-    .join('');
-
-  $$('.account-strip-item', strip).forEach((btn) => {
-    btn.addEventListener('click', () => {
-      tradeState.accountId = btn.dataset.accountId;
-      tradeAccountOptions();
-      recalcTradeSummary();
-    });
-  });
-}
+let tradeState = { symbol: null, side: 'buy' };
 
 function populateTradeAssetSelect() {
   const select = $('#trade-asset-select');
@@ -584,25 +786,25 @@ function updateTradeAssetHeader() {
   $('#trade-modal-asset-name').textContent = meta?.name || tradeState.symbol || '—';
   $('#trade-modal-asset-price').textContent = meta ? `${formatUsd(meta.current_price)} per ${tradeState.symbol}` : '—';
 
-  const holding = holdings.find((h) => h.symbol === tradeState.symbol && String(h.account_id) === String(tradeState.accountId));
+  const holding = holdings.find((h) => h.symbol === tradeState.symbol);
   $('#trade-modal-held').textContent = holding ? `You hold ${formatQty(holding.quantity)} ${tradeState.symbol}` : `You don't hold any ${tradeState.symbol || 'of this'} yet`;
+  $('#trade-wallet-available').textContent = `Available: ${formatUsd(wallet.balance)} in your investment wallet`;
 }
 
 function setTradeSide(side) {
   tradeState.side = side;
-  $$('.trade-side-btn').forEach((btn) => btn.classList.toggle('is-active', btn.dataset.side === side));
+  $$('.trade-side-btn[data-side]').forEach((btn) => btn.classList.toggle('is-active', btn.dataset.side === side));
   $('#trade-submit-btn').textContent = side === 'buy' ? 'Buy' : 'Sell';
   $('#trade-submit-btn').className = `btn btn-block ${side === 'buy' ? 'btn-primary' : 'btn-danger'}`;
   recalcTradeSummary();
 }
 
-async function recalcTradeSummary() {
+function recalcTradeSummary() {
   const meta = marketBySymbol[tradeState.symbol];
-  const account = accountsById[tradeState.accountId];
   const qty = Number($('#trade-qty-input').value) || 0;
   const price = Number(meta?.current_price || 0);
 
-  if (!account || !price) {
+  if (!price || !qty) {
     $('#trade-summary-subtotal').textContent = '—';
     $('#trade-summary-fee').textContent = '—';
     $('#trade-summary-total').textContent = '—';
@@ -610,26 +812,21 @@ async function recalcTradeSummary() {
   }
 
   const usdAmount = qty * price;
-  const { data: rateData } = await getExchangeRate('USD', account.currency);
-  const rate = Number(rateData?.exchange_rate ?? 1);
-  const settleAmount = usdAmount * rate;
-  const fee = Math.max(0.99, +(settleAmount * 0.0015).toFixed(2));
-  const total = tradeState.side === 'buy' ? settleAmount + fee : settleAmount - fee;
+  const fee = Math.max(0.99, +(usdAmount * 0.0015).toFixed(2));
+  const total = tradeState.side === 'buy' ? usdAmount + fee : usdAmount - fee;
 
-  const sym = currencySymbol(account.currency);
-  $('#trade-summary-subtotal').textContent = `${sym}${formatAmount(settleAmount)}`;
-  $('#trade-summary-fee').textContent = `${sym}${formatAmount(fee)}`;
-  $('#trade-summary-total').textContent = `${sym}${formatAmount(total)}`;
-  $('#trade-summary-total-label').textContent = tradeState.side === 'buy' ? 'Total to pay' : 'You receive';
+  $('#trade-summary-subtotal').textContent = formatUsd(usdAmount);
+  $('#trade-summary-fee').textContent = formatUsd(fee);
+  $('#trade-summary-total').textContent = formatUsd(total);
+  $('#trade-summary-total-label').textContent = tradeState.side === 'buy' ? 'Total from wallet' : 'Added to wallet';
 }
 
-function openTradeModal({ symbol, accountId, side = 'buy' }) {
+function openTradeModal({ symbol, side = 'buy' }) {
   const modal = $('#trade-modal');
   if (!modal) return;
-  tradeState = { symbol: symbol || marketPrices[0]?.symbol, side, accountId: accountId || accounts[0]?.id };
+  tradeState = { symbol: symbol || marketPrices[0]?.symbol, side };
 
   populateTradeAssetSelect();
-  tradeAccountOptions();
   updateTradeAssetHeader();
   setTradeSide(side);
   $('#trade-qty-input').value = '';
@@ -642,7 +839,7 @@ function initTradeModal() {
   const modal = $('#trade-modal');
   if (!modal) return;
 
-  $$('.trade-side-btn').forEach((btn) => btn.addEventListener('click', () => setTradeSide(btn.dataset.side)));
+  $$('.trade-side-btn[data-side]').forEach((btn) => btn.addEventListener('click', () => setTradeSide(btn.dataset.side)));
   $('#trade-asset-select').addEventListener('change', (e) => {
     tradeState.symbol = e.target.value;
     updateTradeAssetHeader();
@@ -653,7 +850,7 @@ function initTradeModal() {
   $('#open-buy-modal')?.addEventListener('click', () => openTradeModal({ symbol: marketPrices[0]?.symbol, side: 'buy' }));
   $('#open-sell-modal')?.addEventListener('click', () => {
     if (!holdings.length) { showToast('You have nothing to sell yet.', 'error'); return; }
-    openTradeModal({ symbol: holdings[0].symbol, accountId: holdings[0].account_id, side: 'sell' });
+    openTradeModal({ symbol: holdings[0].symbol, side: 'sell' });
   });
 
   $('#trade-form').addEventListener('submit', async (event) => {
@@ -676,7 +873,6 @@ function initTradeModal() {
 
     const action = tradeState.side === 'buy' ? buyInvestment : sellInvestment;
     const { error } = await action({
-      accountId: tradeState.accountId,
       symbol: tradeState.symbol,
       name: meta?.name,
       assetType: 'crypto',
@@ -700,16 +896,15 @@ function initTradeModal() {
 }
 
 async function refreshAfterTrade() {
-  const [{ data: accs }, { data: hold }, { data: ords }] = await Promise.all([
-    getMyAccounts(),
+  const [{ data: w }, { data: hold }, { data: ords }] = await Promise.all([
+    getInvestmentWallet(),
     getMyInvestments(),
     getInvestmentOrders(),
   ]);
-  accounts = accs || [];
-  accountsById = Object.fromEntries(accounts.map((a) => [a.id, a]));
+  wallet = w || { id: null, balance: 0 };
   holdings = hold || [];
   orders = ords || [];
-  await loadRatesForCurrencies(accounts.map((a) => a.currency));
+  renderWalletCard();
   renderPortfolioHero();
   renderHoldings();
   renderActivity();
@@ -725,25 +920,32 @@ async function refreshAfterTrade() {
   populateHeader();
   initUserMenu();
   initLogout();
+  initMobileNav();
   initModalDismissal();
   initWatchlistSearch();
   initTradeModal();
+  initWalletModal();
+  initBalanceToggle();
 
   const [
     { data: accs, error: accError },
+    { data: w, error: walletError },
+    { data: tx },
     { data: hold, error: holdError },
     { data: watch, error: watchError },
     { data: prices, error: pricesError },
     { data: ords, error: ordersError },
   ] = await Promise.all([
     getMyAccounts(user.id),
+    getInvestmentWallet(user.id),
+    getWalletTransactions(user.id, { limit: 6 }),
     getMyInvestments(user.id),
     getWatchlist(user.id),
     getMarketPrices(),
     getInvestmentOrders(user.id),
   ]);
 
-  if (accError || holdError || watchError || ordersError) {
+  if (accError || holdError || watchError || ordersError || walletError) {
     showToast("Couldn't load some of your investment data. Please refresh.", 'error');
   }
   if (pricesError) {
@@ -752,14 +954,16 @@ async function refreshAfterTrade() {
 
   accounts = accs || [];
   accountsById = Object.fromEntries(accounts.map((a) => [a.id, a]));
+  wallet = w || { id: null, balance: 0 };
+  walletTx = tx || [];
   holdings = hold || [];
   watchlist = watch || [];
   marketPrices = prices || [];
   marketBySymbol = Object.fromEntries(marketPrices.map((m) => [m.symbol, m]));
   orders = ords || [];
 
-  await loadRatesForCurrencies(accounts.map((a) => a.currency));
-
+  renderWalletCard();
+  renderWalletActivity();
   renderPortfolioHero();
   renderHoldings();
   renderWatchlist();
@@ -767,7 +971,6 @@ async function refreshAfterTrade() {
   renderActivity();
 
   if (!accounts.length) {
-    showToast('Open a currency account before you can invest.', 'error');
+    showToast('Open a currency account before you can fund your investment wallet.', 'error');
   }
 })();
-
