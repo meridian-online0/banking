@@ -1,0 +1,838 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   assets/css/admin.css
+
+   PURPOSE
+   -------
+   The dark/dense theme components/admin-navbar.html and every
+   pages/admin/*.html page assume but haven't been styled against
+   yet (see the "Draft only" note on admin-navbar.html and the
+   "planned" entry in the file tree). Loaded alongside the existing
+   style.css / dashboard.css / components.css on every admin page —
+   NOT a replacement for them. Those still supply the shared
+   primitives (container, btn, field, modal-overlay, toast, skeleton,
+   tab-toggle, --red, etc.) that the customer app already defines;
+   this file only adds admin-specific layout (sidebar shell, dense
+   tables, stat cards, drawer) and re-skins a few shared primitives
+   darker where they appear inside .admin-body.
+
+   ASSUMPTION FLAGGED: style.css/components.css/dashboard.css were
+   not available to check against directly — only inferred from
+   accounts.html/settings.js's usage (var(--red) is confirmed real;
+   .container, .btn, .modal-overlay, .field, .toast-stack, .skeleton
+   are used as global classes there). Everything admin-specific below
+   is scoped under .admin-body / .admin-* so it can't collide with
+   the customer app regardless of what those files actually contain.
+   If style.css turns out to define e.g. --radius or --border
+   already, prefer swapping the hardcoded values below for those
+   instead of keeping a parallel set.
+
+   VISUAL DIFFERENTIATION
+   -----------------------
+   Per the architecture doc's point 5: this is deliberately NOT a
+   reskin of the customer app's palette. Customer app reads as
+   light, warm, retail-banking. Admin reads as dark, dense,
+   operational — closer to a trading terminal or ops console than
+   a consumer product, so nobody mistakes a screenshot of one for
+   the other.
+   ============================================================= */
+
+/* -----------------------------------------------------------
+   Tokens — scoped to .admin-body so nothing here leaks onto
+   customer pages even if this file were accidentally linked there.
+   ----------------------------------------------------------- */
+.admin-body {
+  --admin-bg: #0b0e14;
+  --admin-surface: #11151d;
+  --admin-surface-raised: #161b25;
+  --admin-surface-hover: #1c2230;
+  --admin-border: #232a38;
+  --admin-border-soft: #1a202c;
+
+  --admin-text: #e7eaf0;
+  --admin-text-muted: #97a1b5;
+  --admin-text-faint: #5d6779;
+
+  --admin-accent: #4f7cff;
+  --admin-accent-soft: rgba(79, 124, 255, 0.14);
+  --admin-success: #2fbf71;
+  --admin-success-soft: rgba(47, 191, 113, 0.14);
+  --admin-warning: #e3a72e;
+  --admin-warning-soft: rgba(227, 167, 46, 0.14);
+  --admin-danger: #e35d5d;
+  --admin-danger-soft: rgba(227, 93, 93, 0.14);
+  --admin-neutral-soft: rgba(151, 161, 181, 0.14);
+
+  --admin-radius-sm: 6px;
+  --admin-radius-md: 10px;
+  --admin-radius-lg: 14px;
+  --admin-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --admin-font-mono: 'SFMono-Regular', ui-monospace, 'Roboto Mono', Menlo, Consolas, monospace;
+
+  background: var(--admin-bg);
+  color: var(--admin-text);
+  min-height: 100vh;
+}
+
+.admin-body a {
+  color: inherit;
+}
+
+/* -----------------------------------------------------------
+   Shell — sidebar + topbar, from components/admin-navbar.html
+   ----------------------------------------------------------- */
+.admin-shell-chrome {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 40;
+}
+
+.admin-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  background: var(--admin-surface);
+  border-right: 1px solid var(--admin-border);
+  padding: 1.25rem 0.75rem;
+  z-index: 50;
+  transition: transform 0.2s ease;
+}
+
+.admin-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem 1.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  color: var(--admin-text);
+}
+
+.admin-sidebar-brand em {
+  font-style: normal;
+  color: var(--admin-text-muted);
+  font-weight: 500;
+}
+
+.admin-sidebar-brand .brand-mark {
+  width: 22px;
+  height: 22px;
+  color: var(--admin-accent);
+  flex-shrink: 0;
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.admin-nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: var(--admin-radius-sm);
+  font-size: 0.875rem;
+  color: var(--admin-text-muted);
+  text-decoration: none;
+  position: relative;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.admin-nav a svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.admin-nav a:hover {
+  background: var(--admin-surface-hover);
+  color: var(--admin-text);
+}
+
+.admin-nav a.is-active {
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+  font-weight: 600;
+}
+
+.admin-nav a.is-active svg {
+  opacity: 1;
+}
+
+.admin-nav a[data-min-role][hidden] {
+  display: none;
+}
+
+.admin-nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--admin-neutral-soft);
+  color: var(--admin-text);
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-nav-badge--alert {
+  background: var(--admin-danger-soft);
+  color: var(--admin-danger);
+}
+
+.admin-sidebar-foot {
+  padding: 0.75rem;
+  border-top: 1px solid var(--admin-border-soft);
+  margin-top: 0.5rem;
+}
+
+.admin-env-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--admin-text-faint);
+  border: 1px solid var(--admin-border);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+}
+
+.admin-topbar {
+  position: fixed;
+  top: 0;
+  left: 248px;
+  right: 0;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.5rem;
+  background: rgba(17, 21, 29, 0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--admin-border);
+  z-index: 45;
+}
+
+.admin-nav-toggle {
+  display: none;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--admin-radius-sm);
+  border: 1px solid var(--admin-border);
+  background: transparent;
+  color: var(--admin-text-muted);
+  cursor: pointer;
+}
+
+.admin-nav-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.admin-topbar-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--admin-text);
+}
+
+.admin-topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-user-menu .app-user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--admin-radius-sm);
+  padding: 0.3rem 0.5rem;
+  color: var(--admin-text);
+  cursor: pointer;
+}
+
+.admin-user-menu .app-user-trigger:hover {
+  border-color: var(--admin-border);
+  background: var(--admin-surface-hover);
+}
+
+.admin-user-menu .app-user-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.admin-role-pill {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+}
+
+.admin-user-menu .app-user-dropdown {
+  background: var(--admin-surface-raised);
+  border: 1px solid var(--admin-border);
+  box-shadow: var(--admin-shadow);
+  color: var(--admin-text);
+}
+
+.admin-user-menu .app-user-dropdown-divider {
+  border-color: var(--admin-border-soft);
+}
+
+.avatar-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--admin-accent-soft);
+  color: var(--admin-accent);
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.avatar-initial--sm {
+  width: 26px;
+  height: 26px;
+  font-size: 0.7rem;
+}
+
+/* -----------------------------------------------------------
+   Main content area — offset for the fixed sidebar/topbar
+   ----------------------------------------------------------- */
+.admin-main {
+  margin-left: 248px;
+  padding-top: 60px;
+  min-height: 100vh;
+}
+
+.admin-main .container {
+  padding: 1.75rem 2rem 3rem;
+  max-width: 1320px;
+}
+
+.admin-body .page-head h1 {
+  color: var(--admin-text);
+  font-size: 1.4rem;
+}
+
+.admin-body .page-head p {
+  color: var(--admin-text-muted);
+  font-size: 0.9rem;
+}
+
+.admin-page-head-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+/* -----------------------------------------------------------
+   Stat row
+   ----------------------------------------------------------- */
+.admin-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.9rem;
+  margin: 1.25rem 0 1.5rem;
+}
+
+.admin-stat-card {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-lg);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-stat-label {
+  font-size: 0.75rem;
+  color: var(--admin-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--admin-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-stat-card--warning .admin-stat-value { color: var(--admin-warning); }
+.admin-stat-card--danger .admin-stat-value { color: var(--admin-danger); }
+.admin-stat-card--warning { border-color: rgba(227, 167, 46, 0.35); }
+.admin-stat-card--danger { border-color: rgba(227, 93, 93, 0.35); }
+
+/* -----------------------------------------------------------
+   Toolbar — search / filters / date range
+   ----------------------------------------------------------- */
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.admin-toolbar--wrap {
+  flex-wrap: wrap;
+}
+
+.admin-search-field {
+  position: relative;
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.admin-search-field svg {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--admin-text-faint);
+  pointer-events: none;
+}
+
+.admin-search-field input {
+  width: 100%;
+  padding: 0.5rem 0.75rem 0.5rem 2.1rem;
+}
+
+.admin-toolbar select,
+.admin-search-field input,
+.admin-date-range input {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-sm);
+  color: var(--admin-text);
+  font-size: 0.85rem;
+  height: 36px;
+}
+
+.admin-toolbar select {
+  padding: 0 1.8rem 0 0.65rem;
+}
+
+.admin-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.admin-date-range input {
+  padding: 0 0.6rem;
+}
+
+.admin-date-range-sep {
+  color: var(--admin-text-faint);
+}
+
+.admin-toolbar-count {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--admin-text-muted);
+  white-space: nowrap;
+}
+
+/* -----------------------------------------------------------
+   Table
+   ----------------------------------------------------------- */
+.admin-table-wrap {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: var(--admin-radius-lg);
+  overflow: hidden;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.admin-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--admin-text-faint);
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--admin-border);
+  white-space: nowrap;
+}
+
+.admin-table th.is-sortable {
+  cursor: pointer;
+  user-select: none;
+  display: table-cell;
+}
+
+.admin-table th.is-sortable:hover {
+  color: var(--admin-text-muted);
+}
+
+.admin-table th .sort-caret {
+  width: 9px;
+  height: 9px;
+  margin-left: 0.25rem;
+  opacity: 0.3;
+  vertical-align: middle;
+}
+
+.admin-table th.is-sorted-asc .sort-caret,
+.admin-table th.is-sorted-desc .sort-caret {
+  opacity: 0.9;
+  color: var(--admin-accent);
+}
+
+.admin-table th.is-sorted-asc .sort-caret path { d: path('M2 4l3-3 3 3'); }
+
+.admin-table td {
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid var(--admin-border-soft);
+  color: var(--admin-text);
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+  background: var(--admin-surface-hover);
+}
+
+.admin-table code {
+  font-family: var(--admin-font-mono);
+  font-size: 0.8rem;
+  color: var(--admin-text-muted);
+}
+
+.admin-table td.is-negative {
+  color: var(--admin-danger);
+}
+
+.admin-table-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.admin-table-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-table-skeleton-row td {
+  color: var(--admin-text-faint);
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.admin-table-empty {
+  text-align: center;
+  color: var(--admin-text-muted);
+  padding: 2.5rem 1rem;
+  font-size: 0.85rem;
+}
+
+.admin-card-chip {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: var(--admin-neutral-soft);
+  color: var(--admin-text-muted);
+}
+
+/* -----------------------------------------------------------
+   Status pills
+   ----------------------------------------------------------- */
+.admin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--admin-neutral-soft);
+  color: var(--admin-text-muted);
+  text-transform: capitalize;
+}
+
+.admin-status-pill--success { background: var(--admin-success-soft); color: var(--admin-success); }
+.admin-status-pill--warning { background: var(--admin-warning-soft); color: var(--admin-warning); }
+.admin-status-pill--danger  { background: var(--admin-danger-soft);  color: var(--admin-danger); }
+.admin-status-pill--neutral { background: var(--admin-neutral-soft); color: var(--admin-text-muted); }
+
+/* -----------------------------------------------------------
+   Pagination
+   ----------------------------------------------------------- */
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.82rem;
+  color: var(--admin-text-muted);
+}
+
+/* -----------------------------------------------------------
+   Drawer — side panel, not a modal-width dialog
+   ----------------------------------------------------------- */
+.admin-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.55);
+  z-index: 70;
+  display: flex;
+  justify-content: flex-end;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.admin-drawer-overlay[aria-hidden="false"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.admin-drawer {
+  width: min(420px, 92vw);
+  height: 100%;
+  background: var(--admin-surface-raised);
+  border-left: 1px solid var(--admin-border);
+  box-shadow: var(--admin-shadow);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(16px);
+  transition: transform 0.18s ease;
+  overflow-y: auto;
+}
+
+.admin-drawer-overlay[aria-hidden="false"] .admin-drawer {
+  transform: translateX(0);
+}
+
+.admin-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 1rem;
+  border-bottom: 1px solid var(--admin-border);
+  position: sticky;
+  top: 0;
+  background: var(--admin-surface-raised);
+  z-index: 1;
+}
+
+.admin-drawer-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-drawer-identity h2 {
+  font-size: 1.05rem;
+  color: var(--admin-text);
+  margin: 0;
+}
+
+.admin-drawer-subtitle {
+  font-size: 0.8rem;
+  color: var(--admin-text-muted);
+}
+
+.admin-drawer-body {
+  padding: 1.1rem 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admin-drawer-section h4 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--admin-text-faint);
+  margin: 0 0 0.6rem;
+}
+
+.admin-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--admin-border-soft);
+  font-size: 0.85rem;
+  color: var(--admin-text);
+}
+
+.admin-detail-row:last-child {
+  border-bottom: none;
+}
+
+.admin-detail-row > span:first-child {
+  color: var(--admin-text-muted);
+}
+
+.admin-drawer-footer {
+  display: flex;
+  gap: 0.6rem;
+  padding-top: 0.25rem;
+}
+
+.admin-drawer-footer--wrap {
+  flex-wrap: wrap;
+}
+
+/* -----------------------------------------------------------
+   Modals inside the admin panel — re-skin the shared modal
+   primitives (from components.css) darker, scoped to .admin-body
+   so the customer app's modal styling is untouched.
+   ----------------------------------------------------------- */
+.admin-body .modal-card {
+  background: var(--admin-surface-raised);
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text);
+}
+
+.admin-body .modal-head p,
+.admin-body .field-hint {
+  color: var(--admin-text-muted);
+}
+
+.admin-body .field label {
+  color: var(--admin-text-muted);
+}
+
+.admin-body textarea,
+.admin-body input[type="text"],
+.admin-body input[type="search"] {
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text);
+}
+
+.field-optional {
+  font-weight: 400;
+  color: var(--admin-text-faint);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* -----------------------------------------------------------
+   Buttons — admin adds a danger variant on top of whatever
+   btn-primary / btn-ghost already do in components.css
+   ----------------------------------------------------------- */
+.btn-danger {
+  background: var(--admin-danger);
+  border: 1px solid var(--admin-danger);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #cf4c4c;
+}
+
+.btn-danger:disabled,
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-body .btn-sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+/* -----------------------------------------------------------
+   Auth loader — dark background variant so the pre-reveal flash
+   matches the admin theme instead of the customer app's light one.
+   ----------------------------------------------------------- */
+.admin-body .auth-loader {
+  background: var(--admin-bg);
+}
+
+/* -----------------------------------------------------------
+   Responsive — sidebar collapses to an off-canvas panel; topbar
+   toggle button (data-admin-nav-toggle) shows below 960px.
+   Assumes admin-layout.js toggles an `is-open` class on
+   [data-admin-sidebar] — adjust the selector below if the real
+   implementation uses a different hook.
+   ----------------------------------------------------------- */
+@media (max-width: 960px) {
+  .admin-sidebar {
+    transform: translateX(-100%);
+  }
+
+  .admin-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .admin-topbar,
+  .admin-main {
+    left: 0;
+    margin-left: 0;
+  }
+
+  .admin-nav-toggle {
+    display: inline-flex;
+  }
+
+  .admin-main .container {
+    padding: 1.25rem 1rem 2.5rem;
+  }
+
+  .admin-drawer {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-stat-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .admin-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .admin-toolbar-count {
+    margin-left: 0;
+    width: 100%;
+  }
+}
