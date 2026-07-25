@@ -26,6 +26,13 @@
    (assets/js/notifications.js) once its markup is in the DOM —
    pages using <div data-component="app-navbar"></div> don't need
    to call initNotificationCenter() themselves.
+
+   As of the live support chat integration, loadComponents() also
+   auto-boots the floating chat widget (assets/js/chat-widget.js)
+   on every page EXCEPT the ones in CHAT_WIDGET_EXCLUDED_PAGES —
+   unlike app-navbar/notifications, this one doesn't need a
+   [data-component] placeholder at all; it injects its own markup
+   and stylesheet directly into the page. See bootChatWidget().
    ============================================================= */
 
 /* -----------------------------------------------------------
@@ -40,6 +47,9 @@ const COMPONENT_MAP = {
   'app-navbar': 'app-navbar.html', // logged-in app header (dashboard.html, etc.)
 };
 
+/** Pages the floating chat widget should never appear on. */
+const CHAT_WIDGET_EXCLUDED_PAGES = ['login.html', 'register.html', 'settings.html', 'profile.html'];
+
 /**
  * Resolves the components/ directory relative to the current page,
  * so this one file works whether it's imported from / or /pages/.
@@ -52,11 +62,11 @@ function resolveComponentsBase() {
 
 /**
  * Fixed paths for the dynamic import() calls in bootNotificationCenter()
- * below. Unlike resolveComponentsBase() (which uses fetch(), resolved
- * against the current page), import() specifiers resolve relative to
- * THIS file's own location — components/components.js — regardless
- * of which page (root-level or under /pages/) triggered the import.
- * Do NOT branch these on window.location.pathname.
+ * and bootChatWidget() below. Unlike resolveComponentsBase() (which
+ * uses fetch(), resolved against the current page), import() specifiers
+ * resolve relative to THIS file's own location — components/components.js —
+ * regardless of which page (root-level or under /pages/) triggered the
+ * import. Do NOT branch these on window.location.pathname.
  */
 const ASSETS_JS_BASE = '../assets/js/';
 const SUPABASE_BASE = '../supabase/';
@@ -136,6 +146,32 @@ async function bootNotificationCenter(loadedNames) {
 }
 
 /**
+ * Boots the floating live-chat support widget (assets/js/chat-widget.js)
+ * on every page except CHAT_WIDGET_EXCLUDED_PAGES. Unlike
+ * bootNotificationCenter(), this doesn't depend on any
+ * [data-component] partial having loaded — mountChatWidget() injects
+ * its own markup and stylesheet directly, so this can run
+ * unconditionally as long as the current page isn't excluded and a
+ * user is actually signed in.
+ */
+async function bootChatWidget() {
+  const currentFile = window.location.pathname.split('/').pop() || 'index.html';
+  if (CHAT_WIDGET_EXCLUDED_PAGES.includes(currentFile)) return;
+  if (document.getElementById('chat-widget-root')) return; // already mounted
+
+  try {
+    const { getCurrentUser } = await import(`${SUPABASE_BASE}auth.js`);
+    const { data: user } = await getCurrentUser();
+    if (!user) return; // signed-out visitor (e.g. index.html) — skip
+
+    const { mountChatWidget } = await import(`${ASSETS_JS_BASE}chat-widget.js`);
+    await mountChatWidget(resolveComponentsBase());
+  } catch (err) {
+    console.warn('[Meridian] Failed to initialize chat widget:', err.message);
+  }
+}
+
+/**
  * Finds every [data-component] placeholder on the page, loads its
  * partial, then marks the active nav link and dispatches
  * `component:loaded` on `document` once everything has settled —
@@ -155,6 +191,7 @@ export async function loadComponents() {
   markActiveNavLink();
   document.dispatchEvent(new CustomEvent('component:loaded'));
   bootNotificationCenter(names);
+  bootChatWidget();
 }
 
 /** Re-runs active-link detection — handy if a page changes hash/history without a full reload. */
