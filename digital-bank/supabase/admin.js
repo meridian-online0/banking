@@ -406,33 +406,109 @@ export async function unfreezeAccount(accountId, reason) {
 /* -----------------------------------------------------------
    7. Support tickets — admin-support.html
    ----------------------------------------------------------- */
-export async function listSupportTickets({ status, assignedTo, page = 1, pageSize = 25 } = {}) {
+export async function getSupportTicketSummary() {
+  const [open, assigned, resolved, closed] = await Promise.all([
+    supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'open'),
+    supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'assigned'),
+    supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'resolved'),
+    supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'closed'),
+  ]);
+  const firstError = [open, assigned, resolved, closed].find((r) => r.error);
+  if (firstError) return { data: null, error: friendlyAdminError(firstError.error) };
+  return {
+    data: {
+      open: open.count ?? 0,
+      assigned: assigned.count ?? 0,
+      resolved: resolved.count ?? 0,
+      closed: closed.count ?? 0,
+    },
+    error: null,
+  };
+}
+
+export async function listSupportTickets({ status, priority, assignedTo, search, page = 1, pageSize = 25 } = {}) {
   let query = supabase.from('support_tickets').select('*', { count: 'exact' });
 
   if (status) query = query.eq('status', status);
+  if (priority) query = query.eq('priority', priority);
   if (assignedTo) query = query.eq('assigned_admin_id', assignedTo);
+  if (search) query = query.ilike('subject', `%${search}%`);
 
   const from = (page - 1) * pageSize;
   query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
 
   const { data, error, count } = await query;
   if (error) return { data: null, error: friendlyAdminError(error) };
-  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+
+  const userIds = [...new Set((data || []).map((t) => t.user_id).filter(Boolean))];
+  let usersById = {};
+  if (userIds.length) {
+    const { data: users } = await supabase
+      .from('user_profiles')
+      .select('id, first_name, last_name, email')
+      .in('id', userIds);
+    usersById = Object.fromEntries((users || []).map((u) => [u.id, u]));
+  }
+
+  const rows = (data || []).map((t) => ({ ...t, customer: usersById[t.user_id] || null }));
+  return { data: { rows, total: count ?? 0, page, pageSize }, error: null };
+}
+
+export async function getTicketDetail(ticketId) {
+  const { data: ticket, error } = await supabase.from('support_tickets').select('*').eq('id', ticketId).single();
+  if (error) return { data: null, error: friendlyAdminError(error) };
+
+  const [{ data: customer }, { data: messages }] = await Promise.all([
+    supabase.from('user_profiles').select('id, first_name, last_name, email').eq('id', ticket.user_id).maybeSingle(),
+    supabase.from('support_ticket_messages').select('*').eq('ticket_id', ticketId).order('created_at', { ascending: true }),
+  ]);
+
+  return { data: { ticket, customer: customer || null, messages: messages || [] }, error: null };
+}
+
+export async function listAdminUsers() {
+  const { data, error } = await supabase
+    .from('user_profiles')
+    .select('id, first_name, last_name, role')
+    .in('role', ['support', 'admin', 'superadmin'])
+    .order('first_name', { ascending: true });
+  if (error) return { data: null, error: friendlyAdminError(error) };
+  return { data, error: null };
 }
 
 export async function assignTicket(ticketId, adminId) {
   return wrap(
-    supabase.from('support_tickets').update({ assigned_admin_id: adminId }).eq('id', ticketId)
+    supabase.from('support_tickets')
+      .update({ assigned_admin_id: adminId, status: 'assigned', updated_at: new Date().toISOString() })
+      .eq('id', ticketId)
+  );
+}
+
+export async function replyToTicket(ticketId, adminId, body) {
+  return wrap(
+    supabase.from('support_ticket_messages')
+      .insert({ ticket_id: ticketId, sender_id: adminId, is_admin: true, body })
   );
 }
 
 export async function resolveTicket(ticketId, resolutionNote) {
   return wrap(
     supabase.from('support_tickets')
-      .update({ status: 'resolved', resolution_note: resolutionNote })
+      .update({ status: 'resolved', resolution_note: resolutionNote, updated_at: new Date().toISOString() })
       .eq('id', ticketId)
   );
 }
+
+export async function reopenTicket(ticketId) {
+  return wrap(
+    supabase.from('support_tickets')
+      .update({ status: 'open', updated_at: new Date().toISOString() })
+      .eq('id', ticketId)
+  );
+}
+
+
+
 
 /* -----------------------------------------------------------
    8. Risk / fraud — admin-risk.html
@@ -441,6 +517,7 @@ export async function getRiskFlags() {
   console.warn('[Meridian Admin] getRiskFlags() is a stub — no risk_flags table exists in the schema yet.');
   return { data: { rows: [], total: 0 }, error: null };
 }
+
 
 /* -----------------------------------------------------------
    9. Reports — admin-reports.html
