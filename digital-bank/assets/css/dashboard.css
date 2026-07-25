@@ -30,6 +30,7 @@
      9.  Responsive breakpoints
      10. Live ticker deltas, market pulse panel, automation
          showcase stat (dashboard liveliness pass)
+     11. Avatar photo + balance-toggle layout fixes
    ============================================================= */
 
 /* -------------------------------------------------------------
@@ -37,9 +38,6 @@
    ------------------------------------------------------------- */
 html,
 body.app-body {
-  /* A horizontally-scrolling app page is always a layout bug, not
-     a feature — this is a hard backstop while the rules below fix
-     the actual causes (see section 9). */
   overflow-x: hidden;
 }
 
@@ -49,9 +47,6 @@ body.app-body {
   width: 100%;
 }
 
-/* Prevents a flash of protected content while auth is confirmed.
-   Removed by the page script (via supabase/page-guard.js) once the
-   session check resolves; see assets/js/auth-guard.js. */
 body.app-body.auth-pending {
   visibility: hidden;
 }
@@ -302,9 +297,6 @@ body.app-body.auth-pending {
   margin-bottom: 2rem;
 }
 
-/* .dashboard-head sits h1+quick-actions side by side; .page-head
-   (accounts.html etc.) only ever holds a heading + paragraph, so
-   it doesn't need this and stays block-level. */
 .dashboard-head {
   display: flex;
   align-items: flex-end;
@@ -337,8 +329,6 @@ body.app-body.auth-pending {
   flex-wrap: wrap;
 }
 
-/* Quick-action buttons (Send / Add money / Exchange / Request)
-   in the dashboard greeting row. */
 .quick-actions {
   display: flex;
   gap: 0.6rem;
@@ -454,10 +444,6 @@ body.app-body.auth-pending {
 /* -------------------------------------------------------------
    5. Dashboard-specific pieces
    ------------------------------------------------------------- */
-
-/* Two-column layout: main column (balance/tx/spending) + sidebar
-   (goals/cards/upsell). dashboard.html relies on this for its
-   .dashboard-main-col / .dashboard-side-col split. */
 .dashboard-layout {
   display: grid;
   grid-template-columns: 1fr 340px;
@@ -471,7 +457,7 @@ body.app-body.auth-pending {
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
-  min-width: 0; /* lets grid children shrink below their content's intrinsic width instead of pushing the page wider */
+  min-width: 0;
 }
 
 .dashboard-balance-card {
@@ -701,8 +687,6 @@ body.app-body.auth-pending {
   flex-shrink: 0;
 }
 
-/* Spacing between the two (or more) .goal-item blocks in the
-   savings-goals card — without this they sit flush together. */
 .goal-item + .goal-item {
   margin-top: 1.4rem;
 }
@@ -731,7 +715,6 @@ body.app-body.auth-pending {
   color: var(--brass-light);
 }
 
-/* Upsell card in the dashboard sidebar */
 .dashboard-upsell {
   background: linear-gradient(155deg, var(--brass) 0%, var(--brass-dark) 100%);
   border-color: transparent;
@@ -758,9 +741,6 @@ body.app-body.auth-pending {
   background: var(--ink-3);
 }
 
-/* Ghost button on the brass gradient needs its own contrast pass —
-   the default .btn-ghost (transparent bg, --line border, --ink
-   text) was designed for the paper background, not brass-on-brass. */
 .dashboard-upsell .btn-ghost {
   border-color: rgba(10, 22, 40, 0.3);
   color: var(--ink);
@@ -1595,10 +1575,6 @@ body.app-body.auth-pending {
    10. Live ticker deltas, market pulse panel, automation
        showcase stat — dashboard liveliness pass.
    ------------------------------------------------------------- */
-
-/* Ticker band items are built by initDashboardTicker() in
-   dashboard.js; .ticker-band/.ticker-track/.ticker-item already
-   exist in style.css, these just style the parts that script adds. */
 .ticker-item .delta {
   font-family: var(--font-mono);
   font-weight: 600;
@@ -1618,9 +1594,6 @@ body.app-body.auth-pending {
   opacity: 0.85;
 }
 
-/* Small pulsing dot used as a "this is live" signal — on the
-   market-pulse card heading, matched in tone to the rest of the
-   status-pill / badge language already used across the app. */
 .live-dot {
   display: inline-block;
   width: 8px;
@@ -1644,8 +1617,6 @@ body.app-body.auth-pending {
   }
 }
 
-/* Market pulse / insights card — injected by
-   initMarketNewsPanel() right after the balance card. */
 .market-news-card .profile-card-head {
   margin-bottom: 0.9rem;
 }
@@ -1693,8 +1664,6 @@ body.app-body.auth-pending {
   white-space: nowrap;
 }
 
-/* Automation showcase stat — injected into .dashboard-upsell by
-   enhanceAutomationShowcase(), above the existing action buttons. */
 .automation-stat-row {
   background: rgba(10, 22, 40, 0.08);
   border-radius: var(--radius-md);
@@ -1723,12 +1692,6 @@ body.app-body.auth-pending {
   margin-bottom: 1.4rem;
 }
 
-/* Account → Auto-save → Goal flow diagram inside the "Automate
-   your money" upsell card. Markup: .automation-flow wraps three
-   .automation-node blocks (icon circle + label) connected by two
-   .automation-track segments, each carrying an .automation-dot
-   that travels along it to suggest money moving through the
-   pipeline. */
 .automation-flow {
   display: flex;
   align-items: center;
@@ -1765,7 +1728,7 @@ body.app-body.auth-pending {
   flex: 1;
   height: 2px;
   min-width: 24px;
-  margin: 0 0.5rem 1.4rem; /* pulled up to align with the icon circles, not the labels below them */
+  margin: 0 0.5rem 1.4rem;
   background-image: linear-gradient(to right, rgba(10, 22, 40, 0.3) 0 6px, transparent 6px 12px);
   background-size: 12px 2px;
   background-repeat: repeat-x;
@@ -1798,9 +1761,6 @@ body.app-body.auth-pending {
   }
 }
 
-/* Two stacked CTAs beneath the flow diagram — needs its own gap
-   since .dashboard-upsell only spaces its direct <p>/h3 children,
-   not the buttons that come after the flow diagram. */
 .automation-card-actions {
   display: flex;
   flex-direction: column;
@@ -1826,4 +1786,78 @@ body.app-body.auth-pending {
   .automation-track {
     margin: 0 0.35rem 1.25rem;
   }
+}
+
+/* -------------------------------------------------------------
+   11. Avatar photo + balance-toggle layout fixes
+   -----------------------------------------------------------
+   Two separate bugs fixed here — kept as their own section rather
+   than folded into 2/5 above so they're easy to find (and remove
+   later if the underlying HTML/JS ever gets cleaned up instead).
+   ------------------------------------------------------------- */
+
+/* --- Fix 1: avatar photo never had matching CSS ---------------
+   dashboard.js's paintAvatar() inserts <img class="avatar-photo">
+   whenever profile.profile_photo is set, but nothing sized or
+   clipped it — it rendered at native size instead of filling the
+   circular avatar frame the way the initials text does.
+
+   .avatar-initial--sm/--lg presumably already set a fixed
+   width/height + border-radius:50% elsewhere (used as a plain
+   initials circle) — overflow:hidden here just makes sure a photo
+   actually gets clipped to that circle instead of spilling out of
+   it, and works regardless of exactly what those fixed dimensions
+   are. */
+.avatar-initial--sm,
+.avatar-initial--lg {
+  overflow: hidden;
+}
+
+.avatar-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;   /* crop to fill the circle instead of stretching/squishing */
+  object-position: center;
+  border-radius: 50%;
+}
+
+/* --- Fix 2: balance-toggle spacing + reflow on mask toggle -----
+   Root causes (both in dashboard.html/dashboard.js, not this
+   file, which is why a CSS-only fix needs !important to win over
+   the leftover inline styles):
+
+   a) The row wrapping the balance figure + toggle button has an
+      inline style="gap:0.65rem" — wider than intended.
+   b) #dashboard-balance-amount has an inline
+      style="width:220px;display:inline-block" left over from its
+      *loading-skeleton* markup. unskeleton() in dashboard.js only
+      strips the .skeleton CLASS, never that inline style — so the
+      box stays pinned to exactly 220px forever. "$12,345.67" and
+      "••••••" are different widths; neither reliably fits that
+      fixed 220px box the same way, which is what nudges the
+      account-strip and everything below it when you toggle.
+
+   :has() is used to reach the unclassed wrapper div without
+   editing the HTML — supported in every major browser since 2023.
+   If you'd rather not rely on :has(), the cleaner long-term fix is
+   replacing that inline style="..." in dashboard.html with
+   class="dashboard-balance-row" and deleting this override —
+   either works, this just doesn't require touching the HTML now. */
+.dashboard-balance-card > div:has(#toggle-balance-visibility) {
+  gap: 0.35rem !important;
+}
+
+#dashboard-balance-amount {
+  width: auto !important;
+  display: inline-flex !important;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+  min-height: 1.15em;
+  line-height: 1.15;
+}
+
+#toggle-balance-visibility {
+  padding: 0.15rem !important;
 }
