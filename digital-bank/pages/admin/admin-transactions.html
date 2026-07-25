@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transactions — Meridian Admin</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="../../assets/css/style.css">
+<link rel="stylesheet" href="../../assets/css/dashboard.css">
+<link rel="stylesheet" href="../../assets/css/components.css">
+<link rel="stylesheet" href="../../assets/css/admin.css">
+</head>
+<body class="app-body admin-body" data-auth="pending">
+
+<div class="auth-loader" aria-hidden="true"><span class="auth-loader-mark"></span></div>
+
+<div data-component="admin-navbar"></div>
+
+<main id="main-content" class="admin-main">
+  <div class="container">
+
+    <div class="page-head page-head--split">
+      <div>
+        <h1>Transactions</h1>
+        <p>Every transfer across every currency account. Filter, inspect, and reverse where needed.</p>
+      </div>
+      <div class="admin-page-head-actions">
+        <button type="button" class="btn btn-ghost" id="export-csv">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v8m0 0 3-3m-3 3-3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 12v1.5A1.5 1.5 0 0 0 4.5 15h7a1.5 1.5 0 0 0 1.5-1.5V12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          Export CSV
+        </button>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         SUMMARY STAT ROW — computed client-side over the current
+         filtered page set is misleading for totals, so these three
+         are driven by a lightweight aggregate query
+         (getTransactionSummary) scoped to the same filters, not by
+         summing only the 25 rows on screen.
+         ========================================================= -->
+    <div class="admin-stat-row" id="tx-summary" aria-live="polite">
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Matching volume</span>
+        <span class="admin-stat-value" id="stat-volume">—</span>
+      </div>
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Matching transactions</span>
+        <span class="admin-stat-value" id="stat-count">—</span>
+      </div>
+      <div class="admin-stat-card">
+        <span class="admin-stat-label">Reversed</span>
+        <span class="admin-stat-value" id="stat-reversed">—</span>
+      </div>
+      <div class="admin-stat-card admin-stat-card--warning">
+        <span class="admin-stat-label">Flagged / processing</span>
+        <span class="admin-stat-value" id="stat-processing">—</span>
+      </div>
+    </div>
+
+    <!-- =========================================================
+         FILTER BAR — advanced: text search, status, currency,
+         date range, all combinable and reflected in the URL so a
+         filtered view is shareable/bookmarkable.
+         ========================================================= -->
+    <div class="admin-toolbar admin-toolbar--wrap">
+      <div class="admin-search-field">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.4"/><path d="m14 14-3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <input type="search" id="tx-search" placeholder="Search reference…" aria-label="Search transactions">
+      </div>
+
+      <select id="status-filter" aria-label="Filter by status">
+        <option value="">All statuses</option>
+        <option value="Completed">Completed</option>
+        <option value="Processing">Processing</option>
+        <option value="Failed">Failed</option>
+        <option value="Reversed">Reversed</option>
+      </select>
+
+      <select id="currency-filter" aria-label="Filter by currency">
+        <option value="">All currencies</option>
+        <option value="USD">USD</option>
+        <option value="EUR">EUR</option>
+        <option value="GBP">GBP</option>
+        <option value="SGD">SGD</option>
+        <option value="JPY">JPY</option>
+        <option value="NGN">NGN</option>
+        <option value="CAD">CAD</option>
+        <option value="AUD">AUD</option>
+        <option value="CHF">CHF</option>
+      </select>
+
+      <div class="admin-date-range">
+        <input type="date" id="date-from" aria-label="From date">
+        <span class="admin-date-range-sep">–</span>
+        <input type="date" id="date-to" aria-label="To date">
+      </div>
+
+      <button type="button" class="btn btn-ghost btn-sm" id="clear-filters">Clear</button>
+
+      <span class="admin-toolbar-count" id="tx-count" aria-live="polite"></span>
+    </div>
+
+    <!-- =========================================================
+         TRANSACTIONS TABLE — sortable columns (amount, date)
+         ========================================================= -->
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th scope="col">Reference</th>
+            <th scope="col">Type</th>
+            <th scope="col" class="is-sortable" data-sort="amount">
+              Amount
+              <svg class="sort-caret" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 4l3-3 3 3M2 6l3 3 3-3" stroke="currentColor" stroke-width="1.2"/></svg>
+            </th>
+            <th scope="col">Status</th>
+            <th scope="col" class="is-sortable is-sorted-desc" data-sort="created_at">
+              Date
+              <svg class="sort-caret" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 4l3-3 3 3M2 6l3 3 3-3" stroke="currentColor" stroke-width="1.2"/></svg>
+            </th>
+            <th scope="col"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="tx-table-body" aria-live="polite">
+          <tr class="admin-table-skeleton-row"><td colspan="6">Loading transactions…</td></tr>
+        </tbody>
+      </table>
+
+      <p class="admin-table-empty" id="tx-empty" hidden>No transactions match these filters.</p>
+    </div>
+
+    <div class="admin-pagination" id="tx-pagination" aria-live="polite">
+      <button type="button" class="btn btn-ghost btn-sm" id="tx-prev-page" disabled>Previous</button>
+      <span id="tx-page-indicator">Page 1</span>
+      <button type="button" class="btn btn-ghost btn-sm" id="tx-next-page" disabled>Next</button>
+    </div>
+
+  </div>
+</main>
+
+<!-- =========================================================
+     TRANSACTION DETAIL DRAWER
+     ========================================================= -->
+<div class="admin-drawer-overlay" id="tx-drawer-overlay" aria-hidden="true">
+  <aside class="admin-drawer" role="dialog" aria-modal="true" aria-labelledby="tx-drawer-title">
+    <div class="admin-drawer-head">
+      <div class="admin-drawer-identity">
+        <div>
+          <h2 id="tx-drawer-title">—</h2>
+          <span id="tx-drawer-subtitle" class="admin-drawer-subtitle">—</span>
+        </div>
+      </div>
+      <button type="button" class="modal-close" id="tx-drawer-close" aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="admin-drawer-body" id="tx-drawer-body">
+      <!-- injected by admin-transactions.js -->
+    </div>
+  </aside>
+</div>
+
+<!-- =========================================================
+     REVERSE TRANSACTION MODAL — typed confirmation, since moving
+     money back is one of the most dangerous actions in the panel.
+     ========================================================= -->
+<div class="modal-overlay" id="reverse-modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reverse-modal-title">
+    <div class="modal-head">
+      <div>
+        <h3 id="reverse-modal-title">Reverse transaction</h3>
+        <p>This creates an offsetting entry and cannot be undone. Type <strong>REVERSE</strong> to confirm.</p>
+      </div>
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <form id="reverse-modal-form" novalidate>
+      <div class="field">
+        <label for="reverse-reason">Reason</label>
+        <textarea id="reverse-reason" rows="3" placeholder="Required — logged to the audit trail" required></textarea>
+        <span class="field-error" role="alert"></span>
+      </div>
+
+      <div class="field">
+        <label for="reverse-confirm-text">Type REVERSE to confirm</label>
+        <input type="text" id="reverse-confirm-text" autocomplete="off" placeholder="REVERSE">
+        <span class="field-error" role="alert"></span>
+      </div>
+
+      <p class="field-hint" id="reverse-modal-error" style="color:var(--red); display:none; margin-bottom:1rem;"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+        <button type="submit" class="btn btn-danger" id="reverse-modal-submit" disabled>Reverse transaction</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+<script src="../../assets/js/main.js"></script>
+<script type="module" src="admin-transactions.js"></script>
+</body>
+</html>
