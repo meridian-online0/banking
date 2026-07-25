@@ -5,9 +5,10 @@
      1. Auth guard (redirect to login if no session) + reveal of
         content hidden by the auth-pending class (see auth-guard.js)
      2. Shared app-header bits: avatar initial, name, notification
-        badge, user menu dropdown, log out — deferred until the
-        app-navbar component (loaded separately by components.js)
-        has actually landed in the DOM, see waitForNavbar() below
+        badge, user menu dropdown, mobile nav toggle, log out —
+        deferred until the app-navbar component (loaded separately
+        by components.js) has actually landed in the DOM, see
+        waitForNavbar() below
      3. Fetching the signed-in user's accounts and rendering them
         into the grid, with a skeleton state while loading and an
         empty state if they have none yet
@@ -158,6 +159,38 @@ function initUserMenu() {
   trigger.addEventListener('click', (event) => {
     event.stopPropagation();
     menu.classList.contains('is-open') ? close() : open();
+  });
+}
+
+/* -----------------------------------------------------------
+   Mobile nav toggle — wires up the hamburger (.app-nav-toggle)
+   in the shared app-navbar partial to show/hide .app-nav on
+   narrow viewports. This was missing here even though the button
+   itself renders (it's part of app-navbar.html) — dashboard.js
+   has the matching implementation; kept identical so both pages
+   behave the same way.
+   ----------------------------------------------------------- */
+function initMobileNav() {
+  const toggle = $('.app-nav-toggle');
+  const nav = $('.app-nav');
+  if (!toggle || !nav) return;
+
+  toggle.addEventListener('click', () => {
+    const isOpen = nav.classList.toggle('is-mobile-open');
+    toggle.setAttribute('aria-expanded', String(isOpen));
+  });
+  nav.addEventListener('click', (event) => {
+    if (event.target.tagName === 'A') {
+      nav.classList.remove('is-mobile-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!nav.classList.contains('is-mobile-open')) return;
+    if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+      nav.classList.remove('is-mobile-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
   });
 }
 
@@ -493,6 +526,7 @@ function initAddAccountModal() {
   waitForNavbar().then(() => {
     populateHeader();
     initUserMenu();
+    initMobileNav();
     initLogout();
   });
 
