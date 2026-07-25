@@ -4,78 +4,79 @@
 
    PURPOSE
    -------
-   The dark/dense theme components/admin-navbar.html and every
-   pages/admin/*.html page assume but haven't been styled against
-   yet (see the "Draft only" note on admin-navbar.html and the
-   "planned" entry in the file tree). Loaded alongside the existing
-   style.css / dashboard.css / components.css on every admin page —
-   NOT a replacement for them. Those still supply the shared
-   primitives (container, btn, field, modal-overlay, toast, skeleton,
-   tab-toggle, --red, etc.) that the customer app already defines;
-   this file only adds admin-specific layout (sidebar shell, dense
+   The chrome and shared primitives for every pages/admin/*.html
+   page (except the login page's own card, handled at the bottom
+   of this file). Loaded alongside style.css / components.css /
+   dashboard.css — NOT a replacement for them; those still supply
+   .container, .btn, .field, .modal-overlay, .toast-stack, .skeleton.
+   This file adds admin-specific layout (sidebar shell, dense
    tables, stat cards, drawer) and re-skins a few shared primitives
-   darker where they appear inside .admin-body.
+   inside .admin-body.
 
-   ASSUMPTION FLAGGED: style.css/components.css/dashboard.css were
-   not available to check against directly — only inferred from
-   accounts.html/settings.js's usage (var(--red) is confirmed real;
-   .container, .btn, .modal-overlay, .field, .toast-stack, .skeleton
-   are used as global classes there). Everything admin-specific below
-   is scoped under .admin-body / .admin-* so it can't collide with
-   the customer app regardless of what those files actually contain.
-   If style.css turns out to define e.g. --radius or --border
-   already, prefer swapping the hardcoded values below for those
-   instead of keeping a parallel set.
-
-   VISUAL DIFFERENTIATION
-   -----------------------
-   Per the architecture doc's point 5: this is deliberately NOT a
-   reskin of the customer app's palette. Customer app reads as
-   light, warm, retail-banking. Admin reads as dark, dense,
-   operational — closer to a trading terminal or ops console than
-   a consumer product, so nobody mistakes a screenshot of one for
-   the other.
+   DESIGN — now token-for-token off style.css
+   -------------------------------------------
+   Previously this file defined its own --admin-* dark palette,
+   disconnected from the rest of Meridian. It now consumes
+   style.css's real tokens directly (--ink, --ivory, --brass,
+   --slate, --line-dark, --radius-*, --shadow-*, --font-*) — same
+   approach style.css itself already uses for its dark sections
+   (hero, security, footer): dark ink surfaces, ivory text, brass
+   accents. The admin panel still reads as dense/operational
+   (dark, data-forward) but is unmistakably part of the same
+   product, not a foreign tool.
    ============================================================= */
 
 /* -----------------------------------------------------------
-   Tokens — scoped to .admin-body so nothing here leaks onto
-   customer pages even if this file were accidentally linked there.
+   Local aliases — admin-specific surface levels built from
+   style.css's ink/line tokens, so admin.css itself only ever
+   references real brand variables, never invented hex values.
    ----------------------------------------------------------- */
 .admin-body {
-  --admin-bg: #0b0e14;
-  --admin-surface: #11151d;
-  --admin-surface-raised: #161b25;
-  --admin-surface-hover: #1c2230;
-  --admin-border: #232a38;
-  --admin-border-soft: #1a202c;
+  --admin-surface: var(--ink-2);
+  --admin-surface-raised: var(--ink-3);
+  --admin-surface-hover: rgba(246, 245, 240, 0.06);
+  --admin-border: var(--line-dark);
+  --admin-border-soft: rgba(246, 245, 240, 0.08);
 
-  --admin-text: #e7eaf0;
-  --admin-text-muted: #97a1b5;
-  --admin-text-faint: #5d6779;
+  --admin-text-muted: rgba(246, 245, 240, 0.68);
+  --admin-text-faint: rgba(246, 245, 240, 0.45);
 
-  --admin-accent: #4f7cff;
-  --admin-accent-soft: rgba(79, 124, 255, 0.14);
-  --admin-success: #2fbf71;
-  --admin-success-soft: rgba(47, 191, 113, 0.14);
-  --admin-warning: #e3a72e;
-  --admin-warning-soft: rgba(227, 167, 46, 0.14);
-  --admin-danger: #e35d5d;
-  --admin-danger-soft: rgba(227, 93, 93, 0.14);
-  --admin-neutral-soft: rgba(151, 161, 181, 0.14);
+  --admin-accent-soft: rgba(181, 138, 68, 0.16);
+  --admin-success-soft: var(--green-bg);
+  --admin-warning-soft: var(--amber-bg);
+  --admin-danger-soft: var(--red-bg);
+  --admin-neutral-soft: rgba(246, 245, 240, 0.08);
 
-  --admin-radius-sm: 6px;
-  --admin-radius-md: 10px;
-  --admin-radius-lg: 14px;
-  --admin-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --admin-font-mono: 'SFMono-Regular', ui-monospace, 'Roboto Mono', Menlo, Consolas, monospace;
-
-  background: var(--admin-bg);
-  color: var(--admin-text);
+  background: var(--ink);
+  color: var(--ivory);
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .admin-body a {
   color: inherit;
+}
+
+.admin-body ::selection {
+  background: rgba(181, 138, 68, 0.35);
+}
+
+/* Dark-surface scrollbars — small polish detail that light-theme
+   default scrollbars break on a page this dark. */
+.admin-body ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.admin-body ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.admin-body ::-webkit-scrollbar-thumb {
+  background: rgba(246, 245, 240, 0.14);
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+}
+.admin-body ::-webkit-scrollbar-thumb:hover {
+  background: rgba(246, 245, 240, 0.22);
 }
 
 /* -----------------------------------------------------------
@@ -98,8 +99,10 @@
   background: var(--admin-surface);
   border-right: 1px solid var(--admin-border);
   padding: 1.25rem 0.75rem;
+  padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  padding-left: calc(0.75rem + env(safe-area-inset-left));
   z-index: 50;
-  transition: transform 0.2s ease;
+  transition: transform 0.25s cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 .admin-sidebar-brand {
@@ -107,10 +110,11 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.75rem 1.5rem;
+  font-family: var(--font-display);
   font-weight: 600;
-  font-size: 0.95rem;
-  letter-spacing: 0.01em;
-  color: var(--admin-text);
+  font-size: 0.98rem;
+  letter-spacing: -0.005em;
+  color: var(--ivory);
 }
 
 .admin-sidebar-brand em {
@@ -120,9 +124,9 @@
 }
 
 .admin-sidebar-brand .brand-mark {
-  width: 22px;
-  height: 22px;
-  color: var(--admin-accent);
+  width: 24px;
+  height: 24px;
+  color: var(--brass-light);
   flex-shrink: 0;
 }
 
@@ -138,13 +142,15 @@
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  min-height: 44px;
   padding: 0.55rem 0.75rem;
-  border-radius: var(--admin-radius-sm);
+  border-radius: var(--radius-sm);
   font-size: 0.875rem;
+  font-weight: 500;
   color: var(--admin-text-muted);
   text-decoration: none;
   position: relative;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .admin-nav a svg {
@@ -156,13 +162,24 @@
 
 .admin-nav a:hover {
   background: var(--admin-surface-hover);
-  color: var(--admin-text);
+  color: var(--ivory);
 }
 
 .admin-nav a.is-active {
   background: var(--admin-accent-soft);
-  color: var(--admin-accent);
+  color: var(--brass-light);
   font-weight: 600;
+}
+
+.admin-nav a.is-active::before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--brass);
 }
 
 .admin-nav a.is-active svg {
@@ -180,7 +197,8 @@
   padding: 0 0.4rem;
   border-radius: 999px;
   background: var(--admin-neutral-soft);
-  color: var(--admin-text);
+  color: var(--ivory);
+  font-family: var(--font-mono);
   font-size: 0.7rem;
   font-weight: 700;
   display: inline-flex;
@@ -190,7 +208,7 @@
 
 .admin-nav-badge--alert {
   background: var(--admin-danger-soft);
-  color: var(--admin-danger);
+  color: #e88a83;
 }
 
 .admin-sidebar-foot {
@@ -201,8 +219,9 @@
 
 .admin-env-tag {
   display: inline-block;
-  font-size: 0.7rem;
-  font-weight: 700;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--admin-text-faint);
@@ -221,23 +240,31 @@
   align-items: center;
   gap: 1rem;
   padding: 0 1.5rem;
-  background: rgba(17, 21, 29, 0.85);
-  backdrop-filter: blur(10px);
+  padding-top: env(safe-area-inset-top);
+  background: rgba(15, 33, 56, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--admin-border);
   z-index: 45;
 }
 
 .admin-nav-toggle {
   display: none;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   align-items: center;
   justify-content: center;
-  border-radius: var(--admin-radius-sm);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--admin-border);
   background: transparent;
   color: var(--admin-text-muted);
   cursor: pointer;
+  flex-shrink: 0;
+}
+
+.admin-nav-toggle:hover {
+  color: var(--ivory);
+  border-color: var(--admin-text-muted);
 }
 
 .admin-nav-toggle svg {
@@ -246,9 +273,13 @@
 }
 
 .admin-topbar-title {
+  font-family: var(--font-display);
   font-weight: 600;
-  font-size: 1rem;
-  color: var(--admin-text);
+  font-size: 1.02rem;
+  color: var(--ivory);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-topbar-actions {
@@ -256,17 +287,19 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 .admin-user-menu .app-user-trigger {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-height: 40px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--admin-radius-sm);
+  border-radius: var(--radius-sm);
   padding: 0.3rem 0.5rem;
-  color: var(--admin-text);
+  color: var(--ivory);
   cursor: pointer;
 }
 
@@ -281,21 +314,22 @@
 }
 
 .admin-role-pill {
-  font-size: 0.68rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
   background: var(--admin-accent-soft);
-  color: var(--admin-accent);
+  color: var(--brass-light);
 }
 
 .admin-user-menu .app-user-dropdown {
   background: var(--admin-surface-raised);
   border: 1px solid var(--admin-border);
-  box-shadow: var(--admin-shadow);
-  color: var(--admin-text);
+  box-shadow: var(--shadow-soft);
+  color: var(--ivory);
 }
 
 .admin-user-menu .app-user-dropdown-divider {
@@ -310,7 +344,8 @@
   height: 32px;
   border-radius: 999px;
   background: var(--admin-accent-soft);
-  color: var(--admin-accent);
+  color: var(--brass-light);
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.8rem;
 }
@@ -328,6 +363,7 @@
   margin-left: 248px;
   padding-top: 60px;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .admin-main .container {
@@ -336,8 +372,8 @@
 }
 
 .admin-body .page-head h1 {
-  color: var(--admin-text);
-  font-size: 1.4rem;
+  color: var(--ivory);
+  font-size: 1.45rem;
 }
 
 .admin-body .page-head p {
@@ -348,6 +384,7 @@
 .admin-page-head-actions {
   display: flex;
   gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 /* -----------------------------------------------------------
@@ -363,11 +400,16 @@
 .admin-stat-card {
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-lg);
+  border-radius: var(--radius-md);
   padding: 1rem 1.1rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  transition: border-color 0.15s ease;
+}
+
+.admin-stat-card:hover {
+  border-color: rgba(181, 138, 68, 0.35);
 }
 
 .admin-stat-label {
@@ -378,16 +420,17 @@
 }
 
 .admin-stat-value {
+  font-family: var(--font-mono);
   font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--admin-text);
+  font-weight: 500;
+  color: var(--ivory);
   font-variant-numeric: tabular-nums;
 }
 
-.admin-stat-card--warning .admin-stat-value { color: var(--admin-warning); }
-.admin-stat-card--danger .admin-stat-value { color: var(--admin-danger); }
-.admin-stat-card--warning { border-color: rgba(227, 167, 46, 0.35); }
-.admin-stat-card--danger { border-color: rgba(227, 93, 93, 0.35); }
+.admin-stat-card--warning .admin-stat-value { color: var(--amber); }
+.admin-stat-card--danger .admin-stat-value { color: #e0857c; }
+.admin-stat-card--warning { border-color: rgba(179, 119, 29, 0.35); }
+.admin-stat-card--danger { border-color: rgba(192, 69, 59, 0.35); }
 
 /* -----------------------------------------------------------
    Toolbar — search / filters / date range
@@ -431,10 +474,18 @@
 .admin-date-range input {
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-sm);
-  color: var(--admin-text);
+  border-radius: var(--radius-sm);
+  color: var(--ivory);
   font-size: 0.85rem;
-  height: 36px;
+  height: 38px;
+}
+
+.admin-toolbar select:focus,
+.admin-search-field input:focus,
+.admin-date-range input:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(181, 138, 68, 0.18);
 }
 
 .admin-toolbar select {
@@ -463,17 +514,20 @@
 }
 
 /* -----------------------------------------------------------
-   Table
+   Table — horizontally scrollable on small screens rather than
+   crushed, with a min-width so columns stay legible.
    ----------------------------------------------------------- */
 .admin-table-wrap {
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-lg);
-  overflow: hidden;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .admin-table {
   width: 100%;
+  min-width: 640px;
   border-collapse: collapse;
   font-size: 0.85rem;
 }
@@ -510,15 +564,13 @@
 .admin-table th.is-sorted-asc .sort-caret,
 .admin-table th.is-sorted-desc .sort-caret {
   opacity: 0.9;
-  color: var(--admin-accent);
+  color: var(--brass-light);
 }
 
-.admin-table th.is-sorted-asc .sort-caret path { d: path('M2 4l3-3 3 3'); }
-
 .admin-table td {
-  padding: 0.65rem 1rem;
+  padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--admin-border-soft);
-  color: var(--admin-text);
+  color: var(--ivory);
   vertical-align: middle;
 }
 
@@ -531,13 +583,13 @@
 }
 
 .admin-table code {
-  font-family: var(--admin-font-mono);
+  font-family: var(--font-mono);
   font-size: 0.8rem;
   color: var(--admin-text-muted);
 }
 
 .admin-table td.is-negative {
-  color: var(--admin-danger);
+  color: #e0857c;
 }
 
 .admin-table-identity {
@@ -590,9 +642,9 @@
   text-transform: capitalize;
 }
 
-.admin-status-pill--success { background: var(--admin-success-soft); color: var(--admin-success); }
-.admin-status-pill--warning { background: var(--admin-warning-soft); color: var(--admin-warning); }
-.admin-status-pill--danger  { background: var(--admin-danger-soft);  color: var(--admin-danger); }
+.admin-status-pill--success { background: var(--admin-success-soft); color: #3fcf8a; }
+.admin-status-pill--warning { background: var(--admin-warning-soft); color: var(--amber); }
+.admin-status-pill--danger  { background: var(--admin-danger-soft);  color: #e0857c; }
 .admin-status-pill--neutral { background: var(--admin-neutral-soft); color: var(--admin-text-muted); }
 
 /* -----------------------------------------------------------
@@ -606,6 +658,7 @@
   margin-top: 1rem;
   font-size: 0.82rem;
   color: var(--admin-text-muted);
+  flex-wrap: wrap;
 }
 
 /* -----------------------------------------------------------
@@ -614,13 +667,13 @@
 .admin-drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(4, 6, 10, 0.55);
+  background: rgba(4, 6, 10, 0.6);
   z-index: 70;
   display: flex;
   justify-content: flex-end;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease;
+  transition: opacity 0.2s ease;
 }
 
 .admin-drawer-overlay[aria-hidden="false"] {
@@ -633,12 +686,13 @@
   height: 100%;
   background: var(--admin-surface-raised);
   border-left: 1px solid var(--admin-border);
-  box-shadow: var(--admin-shadow);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   transform: translateX(16px);
-  transition: transform 0.18s ease;
+  transition: transform 0.2s ease;
   overflow-y: auto;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .admin-drawer-overlay[aria-hidden="false"] .admin-drawer {
@@ -666,7 +720,7 @@
 
 .admin-drawer-identity h2 {
   font-size: 1.05rem;
-  color: var(--admin-text);
+  color: var(--ivory);
   margin: 0;
 }
 
@@ -695,10 +749,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.45rem 0;
+  padding: 0.5rem 0;
   border-bottom: 1px solid var(--admin-border-soft);
   font-size: 0.85rem;
-  color: var(--admin-text);
+  color: var(--ivory);
 }
 
 .admin-detail-row:last-child {
@@ -724,10 +778,15 @@
    primitives (from components.css) darker, scoped to .admin-body
    so the customer app's modal styling is untouched.
    ----------------------------------------------------------- */
+.admin-body .modal-overlay {
+  background: rgba(4, 6, 10, 0.6);
+}
+
 .admin-body .modal-card {
   background: var(--admin-surface-raised);
   border: 1px solid var(--admin-border);
-  color: var(--admin-text);
+  box-shadow: var(--shadow-soft);
+  color: var(--ivory);
 }
 
 .admin-body .modal-head p,
@@ -741,10 +800,13 @@
 
 .admin-body textarea,
 .admin-body input[type="text"],
-.admin-body input[type="search"] {
-  background: var(--admin-surface);
+.admin-body input[type="search"],
+.admin-body input[type="email"],
+.admin-body input[type="number"],
+.admin-body select {
+  background: var(--ink);
   border: 1px solid var(--admin-border);
-  color: var(--admin-text);
+  color: var(--ivory);
 }
 
 .field-optional {
@@ -755,28 +817,70 @@
 }
 
 /* -----------------------------------------------------------
-   Buttons — admin adds a danger variant on top of whatever
-   btn-primary / btn-ghost already do in components.css
+   Buttons — admin adds a danger/warning/success variant on top
+   of whatever btn-primary / btn-ghost already provide, all off
+   real palette tokens (var(--red)/var(--amber)/var(--green))
    ----------------------------------------------------------- */
+.admin-body .btn-primary {
+  box-shadow: 0 10px 24px -10px rgba(181, 138, 68, 0.45);
+}
+
 .btn-danger {
-  background: var(--admin-danger);
-  border: 1px solid var(--admin-danger);
-  color: #fff;
+  background: var(--red);
+  border: 1px solid var(--red);
+  color: var(--ivory);
 }
 
 .btn-danger:hover {
-  background: #cf4c4c;
+  background: #a63a31;
+}
+
+.admin-btn--warning {
+  background: var(--amber);
+  border: 1px solid var(--amber);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.admin-btn--warning:hover {
+  filter: brightness(1.08);
+}
+
+.admin-btn--success {
+  background: var(--green);
+  border: 1px solid var(--green);
+  color: var(--ivory);
+  font-weight: 600;
+}
+
+.admin-btn--success:hover {
+  filter: brightness(1.08);
+}
+
+.admin-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--admin-border);
+  color: var(--admin-text-muted);
+}
+
+.admin-btn--ghost:hover {
+  border-color: var(--admin-text-muted);
+  color: var(--ivory);
 }
 
 .btn-danger:disabled,
-.btn-primary:disabled {
+.admin-btn--warning:disabled,
+.admin-btn--success:disabled,
+.admin-body .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.admin-body .btn-sm {
-  padding: 0.35rem 0.7rem;
-  font-size: 0.78rem;
+.admin-body .btn-sm,
+.admin-btn-sm {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+  width: auto;
 }
 
 /* -----------------------------------------------------------
@@ -784,25 +888,52 @@
    matches the admin theme instead of the customer app's light one.
    ----------------------------------------------------------- */
 .admin-body .auth-loader {
-  background: var(--admin-bg);
+  background: var(--ink);
 }
 
+.admin-page-loader {
+  display: none;
+  position: fixed;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  background: var(--ink);
+  z-index: 100;
+}
 
+.admin-page-loader-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2.5px solid var(--admin-border);
+  border-top-color: var(--brass);
+  animation: admin-page-spin 0.7s linear infinite;
+}
 
+@keyframes admin-page-spin {
+  to { transform: rotate(360deg); }
+}
 
+@media (prefers-reduced-motion: reduce) {
+  .admin-page-loader-mark,
+  .admin-login-loader-mark {
+    animation: none;
+  }
+}
 
-
-/* -----------------------------------------------------------
+/* =============================================================
    Admin login page — components/admin-login.html
    Not inside .admin-main (no sidebar/topbar on this page), so
    these are scoped to .admin-login-body instead, but still pull
-   every color/radius/shadow from the same --admin-* tokens above.
-   ----------------------------------------------------------- */
+   every color/radius/shadow from the same real tokens above.
+   ============================================================= */
 .admin-login-body {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
+  padding-top: calc(1.5rem + env(safe-area-inset-top));
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
 }
 
 .admin-login-shell {
@@ -811,9 +942,6 @@
   max-width: 400px;
 }
 
-/* Hide the form while redirectIfAdminAuthenticated() checks for an
-   existing session — matches the [data-admin-auth="pending"] hook
-   named in admin-login.html's own comment. */
 [data-admin-auth="pending"] .admin-login-card {
   visibility: hidden;
 }
@@ -839,7 +967,7 @@
   height: 28px;
   border-radius: 50%;
   border: 2.5px solid var(--admin-border);
-  border-top-color: var(--admin-accent);
+  border-top-color: var(--brass);
   animation: admin-login-spin 0.7s linear infinite;
 }
 
@@ -847,17 +975,11 @@
   to { transform: rotate(360deg); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .admin-login-loader-mark {
-    animation: none;
-  }
-}
-
 .admin-login-card {
   background: var(--admin-surface);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-lg);
-  box-shadow: var(--admin-shadow);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-soft);
   padding: 2.25rem 2rem;
 }
 
@@ -866,15 +988,16 @@
   align-items: center;
   gap: 0.6rem;
   margin-bottom: 2rem;
+  font-family: var(--font-display);
   font-weight: 600;
   font-size: 1.05rem;
-  color: var(--admin-text);
+  color: var(--ivory);
 }
 
 .admin-login-brand svg {
   width: 30px;
   height: 30px;
-  color: var(--admin-accent);
+  color: var(--brass-light);
   flex-shrink: 0;
 }
 
@@ -885,8 +1008,8 @@
 }
 
 .admin-login-form h1 {
-  font-size: 1.25rem;
-  color: var(--admin-text);
+  font-size: 1.3rem;
+  color: var(--ivory);
   margin: 0 0 0.4rem;
 }
 
@@ -900,9 +1023,9 @@
 .admin-login-error {
   display: none;
   font-size: 0.82rem;
-  color: var(--admin-danger);
+  color: #e0857c;
   background: var(--admin-danger-soft);
-  border-radius: var(--admin-radius-sm);
+  border-radius: var(--radius-sm);
   padding: 0.65rem 0.85rem;
   margin-bottom: 1.25rem;
 }
@@ -925,42 +1048,45 @@
 }
 
 .admin-field input {
-  background: var(--admin-bg);
+  background: var(--ink);
   border: 1px solid var(--admin-border);
-  border-radius: var(--admin-radius-sm);
-  color: var(--admin-text);
-  padding: 0.65rem 0.8rem;
-  font-size: 0.9rem;
-  transition: border-color 0.15s ease;
+  border-radius: var(--radius-sm);
+  color: var(--ivory);
+  padding: 0.7rem 0.8rem;
+  font-size: 0.95rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .admin-field input:focus {
   outline: none;
-  border-color: var(--admin-accent);
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(181, 138, 68, 0.18);
 }
 
 .admin-btn {
   width: 100%;
+  min-height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--admin-radius-sm);
+  border-radius: var(--radius-sm);
   padding: 0.7rem 1rem;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
 }
 
 .admin-btn--primary {
-  background: var(--admin-accent);
-  color: #fff;
+  background: var(--brass);
+  color: var(--ink);
   margin-top: 0.4rem;
+  box-shadow: 0 10px 24px -10px rgba(181, 138, 68, 0.5);
 }
 
 .admin-btn--primary:hover {
-  background: #3d6af0;
+  background: var(--brass-light);
 }
 
 .admin-btn--primary:disabled {
@@ -976,19 +1102,48 @@
 }
 
 .admin-btn--text:hover {
-  color: var(--admin-text);
+  color: var(--ivory);
 }
 
 /* -----------------------------------------------------------
-   Responsive — sidebar collapses to an off-canvas panel; topbar
-   toggle button (data-admin-nav-toggle) shows below 960px.
+   Responsive — mobile-first refinements on top of the shell
+   defaults above. Sidebar collapses to an off-canvas panel below
+   960px; topbar toggle (data-admin-nav-toggle) shows there too.
    Assumes admin-layout.js toggles an `is-open` class on
-   [data-admin-sidebar] — adjust the selector below if the real
-   implementation uses a different hook.
+   [data-admin-sidebar].
+
+   MOBILE SCRIM (not yet wired): tapping outside an open sidebar
+   should close it, same as the customer app's mobile-drawer
+   pattern in style.css. That needs a scrim element + a small
+   admin-layout.js hook I haven't seen yet — the CSS below is
+   ready for a `.admin-sidebar-scrim` + `.is-open` pair whenever
+   that's added.
    ----------------------------------------------------------- */
+.admin-sidebar-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 10, 0.55);
+  z-index: 49;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.admin-sidebar-scrim.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (min-width: 961px) {
+  .admin-sidebar-scrim {
+    display: none;
+  }
+}
+
 @media (max-width: 960px) {
   .admin-sidebar {
     transform: translateX(-100%);
+    box-shadow: var(--shadow-soft);
   }
 
   .admin-sidebar.is-open {
@@ -1014,7 +1169,20 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
+  .admin-topbar {
+    padding: 0 1rem;
+    gap: 0.6rem;
+  }
+
+  .admin-topbar-title {
+    font-size: 0.92rem;
+  }
+
+  .admin-role-pill {
+    display: none;
+  }
+
   .admin-stat-row {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1026,5 +1194,64 @@
   .admin-toolbar-count {
     margin-left: 0;
     width: 100%;
+  }
+
+  .admin-body .page-head--split {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .admin-page-head-actions {
+    width: 100%;
+  }
+
+  .admin-page-head-actions .btn,
+  .admin-page-head-actions .admin-btn-sm {
+    flex: 1;
+  }
+
+  .admin-pagination {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-stat-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-login-card {
+    padding: 1.75rem 1.4rem;
+  }
+
+  .admin-drawer-body {
+    padding: 1rem 1rem 1.75rem;
+  }
+
+  .admin-drawer-footer {
+    flex-direction: column;
+  }
+
+  .admin-drawer-footer .btn,
+  .admin-drawer-footer--wrap .btn {
+    width: 100%;
+  }
+}
+
+/* Coarse-pointer (touch) devices get slightly larger interactive
+   targets regardless of viewport width — covers touch laptops and
+   tablets in landscape that a max-width breakpoint alone would miss. */
+@media (pointer: coarse) {
+  .admin-table td,
+  .admin-table th {
+    padding-block: 0.85rem;
+  }
+
+  .admin-toolbar select,
+  .admin-search-field input,
+  .admin-date-range input {
+    height: 42px;
   }
 }
