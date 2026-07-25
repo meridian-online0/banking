@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Settings — Meridian Admin</title>
+<link rel="stylesheet" href="../../assets/css/admin.css">
+<link rel="stylesheet" href="../../assets/css/admin-settings.css">
+</head>
+<body class="admin-body" data-auth="pending">
+  <div class="admin-page-loader" aria-hidden="true">
+    <span class="admin-page-loader-mark"></span>
+  </div>
+  <div data-component="admin-navbar"></div>
+  <main class="admin-main">
+    <div class="admin-container">
+
+      <!-- ================================================
+           Team members — existing support/admin/superadmin
+           accounts, with an inline role changer per row.
+           ================================================ -->
+      <section class="admin-panel" aria-labelledby="team-heading">
+        <div class="admin-panel-head">
+          <h2 id="team-heading">Team members</h2>
+          <span class="admin-toolbar-count" id="team-count"></span>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th class="admin-table-actions">Action</th>
+              </tr>
+            </thead>
+            <tbody id="team-table-body">
+              <tr class="admin-table-skeleton-row"><td colspan="4">Loading team…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ================================================
+           Promote a user — search any account by email/name
+           and grant them a staff role.
+           ================================================ -->
+      <section class="admin-panel" aria-labelledby="promote-heading" style="margin-top: 1.5rem;">
+        <div class="admin-panel-head">
+          <h2 id="promote-heading">Grant access</h2>
+        </div>
+        <p class="admin-settings-hint">Search for any customer by name or email to grant them support, admin, or superadmin access.</p>
+
+        <div class="admin-search-field admin-settings-search">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input type="search" id="promote-search" placeholder="Search by name or email…">
+        </div>
+
+        <div id="promote-results"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Role change confirmation modal -->
+  <div class="modal-overlay" id="role-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3 id="role-modal-title">Change role</h3>
+          <p id="role-modal-subtitle">This takes effect immediately.</p>
+        </div>
+        <button type="button" class="modal-close" data-close-role-modal aria-label="Close">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <form id="role-form">
+        <div class="field">
+          <label for="role-select">New role</label>
+          <select id="role-select">
+            <option value="customer">Customer (revoke access)</option>
+            <option value="support">Support</option>
+            <option value="admin">Admin</option>
+            <option value="superadmin">Superadmin</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="role-reason">Reason</label>
+          <textarea id="role-reason" rows="3" required></textarea>
+          <span class="field-error" id="role-reason-error"></span>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-role-modal>Cancel</button>
+          <button type="submit" class="admin-btn admin-btn--primary">Confirm change</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+  <script type="module">
+    import { loadComponents } from '../../components/components.js';
+  </script>
+  <script type="module" src="./admin-settings.js"></script>
+</body>
+</html>
