@@ -75,6 +75,8 @@ let state = {
 export async function mountChatWidget(componentsBase) {
   if (state.mounted || document.getElementById('chat-widget-root')) return;
 
+  injectStylesheet(componentsBase);
+
   const response = await fetch(`${componentsBase}chat-widget.html`);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const html = await response.text();
@@ -90,6 +92,25 @@ export async function mountChatWidget(componentsBase) {
   if (sessionStorage.getItem(SESSION_KEY) === '1') {
     await openPanel();
   }
+}
+
+/**
+ * Adds <link rel="stylesheet" href=".../chat-widget.css"> to <head>
+ * if it isn't already there — so pages don't need a manual <link>
+ * tag added by hand. Reuses componentsBase (e.g. '' or '../components/')
+ * from resolveComponentsBase() in components.js, swapping the
+ * 'components/' segment for 'assets/css/' so the path resolves
+ * correctly whether the page is at the site root or under /pages/.
+ */
+function injectStylesheet(componentsBase) {
+  if (document.querySelector('link[data-chat-widget-styles]')) return;
+
+  const cssBase = componentsBase.replace(/components\/$/, 'assets/css/');
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `${cssBase}chat-widget.css`;
+  link.setAttribute('data-chat-widget-styles', '');
+  document.head.appendChild(link);
 }
 
 /* -----------------------------------------------------------
