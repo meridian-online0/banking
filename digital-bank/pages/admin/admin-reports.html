@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Reports — Meridian Admin</title>
+<link rel="stylesheet" href="../../assets/css/admin.css">
+<link rel="stylesheet" href="../../assets/css/admin-reports.css">
+</head>
+<body class="admin-body" data-auth="pending">
+  <div class="admin-page-loader" aria-hidden="true">
+    <span class="admin-page-loader-mark"></span>
+  </div>
+  <div data-component="admin-navbar"></div>
+  <main class="admin-main">
+    <div class="admin-container">
+
+      <div class="admin-toolbar admin-toolbar--wrap">
+        <div class="admin-date-range">
+          <input type="date" id="range-from">
+          <span class="admin-date-range-sep">to</span>
+          <input type="date" id="range-to">
+        </div>
+        <div class="admin-range-presets">
+          <button type="button" class="admin-preset-btn" data-days="7">7d</button>
+          <button type="button" class="admin-preset-btn is-active" data-days="30">30d</button>
+          <button type="button" class="admin-preset-btn" data-days="90">90d</button>
+        </div>
+        <button type="button" class="admin-btn admin-btn--primary admin-btn-sm" id="run-report-btn">Run report</button>
+        <button type="button" class="admin-btn admin-btn--ghost admin-btn-sm" id="export-csv-btn">Export CSV</button>
+      </div>
+
+      <p class="admin-inline-error" id="report-error" role="alert" aria-live="polite" hidden></p>
+
+      <section class="admin-stat-row" id="report-stat-row" aria-label="Report totals">
+        <div class="admin-stat-card"><span class="admin-stat-label">Total volume</span><span class="admin-stat-value">—</span></div>
+        <div class="admin-stat-card"><span class="admin-stat-label">Total fees</span><span class="admin-stat-value">—</span></div>
+        <div class="admin-stat-card"><span class="admin-stat-label">Transactions</span><span class="admin-stat-value">—</span></div>
+        <div class="admin-stat-card"><span class="admin-stat-label">Currencies</span><span class="admin-stat-value">—</span></div>
+      </section>
+
+      <section class="admin-panel" aria-labelledby="volume-heading">
+        <div class="admin-panel-head">
+          <h2 id="volume-heading">Volume by currency</h2>
+          <span class="admin-toolbar-count" id="report-range-label"></span>
+        </div>
+        <div id="volume-breakdown">
+          <p class="admin-table-empty">Run a report to see results.</p>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module">
+    import { loadComponents } from '../../components/components.js';
+  </script>
+  <script type="module" src="./admin-reports.js"></script>
+</body>
+</html>
