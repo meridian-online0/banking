@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Support — Meridian Admin</title>
+<link rel="stylesheet" href="../../assets/css/admin.css">
+<link rel="stylesheet" href="../../assets/css/admin-support.css">
+</head>
+<body class="admin-body" data-auth="pending">
+  <div class="admin-page-loader" aria-hidden="true">
+    <span class="admin-page-loader-mark"></span>
+  </div>
+  <div data-component="admin-navbar"></div>
+  <main class="admin-main">
+    <div class="admin-container">
+
+      <section class="admin-stat-row" id="ticket-stat-row" aria-label="Ticket summary">
+        <div class="admin-stat-card"><span class="admin-stat-label">Open</span><span class="admin-stat-value">—</span></div>
+        <div class="admin-stat-card"><span class="admin-stat-label">Assigned</span><span class="admin-stat-value">—</span></div>
+        <div class="admin-stat-card"><span class="admin-stat-label">Resolved</span><span class="admin-stat-value">—</span></div>
+        <div class="admin-stat-card"><span class="admin-stat-label">Closed</span><span class="admin-stat-value">—</span></div>
+      </section>
+
+      <div class="admin-toolbar admin-toolbar--wrap">
+        <div class="admin-search-field">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input type="search" id="ticket-search" placeholder="Search by subject…">
+        </div>
+        <select id="status-filter">
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          <option value="assigned">Assigned</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+        <select id="priority-filter">
+          <option value="">All priorities</option>
+          <option value="urgent">Urgent</option>
+          <option value="high">High</option>
+          <option value="normal">Normal</option>
+          <option value="low">Low</option>
+        </select>
+        <span class="admin-toolbar-count" id="ticket-count"></span>
+      </div>
+
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Subject</th>
+              <th>Customer</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Assigned to</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="ticket-table-body">
+            <tr class="admin-table-skeleton-row"><td colspan="6">Loading tickets…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="admin-pagination" id="ticket-pagination" hidden></div>
+    </div>
+  </main>
+
+  <!-- ================================================
+       Ticket detail drawer
+       ================================================ -->
+  <div class="admin-drawer-overlay" id="ticket-drawer-overlay" aria-hidden="true">
+    <div class="admin-drawer">
+      <div class="admin-drawer-head">
+        <div class="admin-drawer-identity">
+          <div>
+            <h2 id="drawer-subject">Ticket</h2>
+            <p class="admin-drawer-subtitle" id="drawer-customer">—</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close" id="drawer-close" aria-label="Close">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
+      <div class="admin-drawer-body">
+        <div class="admin-drawer-section">
+          <h4>Status</h4>
+          <div class="admin-detail-row">
+            <span>Current status</span>
+            <span class="admin-status-pill" id="drawer-status-pill">—</span>
+          </div>
+          <div class="admin-detail-row">
+            <span>Priority</span>
+            <span id="drawer-priority">—</span>
+          </div>
+          <div class="admin-detail-row">
+            <span>Category</span>
+            <span id="drawer-category">—</span>
+          </div>
+        </div>
+
+        <div class="admin-drawer-section">
+          <h4>Assign</h4>
+          <div class="admin-assign-row">
+            <select id="assign-select">
+              <option value="">Unassigned</option>
+            </select>
+            <button type="button" class="admin-btn admin-btn--primary admin-btn-sm" id="assign-btn">Assign</button>
+          </div>
+        </div>
+
+        <div class="admin-drawer-section">
+          <h4>Conversation</h4>
+          <div class="admin-ticket-thread" id="ticket-thread"></div>
+
+          <form id="reply-form" class="admin-reply-form">
+            <textarea id="reply-body" rows="3" placeholder="Write a reply…" required></textarea>
+            <button type="submit" class="admin-btn admin-btn--primary admin-btn-sm">Send reply</button>
+          </form>
+        </div>
+
+        <div class="admin-drawer-footer admin-drawer-footer--wrap">
+          <button type="button" class="admin-btn admin-btn--success" id="resolve-btn">Mark resolved</button>
+          <button type="button" class="admin-btn admin-btn--ghost" id="reopen-btn" hidden>Reopen ticket</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Resolve confirmation modal -->
+  <div class="modal-overlay" id="resolve-modal">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <h3>Resolve this ticket?</h3>
+          <p>Add an optional note describing how it was resolved.</p>
+        </div>
+        <button type="button" class="modal-close" data-close-resolve-modal aria-label="Close">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 2l12 12M14 2 2 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <form id="resolve-form">
+        <div class="field">
+          <label for="resolve-note">Resolution note (optional)</label>
+          <textarea id="resolve-note" rows="3"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-resolve-modal>Cancel</button>
+          <button type="submit" class="admin-btn admin-btn--primary">Confirm resolve</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+
+  <script type="module">
+    import { loadComponents } from '../../components/components.js';
+  </script>
+  <script type="module" src="./admin-support.js"></script>
+</body>
+</html>
