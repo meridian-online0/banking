@@ -33,10 +33,22 @@
 
    Statements, by contrast, are 100% real — built from your actual
    `transactions` table via the existing getTransactions().
+
+   HEADER WIRING — matches profile.js's pattern exactly: the app
+   header now loads from components/app-navbar.html via
+   components.js's loadComponents(), which can resolve before OR
+   after this module's own async init. waitForNavbar() below
+   checks whether the navbar markup is already in the DOM and, if
+   not, waits for the `component:loaded` event it dispatches once
+   injection finishes, before touching anything header-related
+   (name, avatar, notification badge, user menu, mobile nav,
+   logout). Calling those before the partial lands would just
+   silently no-op — every one of them has an early `if (!el)
+   return`.
    ============================================================= */
 
+import { getMyProfile, updateMyProfile, getMyAccounts, getTransactions, getUnreadNotificationCount } from '../supabase/database.js';
 import { guardPage } from '../supabase/page-guard.js';
-import { getMyProfile, updateMyProfile, getMyAccounts, getTransactions } from '../supabase/database.js';
 import { supabase } from '../supabase/config.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
@@ -87,6 +99,75 @@ function setButtonLoading(button, isLoading) {
 }
 
 /* -----------------------------------------------------------
+   Initials / avatar rendering (same pattern as profile.js)
+   ----------------------------------------------------------- */
+function initials(firstName, lastName) {
+  const a = (firstName || '').trim().charAt(0);
+  const b = (lastName || '').trim().charAt(0);
+  return (a + b).toUpperCase() || 'M';
+}
+
+function paintAvatar(url, firstName, lastName) {
+  const label = initials(firstName, lastName);
+
+  $$('.avatar-initial--sm, .avatar-initial--lg').forEach((el) => {
+    if (url) {
+      el.innerHTML = `<img class="avatar-photo" src="${url}" alt="">`;
+    } else {
+      el.textContent = label;
+    }
+  });
+}
+
+/* -----------------------------------------------------------
+   Wait for the app-navbar component
+   settings.html loads its header from components/app-navbar.html
+   via components.js's loadComponents(), which runs as its own
+   module and dispatches `component:loaded` on `document` once
+   injection finishes. That can resolve before OR after this
+   module's own async init — calling initUserMenu()/initLogout()/
+   initMobileNav() before the partial lands means they each query
+   for elements that aren't in the DOM yet, silently no-op, and
+   never get wired up on that page load. This checks whether the
+   navbar markup is already in the DOM first, and only falls back
+   to listening for the event if it isn't there yet, so it's
+   correct either way.
+   ----------------------------------------------------------- */
+function waitForNavbar() {
+  return new Promise((resolve) => {
+    if ($('.app-user-menu')) {
+      resolve();
+      return;
+    }
+    document.addEventListener('component:loaded', () => resolve(), { once: true });
+  });
+}
+
+/* -----------------------------------------------------------
+   Header identity + notification badge
+   Same approach as dashboard.js / profile.js against the shared
+   navbar component (components/app-navbar.html).
+   ----------------------------------------------------------- */
+function populateHeader(profile) {
+  const nameEl = $('.app-user-name');
+  if (nameEl) nameEl.textContent = profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : 'Your account';
+  paintAvatar(profile?.profile_photo, profile?.first_name, profile?.last_name);
+}
+
+async function populateNotificationBadge() {
+  const badge = $('.app-icon-btn-badge');
+  if (!badge) return;
+
+  const { data: count } = await getUnreadNotificationCount();
+  if (!count) {
+    badge.style.display = 'none';
+    return;
+  }
+  badge.textContent = count > 9 ? '9+' : String(count);
+  badge.style.display = 'flex';
+}
+
+/* -----------------------------------------------------------
    Header: user menu, logout, mobile nav
    ----------------------------------------------------------- */
 function initUserMenu() {
@@ -115,14 +196,18 @@ function initUserMenu() {
   });
 }
 
+/* -----------------------------------------------------------
+   Log out — targets the navbar component's #logout-link
+   ----------------------------------------------------------- */
 function initLogout() {
-  $$('.app-user-dropdown a[href="../index.html"]').forEach((link) => {
-    link.addEventListener('click', async (event) => {
-      event.preventDefault();
-      const { signOutUser } = await import('../supabase/auth.js');
-      await signOutUser();
-      window.location.href = link.getAttribute('href');
-    });
+  const logoutLink = $('#logout-link');
+  if (!logoutLink) return;
+
+  logoutLink.addEventListener('click', async (event) => {
+    event.preventDefault();
+    const { signOutUser } = await import('../supabase/auth.js');
+    await signOutUser();
+    window.location.href = logoutLink.getAttribute('href');
   });
 }
 
@@ -751,6 +836,7 @@ function initApiKeyModal() {
   currentProfile = profile;
   myAccounts = accounts || [];
 
+  waitForNavbar().then(() => populateHeader(profile));
   populateGeneralForm(profile);
   initAppearanceSwitches(profile);
   populateStatementAccountSelect(myAccounts);
