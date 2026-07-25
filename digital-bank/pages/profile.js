@@ -3,12 +3,15 @@
    Script: pages/profile.js
    Loaded as a module by profile.html only. Handles:
      1. Auth guard
-     2. Header identity (name, avatar) + notification badge —
-        mirrors dashboard.js's approach against the shared
-        components/app-navbar.html component
-     3. User menu dropdown, mobile nav toggle, log out — same
-        implementations as dashboard.js, targeting the navbar
-        component's #logout-link
+     2. Header identity (name, avatar) + notification badge, user
+        menu dropdown, mobile nav toggle, log out — all deferred
+        until the app-navbar component (loaded separately by
+        components.js) has actually landed in the DOM; see
+        waitForNavbar() below. (Previously these ran immediately,
+        which raced components.js's fetch() for the partial — if
+        the partial hadn't loaded yet, initUserMenu()/initLogout()/
+        initMobileNav() would each silently find nothing and never
+        retry, leaving the hamburger and user dropdown unwired.)
      4. Section navigation (Overview / Personal / Security /
         Notifications / Danger zone) — hash-linked, keyboard
         accessible tabs
@@ -110,6 +113,30 @@ function paintAvatar(url, firstName, lastName) {
     } else {
       el.textContent = label;
     }
+  });
+}
+
+/* -----------------------------------------------------------
+   Wait for the app-navbar component
+   profile.html loads its header from components/app-navbar.html
+   via components.js's loadComponents(), which runs as its own
+   module and dispatches `component:loaded` on `document` once
+   injection finishes. That can resolve before OR after this
+   module's own async init — calling initUserMenu()/initLogout()/
+   initMobileNav() before the partial lands means they each query
+   for elements that aren't in the DOM yet, silently no-op (they
+   all have an early `if (!el) return`), and never get wired up on
+   that page load. This checks whether the navbar markup is
+   already in the DOM first, and only falls back to listening for
+   the event if it isn't there yet, so it's correct either way.
+   ----------------------------------------------------------- */
+function waitForNavbar() {
+  return new Promise((resolve) => {
+    if ($('.app-user-menu')) {
+      resolve();
+      return;
+    }
+    document.addEventListener('component:loaded', () => resolve(), { once: true });
   });
 }
 
@@ -735,9 +762,15 @@ function initDangerZone() {
   if (!user) return; // requireAuth() already redirected to login.html
   currentUser = user;
 
-  initUserMenu();
-  initLogout();
-  initMobileNav();
+  // Header-dependent init waits for the app-navbar component to
+  // actually be in the DOM — see waitForNavbar() above.
+  waitForNavbar().then(() => {
+    populateNotificationBadge();
+    initUserMenu();
+    initMobileNav();
+    initLogout();
+  });
+
   initSectionNav();
   initAvatarUpload();
   initPasswordForm();
@@ -745,7 +778,6 @@ function initDangerZone() {
   initTwoFactorPicker();
   initNotificationSwitches();
   initDangerZone();
-  populateNotificationBadge();
 
   const { data: profile, error } = await getMyProfile(user.id);
   if (error || !profile) {
@@ -754,7 +786,7 @@ function initDangerZone() {
   }
 
   currentProfile = profile;
-  populateHeader(profile);
+  waitForNavbar().then(() => populateHeader(profile));
   populateBanner(profile);
   populatePersonalForm(profile);
   populateTwoFactor(profile);
