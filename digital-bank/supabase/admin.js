@@ -513,9 +513,76 @@ export async function reopenTicket(ticketId) {
 /* -----------------------------------------------------------
    8. Risk / fraud — admin-risk.html
    ----------------------------------------------------------- */
-export async function getRiskFlags() {
-  console.warn('[Meridian Admin] getRiskFlags() is a stub — no risk_flags table exists in the schema yet.');
-  return { data: { rows: [], total: 0 }, error: null };
+export async function getRiskFlagSummary() {
+  const [active, escalated, resolved] = await Promise.all([
+    supabase.from('risk_flags').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+    supabase.from('risk_flags').select('id', { count: 'exact', head: true }).eq('status', 'escalated'),
+    supabase.from('risk_flags').select('id', { count: 'exact', head: true }).eq('status', 'resolved'),
+  ]);
+  const firstError = [active, escalated, resolved].find((r) => r.error);
+  if (firstError) return { data: null, error: friendlyAdminError(firstError.error) };
+  return {
+    data: { active: active.count ?? 0, escalated: escalated.count ?? 0, resolved: resolved.count ?? 0 },
+    error: null,
+  };
+}
+
+export async function listRiskFlags({ status, severity, search, page = 1, pageSize = 25 } = {}) {
+  let query = supabase.from('risk_flags').select('*', { count: 'exact' });
+
+  if (status) query = query.eq('status', status);
+  if (severity) query = query.eq('severity', severity);
+  if (search) query = query.ilike('description', `%${search}%`);
+
+  const from = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) return { data: null, error: friendlyAdminError(error) };
+
+  const userIds = [...new Set((data || []).map((f) => f.user_id).filter(Boolean))];
+  let usersById = {};
+  if (userIds.length) {
+    const { data: users } = await supabase
+      .from('user_profiles')
+      .select('id, first_name, last_name, email')
+      .in('id', userIds);
+    usersById = Object.fromEntries((users || []).map((u) => [u.id, u]));
+  }
+
+  const rows = (data || []).map((f) => ({ ...f, customer: usersById[f.user_id] || null }));
+  return { data: { rows, total: count ?? 0, page, pageSize }, error: null };
+}
+
+export async function getRiskFlagDetail(flagId) {
+  const { data: flag, error } = await supabase.from('risk_flags').select('*').eq('id', flagId).single();
+  if (error) return { data: null, error: friendlyAdminError(error) };
+
+  const { data: customer } = await supabase
+    .from('user_profiles')
+    .select('id, first_name, last_name, email')
+    .eq('id', flag.user_id)
+    .maybeSingle();
+
+  let transaction = null;
+  if (flag.transaction_id) {
+    const { data: tx } = await supabase.from('transactions').select('*').eq('id', flag.transaction_id).maybeSingle();
+    transaction = tx || null;
+  }
+
+  return { data: { flag, customer: customer || null, transaction }, error: null };
+}
+
+export async function dismissRiskFlag(flagId, reason) {
+  return wrap(supabase.rpc('admin_dismiss_risk_flag', { p_flag_id: flagId, p_reason: reason }));
+}
+
+export async function escalateRiskFlag(flagId, reason) {
+  return wrap(supabase.rpc('admin_escalate_risk_flag', { p_flag_id: flagId, p_reason: reason }));
+}
+
+export async function resolveRiskFlag(flagId, reason) {
+  return wrap(supabase.rpc('admin_resolve_risk_flag', { p_flag_id: flagId, p_reason: reason }));
 }
 
 
