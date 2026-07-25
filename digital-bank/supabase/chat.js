@@ -4,12 +4,14 @@
 
    This is the customer-facing half of live chat support — a real
    human agent, not a bot. Wraps the chat_threads / chat_messages
-   tables defined in chat_schema.sql. Same contract as auth.js /
+   tables defined in chat_schema.sql, plus file/image attachments
+   stored in the 'chat-attachments' Storage bucket (see
+   migrations/008_chat_attachments.sql). Same contract as auth.js /
    database.js: every exported function returns a plain
    { data, error } object, so callers never need try/catch for
    expected failures.
 
-     import { getOrCreateMyThread, sendMessage } from '../supabase/chat.js';
+     import { getOrCreateMyThread, sendMessage, sendAttachment } from '../supabase/chat.js';
 
    The admin-side half (viewing/replying to ALL open threads from
    pages/admin/admin-support.html) belongs in supabase/admin.js
@@ -79,7 +81,7 @@ export async function getOrCreateMyThread(userId) {
 }
 
 /* -----------------------------------------------------------
-   Messages
+   Messages — text
    ----------------------------------------------------------- */
 
 export async function getThreadMessages(threadId) {
@@ -92,7 +94,7 @@ export async function getThreadMessages(threadId) {
   );
 }
 
-/** Sends a message as the signed-in user into their own thread. */
+/** Sends a text message as the signed-in user into their own thread. */
 export async function sendMessage(threadId, body, userId) {
   const uid = await resolveUserId(userId);
   if (!uid) return { data: null, error: 'Not signed in.' };
@@ -109,6 +111,98 @@ export async function sendMessage(threadId, body, userId) {
       .single()
   );
 }
+
+/* -----------------------------------------------------------
+   Messages — picture / document attachments
+   -----------------------------------------------------------
+   Files live in the private 'chat-attachments' Storage bucket,
+   one folder per thread (thread_id/<uuid>-<filename>), so the
+   bucket's own RLS policies (see migrations/008_chat_attachments.sql)
+   can check "does this path's folder belong to a thread the
+   caller owns?" the same way chat_messages' RLS does. Only the
+   storage PATH is stored on the message row, never a public URL —
+   getAttachmentSignedUrl() below mints a short-lived signed URL
+   whenever one actually needs to be displayed or downloaded.
+   ----------------------------------------------------------- */
+
+const CHAT_ATTACHMENTS_BUCKET = 'chat-attachments';
+
+// Kept as exports so chat-widget.js can run the same checks
+// client-side (for instant feedback) that the Storage bucket
+// itself enforces server-side — see the bucket's file_size_limit
+// and allowed_mime_types in the migration.
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB
+export const ALLOWED_ATTACHMENT_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+
+/**
+ * Uploads a picture/document to the signed-in user's thread and
+ * inserts the message row that references it. `body` is optional —
+ * a file can be sent with or without a caption.
+ */
+export async function sendAttachment(threadId, file, { body = '', userId } = {}) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
+  if (!threadId) return { data: null, error: 'No active conversation.' };
+  if (!file) return { data: null, error: 'Choose a file to send.' };
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return { data: null, error: 'Files must be 10MB or smaller.' };
+  }
+  if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
+    return { data: null, error: "That file type isn't supported — try an image, PDF, or Word doc." };
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+  const path = `${threadId}/${crypto.randomUUID()}-${safeName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(CHAT_ATTACHMENTS_BUCKET)
+    .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type });
+
+  if (uploadError) return { data: null, error: uploadError.message };
+
+  return wrap(
+    supabase
+      .from('chat_messages')
+      .insert({
+        thread_id: threadId,
+        sender_type: 'user',
+        sender_id: uid,
+        body: body.trim() || null,
+        attachment_path: path,
+        attachment_name: file.name,
+        attachment_type: file.type,
+        attachment_size: file.size,
+      })
+      .select()
+      .single()
+  );
+}
+
+/**
+ * Mints a short-lived signed URL for a stored attachment. Called
+ * lazily when a message with an attachment is rendered, not stored
+ * anywhere — signed URLs expire, storage paths don't.
+ */
+export async function getAttachmentSignedUrl(path, expiresInSeconds = 3600) {
+  const { data, error } = await supabase.storage
+    .from(CHAT_ATTACHMENTS_BUCKET)
+    .createSignedUrl(path, expiresInSeconds);
+
+  if (error) return { data: null, error: error.message };
+  return { data: data.signedUrl, error: null };
+}
+
+/* -----------------------------------------------------------
+   Realtime
+   ----------------------------------------------------------- */
 
 /**
  * Subscribes to new messages on a thread (agent replies, mainly —
