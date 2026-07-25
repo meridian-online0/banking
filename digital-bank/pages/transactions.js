@@ -3,10 +3,10 @@
    Script: pages/transactions.js
    Loaded as a module by transactions.html only. Handles:
      1. Auth guard + shared header wiring (greeting avatar,
-        notification badge, user menu, log out — deferred until
-        the app-navbar component, loaded separately by
-        components.js, has actually landed in the DOM; see
-        waitForNavbar() below)
+        notification badge, user menu, mobile nav toggle, log out
+        — deferred until the app-navbar component, loaded
+        separately by components.js, has actually landed in the
+        DOM; see waitForNavbar() below)
      2. Loading the user's accounts and building the account /
         currency filter options from real data
      3. Fetching + merging transactions across one or all accounts
@@ -38,19 +38,12 @@ const state = {
   ownAccountIds: new Set(),
   fetchLimit: FETCH_LIMIT_STEP,
   visibleCount: VISIBLE_STEP,
-  merged: [],          // de-duplicated transactions for the current server-side filter set
-  filtered: [],         // merged, after client-side search + currency filter
+  merged: [],
+  filtered: [],
   selectedId: null,
   loading: false,
 };
 
-/* -----------------------------------------------------------
-   Small local formatting helpers
-   (utils.js covers currency/number formatting; day-grouping and
-   row timestamps need slightly different shapes than
-   formatTimestamp()'s combined "Today, 9:12 AM" string, so those
-   stay local to this page.)
-   ----------------------------------------------------------- */
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -95,34 +88,15 @@ function typeLabel(type) {
   return String(type || 'transaction').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/** Icon path for the incoming/outgoing tx-icon circle. */
 const ICON_IN = '<path d="M10 17V3M4 9l6-6 6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
 const ICON_OUT = '<rect x="3" y="6" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.4"/>';
 
-/**
- * Direction is relative to the set of accounts currently in view.
- * If the account sent it, we show it as outgoing even when the
- * receiver is another one of the user's own accounts — an
- * internal transfer is still an action taken *from* that account.
- */
 function directionFor(tx) {
   if (state.ownAccountIds.has(tx.sender_account)) return 'out';
   if (state.ownAccountIds.has(tx.receiver_account)) return 'in';
   return 'out';
 }
 
-/* -----------------------------------------------------------
-   Wait for the app-navbar component
-   transactions.html loads its header from components/app-navbar.html
-   via components.js's loadComponents(), which runs as its own
-   module and dispatches `component:loaded` on `document` once
-   injection finishes. That can resolve before OR after this
-   module's own async init (requireAuth() is a network round-trip,
-   the component fetch is usually local/fast — but neither order
-   is guaranteed). This checks whether the navbar markup is
-   already in the DOM first, and only falls back to listening for
-   the event if it isn't there yet, so it's correct either way.
-   ----------------------------------------------------------- */
 function waitForNavbar() {
   return new Promise((resolve) => {
     if ($('.app-user-menu')) {
@@ -133,9 +107,6 @@ function waitForNavbar() {
   });
 }
 
-/* -----------------------------------------------------------
-   Header: greeting avatar, notification badge, user menu, logout
-   ----------------------------------------------------------- */
 async function populateUserChrome() {
   const { data: profile } = await getMyProfile();
   const fullName = profile ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() : '';
@@ -187,6 +158,38 @@ function initUserMenu() {
   });
 }
 
+/* -----------------------------------------------------------
+   Mobile nav toggle — wires up the hamburger (.app-nav-toggle) in
+   the shared app-navbar partial. Existed in dashboard.js but was
+   missing from every other page script sharing the same header
+   component (accounts.js had the same gap) — the button renders
+   fine since it's part of app-navbar.html, but without this
+   nothing ever listens for its click.
+   ----------------------------------------------------------- */
+function initMobileNav() {
+  const toggle = $('.app-nav-toggle');
+  const nav = $('.app-nav');
+  if (!toggle || !nav) return;
+
+  toggle.addEventListener('click', () => {
+    const isOpen = nav.classList.toggle('is-mobile-open');
+    toggle.setAttribute('aria-expanded', String(isOpen));
+  });
+  nav.addEventListener('click', (event) => {
+    if (event.target.tagName === 'A') {
+      nav.classList.remove('is-mobile-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.addEventListener('click', (event) => {
+    if (!nav.classList.contains('is-mobile-open')) return;
+    if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+      nav.classList.remove('is-mobile-open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
 function initLogout() {
   const logoutLink = $('.app-user-dropdown a[href="../index.html"]');
   if (!logoutLink) return;
@@ -197,9 +200,6 @@ function initLogout() {
   });
 }
 
-/* -----------------------------------------------------------
-   Toasts (lightweight — matches .toast markup used elsewhere)
-   ----------------------------------------------------------- */
 function showToast(message, variant = 'default') {
   const stack = $('#toast-stack');
   if (!stack) return;
@@ -210,9 +210,6 @@ function showToast(message, variant = 'default') {
   window.setTimeout(() => toast.remove(), 4000);
 }
 
-/* -----------------------------------------------------------
-   Filter bar: populate account + currency options from real data
-   ----------------------------------------------------------- */
 function populateFilterOptions() {
   const accountSelect = $('#tx-filter-account');
   const currencySelect = $('#tx-filter-currency');
@@ -256,9 +253,6 @@ function accountIdsForFilter(filters) {
   return [filters.accountId];
 }
 
-/* -----------------------------------------------------------
-   Data loading
-   ----------------------------------------------------------- */
 async function loadTransactions({ resetFetchLimit = true, resetVisible = true } = {}) {
   if (state.loading) return;
   state.loading = true;
@@ -348,9 +342,6 @@ function applyClientFilters() {
   renderDetail();
 }
 
-/* -----------------------------------------------------------
-   Rendering: skeleton / error / empty / list
-   ----------------------------------------------------------- */
 function renderSkeleton() {
   const body = $('#tx-list-body');
   body.innerHTML = `
@@ -483,9 +474,6 @@ function selectTransaction(id) {
   openDetailPanelOnMobile();
 }
 
-/* -----------------------------------------------------------
-   Detail panel
-   ----------------------------------------------------------- */
 function renderDetail() {
   const content = $('#tx-detail-content');
   const tx = state.filtered.find((t) => t.id === state.selectedId);
@@ -584,9 +572,6 @@ function openDetailPanelOnMobile() {
   requestAnimationFrame(() => scrim.classList.add('is-open'));
 }
 
-/* -----------------------------------------------------------
-   Summary strip (money in / out / net / pending, month to date)
-   ----------------------------------------------------------- */
 async function loadSummary() {
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -603,13 +588,6 @@ async function loadSummary() {
       )
     );
 
-    // Summed in the account's own currency isn't meaningful across
-    // mixed-currency portfolios without live FX, so the summary
-    // strip totals in USD using each transaction's own amount as a
-    // simple same-currency-only aggregate when accounts share USD,
-    // and otherwise falls back to counting each account separately.
-    // For a single-currency (or "all USD") portfolio this is exact;
-    // for a genuinely mixed portfolio, treat it as an approximation.
     let moneyIn = 0;
     let moneyOut = 0;
     let pendingCount = 0;
@@ -655,9 +633,6 @@ async function loadSummary() {
   }
 }
 
-/* -----------------------------------------------------------
-   CSV export (currently filtered result set)
-   ----------------------------------------------------------- */
 function exportCsv() {
   if (!state.filtered.length) {
     showToast('No transactions to export for the current filters.', 'error');
@@ -707,9 +682,6 @@ function escapeHtml(value) {
   }[c]));
 }
 
-/* -----------------------------------------------------------
-   Filter wiring
-   ----------------------------------------------------------- */
 function initFilters() {
   const serverFilterIds = ['#tx-filter-account', '#tx-filter-type', '#tx-filter-status', '#tx-filter-from', '#tx-filter-to'];
   serverFilterIds.forEach((id) => {
@@ -744,7 +716,6 @@ function initFilters() {
       renderList();
       return;
     }
-    // Exhausted the currently fetched window — widen the server fetch.
     state.fetchLimit += FETCH_LIMIT_STEP;
     state.visibleCount += VISIBLE_STEP;
     loadTransactions({ resetFetchLimit: false, resetVisible: false });
@@ -753,24 +724,18 @@ function initFilters() {
   $('#tx-export-btn').addEventListener('click', exportCsv);
 }
 
-/* -----------------------------------------------------------
-   Init
-   ----------------------------------------------------------- */
 (async function init() {
   const user = await requireAuth();
-  if (!user) return; // requireAuth() already redirected to login.html
+  if (!user) return;
 
-  // Reveal content now that a real session is confirmed — see
-  // assets/js/auth-guard.js for the fast pre-check that hid it.
   document.body.classList.remove('auth-pending');
 
   initDetailPanelMobileControls();
 
-  // Header-dependent init waits for the app-navbar component to
-  // actually be in the DOM — see waitForNavbar() above.
   waitForNavbar().then(() => {
     populateUserChrome();
     initUserMenu();
+    initMobileNav();
     initLogout();
   });
 
@@ -784,7 +749,7 @@ function initFilters() {
   state.ownAccountIds = new Set(state.accounts.map((a) => a.id));
 
   if (!state.accounts.length) {
-    renderList(); // renders the empty state
+    renderList();
     $('#tx-summary-grid').querySelectorAll('.skeleton').forEach((el) => {
       el.textContent = '—';
       el.classList.remove('skeleton');
