@@ -730,6 +730,7 @@ function initApiKeyModal() {
   initUserMenu();
   initLogout();
   initMobileNav();
+  initUserMenu();
   initSectionNav();
   initGeneralForm();
   initSignOutEverywhere();
