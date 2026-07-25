@@ -40,7 +40,9 @@
       </div>
 
       <!-- ===================================================
-           STEP 1 — email + password
+           Sign in — email + password only. Role check
+           (support/admin/superadmin) still happens in
+           admin-login.js; this is the single step now.
            =================================================== -->
       <form id="admin-login-step-credentials" class="admin-login-form" novalidate>
         <h1>Sign in</h1>
@@ -62,53 +64,6 @@
           <span class="btn-label">Continue</span>
         </button>
       </form>
-
-      <!-- ===================================================
-           STEP 2 — 2FA code (admin / superadmin only — see
-           admin-login.js for why 'support' tier skips this)
-           =================================================== -->
-      <form id="admin-login-step-2fa" class="admin-login-form" novalidate hidden>
-        <h1>Enter your code</h1>
-        <p class="admin-login-subtitle" id="two-fa-subtitle">
-          We sent a 6-digit code to your registered device.
-        </p>
-
-        <p class="admin-login-error" id="two-fa-error" role="alert" aria-live="polite"></p>
-
-        <label class="admin-field">
-          <span>Verification code</span>
-          <input type="text" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" required>
-        </label>
-
-        <button type="submit" class="admin-btn admin-btn--primary">
-          <span class="btn-label">Verify &amp; sign in</span>
-        </button>
-
-        <button type="button" class="admin-btn admin-btn--text" id="two-fa-resend">
-          Resend code
-        </button>
-        <button type="button" class="admin-btn admin-btn--text" id="two-fa-back">
-          Use a different account
-        </button>
-      </form>
-
-      <!-- ===================================================
-           STEP 3 — blocked: admin/superadmin role with no 2FA
-           method configured. See admin-login.js — architecture
-           calls for 2FA to be mandatory and *enforced at login*,
-           not just offered, so this is a dead end, not a skip link.
-           =================================================== -->
-      <div class="admin-login-form" id="admin-login-2fa-required" hidden>
-        <h1>Two-factor setup required</h1>
-        <p class="admin-login-subtitle">
-          Your role requires two-factor authentication, and none is
-          configured on this account yet. Ask a superadmin to help
-          you set it up before you can sign in here.
-        </p>
-        <button type="button" class="admin-btn admin-btn--primary" id="two-fa-required-back">
-          Back to sign in
-        </button>
-      </div>
     </div>
   </main>
 
