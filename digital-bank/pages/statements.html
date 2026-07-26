@@ -82,6 +82,8 @@
 
     <!-- =========================================================
          FILTERS
+         Always visible — this is the control panel that drives
+         every section below it, so it stays open by default.
          ========================================================= -->
     <section class="profile-card stmt-filter-panel">
       <div class="profile-card-head">
@@ -157,65 +159,138 @@
     </section>
 
     <!-- =========================================================
-         SUMMARY CARDS
+         STATEMENT SUMMARY
+         Opening/closing balance and every other summary figure,
+         grouped under one clearly labelled section instead of
+         floating on their own. Open by default since it's the
+         headline information for the period.
          ========================================================= -->
-    <div class="grid stmt-summary-grid" id="stmt-summary-grid" aria-live="polite">
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Opening balance</span><span class="stmt-summary-value skeleton" id="stmt-opening-balance">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Closing balance</span><span class="stmt-summary-value skeleton" id="stmt-closing-balance">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Total credits</span><span class="stmt-summary-value pos skeleton" id="stmt-total-credits">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Total debits</span><span class="stmt-summary-value skeleton" id="stmt-total-debits">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Net cash flow</span><span class="stmt-summary-value skeleton" id="stmt-net-flow">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Transactions</span><span class="stmt-summary-value skeleton" id="stmt-tx-count-card">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Largest deposit</span><span class="stmt-summary-value pos skeleton" id="stmt-largest-deposit">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Largest withdrawal</span><span class="stmt-summary-value skeleton" id="stmt-largest-withdrawal">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Average transaction</span><span class="stmt-summary-value skeleton" id="stmt-avg-transaction">—</span></div>
-      <div class="stmt-summary-card"><span class="stmt-summary-label">Fees paid</span><span class="stmt-summary-value skeleton" id="stmt-fees-paid">—</span></div>
-    </div>
+    <section class="profile-card stmt-collapsible stmt-summary-section" data-default-open="true">
+      <button type="button" class="stmt-collapsible-header" aria-expanded="true" aria-controls="stmt-summary-body">
+        <span class="stmt-collapsible-titles">
+          <h3>Statement summary</h3>
+          <span class="stmt-collapsible-sub">Opening and closing balance, totals for the selected period</span>
+        </span>
+        <span class="stmt-collapsible-meta">
+          <span class="stmt-collapsible-chevron" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </span>
+      </button>
+      <div class="stmt-collapsible-body" id="stmt-summary-body">
+        <div class="stmt-collapsible-body-inner">
+          <div class="stmt-collapsible-body-content">
+
+            <div class="stmt-summary-subgroup">
+              <span class="stmt-summary-subgroup-label">Balance</span>
+              <div class="grid stmt-summary-grid" aria-live="polite">
+                <div class="stmt-summary-card stmt-summary-card--accent"><span class="stmt-summary-label">Opening balance</span><span class="stmt-summary-value skeleton" id="stmt-opening-balance">—</span></div>
+                <div class="stmt-summary-card stmt-summary-card--accent"><span class="stmt-summary-label">Closing balance</span><span class="stmt-summary-value skeleton" id="stmt-closing-balance">—</span></div>
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Net cash flow</span><span class="stmt-summary-value skeleton" id="stmt-net-flow">—</span></div>
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Transactions</span><span class="stmt-summary-value skeleton" id="stmt-tx-count-card">—</span></div>
+              </div>
+            </div>
+
+            <div class="stmt-summary-subgroup">
+              <span class="stmt-summary-subgroup-label">Money in &amp; out</span>
+              <div class="grid stmt-summary-grid">
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Total credits</span><span class="stmt-summary-value pos skeleton" id="stmt-total-credits">—</span></div>
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Total debits</span><span class="stmt-summary-value skeleton" id="stmt-total-debits">—</span></div>
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Largest deposit</span><span class="stmt-summary-value pos skeleton" id="stmt-largest-deposit">—</span></div>
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Largest withdrawal</span><span class="stmt-summary-value skeleton" id="stmt-largest-withdrawal">—</span></div>
+              </div>
+            </div>
+
+            <div class="stmt-summary-subgroup">
+              <span class="stmt-summary-subgroup-label">Averages &amp; fees</span>
+              <div class="grid stmt-summary-grid">
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Average transaction</span><span class="stmt-summary-value skeleton" id="stmt-avg-transaction">—</span></div>
+                <div class="stmt-summary-card"><span class="stmt-summary-label">Fees paid</span><span class="stmt-summary-value skeleton" id="stmt-fees-paid">—</span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- =========================================================
          CASH FLOW CHART
+         Collapsed by default — tap to view the credits vs debits
+         chart for the current period.
          ========================================================= -->
-    <section class="profile-card stmt-chart-card">
-      <div class="stmt-chart-toolbar">
-        <div class="profile-card-head" style="margin-bottom:0;">
+    <section class="profile-card stmt-collapsible stmt-chart-card" data-default-open="false">
+      <button type="button" class="stmt-collapsible-header" aria-expanded="false" aria-controls="stmt-cashflow-body">
+        <span class="stmt-collapsible-titles">
           <h3>Cash flow</h3>
-        </div>
-        <div class="stmt-chart-legend">
-          <span class="stmt-chart-legend-item"><span class="stmt-chart-legend-dot stmt-chart-legend-dot--credit"></span>Credits</span>
-          <span class="stmt-chart-legend-item"><span class="stmt-chart-legend-dot stmt-chart-legend-dot--debit"></span>Debits</span>
+          <span class="stmt-collapsible-sub">Credits vs debits over the period, bucketed by day, week, or month</span>
+        </span>
+        <span class="stmt-collapsible-meta">
+          <span class="stmt-collapsible-chevron" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </span>
+      </button>
+      <div class="stmt-collapsible-body" id="stmt-cashflow-body">
+        <div class="stmt-collapsible-body-inner">
+          <div class="stmt-collapsible-body-content">
+            <div class="stmt-chart-legend-row">
+              <div class="stmt-chart-legend">
+                <span class="stmt-chart-legend-item"><span class="stmt-chart-legend-dot stmt-chart-legend-dot--credit"></span>Credits</span>
+                <span class="stmt-chart-legend-item"><span class="stmt-chart-legend-dot stmt-chart-legend-dot--debit"></span>Debits</span>
+              </div>
+            </div>
+            <div class="stmt-chart" id="stmt-chart"></div>
+          </div>
         </div>
       </div>
-      <div class="stmt-chart" id="stmt-chart"></div>
     </section>
 
     <!-- =========================================================
          TRANSACTIONS
+         Open by default — this is the core content of the page.
          ========================================================= -->
-    <section>
-      <div class="stmt-tx-section-head">
-        <h3>Statement transactions</h3>
-        <span class="stmt-tx-count" id="stmt-tx-count-label"></span>
-      </div>
-      <div class="stmt-tx-grid" id="stmt-tx-grid">
-        <div class="stmt-tx-card stmt-tx-card--skeleton" aria-hidden="true">
-          <span class="stmt-tx-icon skeleton"></span>
-          <div class="stmt-tx-main">
-            <span class="skeleton" style="width:60%;height:14px;"></span>
-            <span class="skeleton" style="width:40%;height:11px;"></span>
+    <section class="profile-card stmt-collapsible stmt-tx-section" data-default-open="true">
+      <button type="button" class="stmt-collapsible-header" aria-expanded="true" aria-controls="stmt-tx-body">
+        <span class="stmt-collapsible-titles">
+          <h3>Statement transactions</h3>
+          <span class="stmt-collapsible-sub">Every transaction on this account within the selected period</span>
+        </span>
+        <span class="stmt-collapsible-meta">
+          <span class="stmt-collapsible-chevron" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </span>
+      </button>
+      <div class="stmt-collapsible-body" id="stmt-tx-body">
+        <div class="stmt-collapsible-body-inner">
+          <div class="stmt-collapsible-body-content">
+            <div class="stmt-tx-toolbar">
+              <span class="stmt-tx-count" id="stmt-tx-count-label"></span>
+            </div>
+            <div class="stmt-tx-grid" id="stmt-tx-grid">
+              <div class="stmt-tx-card stmt-tx-card--skeleton" aria-hidden="true">
+                <span class="stmt-tx-icon skeleton"></span>
+                <div class="stmt-tx-main">
+                  <span class="skeleton" style="width:60%;height:14px;"></span>
+                  <span class="skeleton" style="width:40%;height:11px;"></span>
+                </div>
+                <span class="skeleton" style="width:70px;height:16px;"></span>
+              </div>
+              <div class="stmt-tx-card stmt-tx-card--skeleton" aria-hidden="true">
+                <span class="stmt-tx-icon skeleton"></span>
+                <div class="stmt-tx-main">
+                  <span class="skeleton" style="width:50%;height:14px;"></span>
+                  <span class="skeleton" style="width:35%;height:11px;"></span>
+                </div>
+                <span class="skeleton" style="width:70px;height:16px;"></span>
+              </div>
+            </div>
+            <div style="display:flex;justify-content:center;">
+              <button type="button" class="btn btn-ghost" id="stmt-load-more-btn" hidden>Load more transactions</button>
+            </div>
           </div>
-          <span class="skeleton" style="width:70px;height:16px;"></span>
         </div>
-        <div class="stmt-tx-card stmt-tx-card--skeleton" aria-hidden="true">
-          <span class="stmt-tx-icon skeleton"></span>
-          <div class="stmt-tx-main">
-            <span class="skeleton" style="width:50%;height:14px;"></span>
-            <span class="skeleton" style="width:35%;height:11px;"></span>
-          </div>
-          <span class="skeleton" style="width:70px;height:16px;"></span>
-        </div>
-      </div>
-      <div style="display:flex;justify-content:center;">
-        <button type="button" class="btn btn-ghost" id="stmt-load-more-btn" hidden>Load more transactions</button>
       </div>
     </section>
 
@@ -223,71 +298,123 @@
          ANALYTICS
          Uses transaction_type as the category grouping and
          description as a merchant proxy — the schema doesn't have
-         dedicated category/merchant columns yet.
+         dedicated category/merchant columns yet. Collapsed by
+         default; it's supporting detail, not the headline view.
          ========================================================= -->
-    <div class="grid stmt-analytics-grid">
-      <section class="profile-card">
-        <div class="profile-card-head"><h3>Spending by type</h3></div>
-        <div class="stmt-analytics-list" id="stmt-category-breakdown"></div>
-      </section>
-      <section class="profile-card">
-        <div class="profile-card-head"><h3>Most frequent descriptions</h3></div>
-        <div class="stmt-analytics-list" id="stmt-top-merchants"></div>
-      </section>
-    </div>
+    <section class="profile-card stmt-collapsible stmt-analytics-section" data-default-open="false">
+      <button type="button" class="stmt-collapsible-header" aria-expanded="false" aria-controls="stmt-analytics-body">
+        <span class="stmt-collapsible-titles">
+          <h3>Spending analytics</h3>
+          <span class="stmt-collapsible-sub">Where money went this period, by type and by description</span>
+        </span>
+        <span class="stmt-collapsible-meta">
+          <span class="stmt-collapsible-chevron" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </span>
+      </button>
+      <div class="stmt-collapsible-body" id="stmt-analytics-body">
+        <div class="stmt-collapsible-body-inner">
+          <div class="stmt-collapsible-body-content">
+            <div class="grid stmt-analytics-grid">
+              <div>
+                <p class="stmt-analytics-list-heading">Spending by type</p>
+                <div class="stmt-analytics-list" id="stmt-category-breakdown"></div>
+              </div>
+              <div>
+                <p class="stmt-analytics-list-heading">Most frequent descriptions</p>
+                <div class="stmt-analytics-list" id="stmt-top-merchants"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- =========================================================
          STATEMENT GENERATION
+         Collapsed by default — open it when you're ready to
+         produce an official, logged statement file.
          ========================================================= -->
-    <section class="profile-card" id="stmt-generate-card">
-      <div class="profile-card-head">
-        <h3>Generate an official statement</h3>
-      </div>
-      <p class="profile-card-desc">Uses the filters above for the account and date range. This logs an entry in your statement history.</p>
+    <section class="profile-card stmt-collapsible stmt-generate-card" id="stmt-generate-card" data-default-open="false">
+      <button type="button" class="stmt-collapsible-header" aria-expanded="false" aria-controls="stmt-generate-body">
+        <span class="stmt-collapsible-titles">
+          <h3>Generate an official statement</h3>
+          <span class="stmt-collapsible-sub">Uses the filters above; logs an entry in your statement history</span>
+        </span>
+        <span class="stmt-collapsible-meta">
+          <span class="stmt-collapsible-chevron" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+        </span>
+      </button>
+      <div class="stmt-collapsible-body" id="stmt-generate-body">
+        <div class="stmt-collapsible-body-inner">
+          <div class="stmt-collapsible-body-content">
 
-      <div class="stmt-generate-grid">
-        <div class="stmt-filter-field" style="margin-bottom:0;">
-          <label for="stmt-generate-type">Statement type</label>
-          <select id="stmt-generate-type">
-            <option value="monthly">Monthly</option>
-            <option value="quarterly">Quarterly</option>
-            <option value="annual">Annual</option>
-            <option value="custom" selected>Current filter range</option>
-          </select>
-        </div>
-        <div class="stmt-filter-field" style="margin-bottom:0;">
-          <label for="stmt-generate-format">Format</label>
-          <select id="stmt-generate-format">
-            <option value="csv" selected>CSV</option>
-            <option value="pdf">PDF (print)</option>
-          </select>
-        </div>
-        <div class="stmt-filter-field" style="margin-bottom:0;">
-          <label for="stmt-generate-currency">Currency</label>
-          <select id="stmt-generate-currency">
-            <option value="account" selected>Account's own currency</option>
-          </select>
-        </div>
-        <button type="button" class="btn btn-primary" id="stmt-generate-btn">Generate statement</button>
-      </div>
+            <div class="stmt-generate-grid">
+              <div class="stmt-filter-field" style="margin-bottom:0;">
+                <label for="stmt-generate-type">Statement type</label>
+                <select id="stmt-generate-type">
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annual">Annual</option>
+                  <option value="custom" selected>Current filter range</option>
+                </select>
+              </div>
+              <div class="stmt-filter-field" style="margin-bottom:0;">
+                <label for="stmt-generate-format">Format</label>
+                <select id="stmt-generate-format">
+                  <option value="csv" selected>CSV</option>
+                  <option value="pdf">PDF (print)</option>
+                </select>
+              </div>
+              <div class="stmt-filter-field" style="margin-bottom:0;">
+                <label for="stmt-generate-currency">Currency</label>
+                <select id="stmt-generate-currency">
+                  <option value="account" selected>Account's own currency</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-primary" id="stmt-generate-btn">Generate statement</button>
+            </div>
 
-      <p class="stmt-generate-preview" id="stmt-generate-preview">Choose an account and range above, then generate.</p>
+            <p class="stmt-generate-preview" id="stmt-generate-preview">Choose an account and range above, then generate.</p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- =========================================================
          STATEMENT HISTORY
+         Collapsed by default — open it to see or re-download
+         previously generated statements.
          ========================================================= -->
-    <section class="profile-card" id="stmt-history-card">
-      <div class="profile-card-head">
-        <h3>Statement history</h3>
-      </div>
-      <div class="stmt-history-list" id="stmt-history-list">
-        <div class="empty-state" id="stmt-history-empty">
-          <span class="empty-state-icon">
-            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="2.5" width="12" height="15" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M7 7h6M7 10.5h6M7 14h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    <section class="profile-card stmt-collapsible stmt-history-card" id="stmt-history-card" data-default-open="false">
+      <button type="button" class="stmt-collapsible-header" aria-expanded="false" aria-controls="stmt-history-body">
+        <span class="stmt-collapsible-titles">
+          <h3>Statement history</h3>
+          <span class="stmt-collapsible-sub">Previously generated statements for this account</span>
+        </span>
+        <span class="stmt-collapsible-meta">
+          <span class="stmt-collapsible-count" id="stmt-history-count">None yet</span>
+          <span class="stmt-collapsible-chevron" aria-hidden="true">
+            <svg viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </span>
-          <h3>No statements yet</h3>
-          <p>Generate your first statement above — it'll show up here for quick re-download.</p>
+        </span>
+      </button>
+      <div class="stmt-collapsible-body" id="stmt-history-body">
+        <div class="stmt-collapsible-body-inner">
+          <div class="stmt-collapsible-body-content">
+            <div class="stmt-history-list" id="stmt-history-list">
+              <div class="empty-state" id="stmt-history-empty">
+                <span class="empty-state-icon">
+                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="2.5" width="12" height="15" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M7 7h6M7 10.5h6M7 14h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                </span>
+                <h3>No statements yet</h3>
+                <p>Generate your first statement above — it'll show up here for quick re-download.</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
