@@ -29,8 +29,9 @@
      17. FAQ section
      18. Contact section
      19. Footer
-     20. Scroll-reveal animation states
-     21. Responsive breakpoints (marketing)
+     20. Back-to-top button
+     21. Scroll-reveal animation states
+     22. Responsive breakpoints (marketing)
    ============================================================= */
 
 /* -------------------------------------------------------------
@@ -49,6 +50,11 @@
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;
+  /* Keeps anchor-linked sections (#services, #rates, #security, #faq,
+     #contact) from being scrolled to a position that's hidden behind
+     the sticky header. --header-h already changes at the 720px
+     breakpoint below, so this stays correct at every size. */
+  scroll-padding-top: var(--header-h);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -739,12 +745,18 @@ a:focus-visible {
   flex-direction: column;
   padding: 1.5rem 1.75rem 2.5rem;
   transform: translateX(100%);
-  transition: transform 0.35s cubic-bezier(0.65, 0, 0.35, 1);
+  transition: transform 0.35s cubic-bezier(0.65, 0, 0.35, 1), visibility 0.35s;
   overflow-y: auto;
+  /* Paired with the JS toggling aria-hidden on open/close: while the
+     drawer is off-screen it's also pulled out of the tab order and
+     the accessibility tree, so keyboard and screen-reader users can't
+     land on hidden nav links. */
+  visibility: hidden;
 }
 
 .mobile-drawer.is-open {
   transform: translateX(0);
+  visibility: visible;
 }
 
 .mobile-drawer-head {
@@ -2035,7 +2047,56 @@ body.drawer-open {
 }
 
 /* -------------------------------------------------------------
-   20. Scroll-reveal animation states
+   20. Back-to-top button
+   ------------------------------------------------------------- */
+.back-to-top {
+  position: fixed;
+  right: 1.75rem;
+  bottom: 1.75rem;
+  z-index: 800;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--ink);
+  color: var(--brass-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(12px);
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s, background-color 0.2s ease;
+}
+
+.back-to-top.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.back-to-top:hover {
+  background: var(--ink-3);
+}
+
+.back-to-top svg {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 720px) {
+  .back-to-top {
+    right: 1.1rem;
+    bottom: 1.1rem;
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* -------------------------------------------------------------
+   21. Scroll-reveal animation states
    ------------------------------------------------------------- */
 [data-reveal] {
   opacity: 0;
@@ -2084,7 +2145,7 @@ body.drawer-open {
 }
 
 /* -------------------------------------------------------------
-   21. Responsive breakpoints (marketing)
+   22. Responsive breakpoints (marketing)
    ------------------------------------------------------------- */
 @media (max-width: 1180px) {
   :root {
