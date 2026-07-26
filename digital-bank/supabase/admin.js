@@ -118,6 +118,23 @@ export async function resolveUserId(userId) {
   return user?.id ?? null;
 }
 
+
+
+async function getClientContext() {
+  let ip = null;
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    ip = (await res.json()).ip ?? null;
+  } catch {
+    // best-effort only — if this fails, ip stays null rather than blocking the action
+  }
+  return { browser: navigator.userAgent, ip };
+}
+
+/* -----------------------------------------------------------
+   1. Dashboard KPIs
+   ----------------------------------------------------------- */
+
 /**
  * Every write function below that isn't already its own RPC
  * (support ticket assignment/resolution) should end up going
