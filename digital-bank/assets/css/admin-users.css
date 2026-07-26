@@ -1,0 +1,387 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   assets/css/admin-users.css
+   SCOPE: pages/admin/admin-users.html only.
+
+   Everything admin.css / components.css already own is reused as
+   normal: .admin-toolbar*, .admin-table*, .admin-pagination,
+   .admin-drawer*, .admin-role-pill, .status-pill*, .avatar-initial*,
+   .modal-*, .field*, .btn*. This file only adds the bits that are
+   specific to the users list + user detail drawer:
+
+   Contents:
+     1. Table — user identity cell, status & role chips, row hover
+     2. Table — row actions
+     3. Drawer — profile summary grid
+     4. Drawer — sub-sections (accounts / cards / transactions / sessions)
+     5. Drawer — footer actions (freeze / unfreeze / reset)
+     6. Responsive
+   ============================================================= */
+
+/* -------------------------------------------------------------
+   1. Table — user identity cell, status & role chips
+   ------------------------------------------------------------- */
+
+/* Row itself is a click target (opens the drawer), not just the
+   trailing action button — cursor + hover feedback make that
+   discoverable since admin.css's generic tr:hover only recolors. */
+.admin-table tbody tr[data-user-row] {
+  cursor: pointer;
+}
+
+.admin-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.admin-user-cell .avatar-initial {
+  flex-shrink: 0;
+}
+
+.admin-user-cell-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.admin-user-cell-meta strong {
+  font-size: 0.87rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-cell-meta span {
+  font-size: 0.78rem;
+  color: var(--slate);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Status column — reuses the same visual language as
+   .status-pill elsewhere in the app, just with the exact four
+   values this table filters by (admin-users.html's status-filter
+   select: active / Pending / rejected / frozen). */
+.admin-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.admin-status-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.admin-status-chip--active {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.admin-status-chip--pending {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.admin-status-chip--rejected,
+.admin-status-chip--frozen {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+/* Role column — color-coded so a support login and a superadmin
+   login are never visually confusable at a glance in a long list. */
+.admin-role-chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: rgba(91, 107, 124, 0.12);
+  color: var(--slate);
+}
+
+.admin-role-chip--customer {
+  background: rgba(91, 107, 124, 0.12);
+  color: var(--slate);
+}
+
+.admin-role-chip--support {
+  background: rgba(181, 138, 68, 0.14);
+  color: var(--brass-dark);
+}
+
+.admin-role-chip--admin {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.admin-role-chip--superadmin {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+/* -------------------------------------------------------------
+   2. Table — row actions
+   ------------------------------------------------------------- */
+.admin-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.admin-row-action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--slate);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.admin-row-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.admin-row-action-btn:hover {
+  border-color: var(--brass);
+  color: var(--brass-dark);
+}
+
+.admin-row-action-btn--danger:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+/* -------------------------------------------------------------
+   3. Drawer — profile summary grid
+   -----------------------------------------------------------
+   Sits directly under the drawer head (avatar/name/email +
+   close button, already styled by admin.css's .admin-drawer-head).
+   A compact label/value grid for the fields that don't need a
+   sub-list of their own: status, role, joined, last login,
+   country, phone.
+   ------------------------------------------------------------- */
+.admin-user-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-user-summary-field span {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--slate);
+  margin-bottom: 0.3rem;
+}
+
+.admin-user-summary-field p {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--slate-dark);
+}
+
+/* -------------------------------------------------------------
+   4. Drawer — sub-sections (accounts / cards / transactions /
+   sessions)
+   -----------------------------------------------------------
+   One shared row shape reused for all four sub-sections in
+   #user-drawer-body, so accounts, cards, recent transactions,
+   and login sessions all read as the same kind of list rather
+   than four bespoke layouts.
+   ------------------------------------------------------------- */
+.admin-drawer-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 0.75rem;
+}
+
+.admin-drawer-section-count {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--slate);
+}
+
+.admin-user-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-user-list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-user-list-row:last-child {
+  border-bottom: none;
+}
+
+.admin-user-list-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--ivory);
+  color: var(--slate-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.admin-user-list-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.admin-user-list-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.admin-user-list-main strong {
+  font-size: 0.86rem;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-list-main span {
+  font-size: 0.76rem;
+  color: var(--slate);
+}
+
+.admin-user-list-trailing {
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  color: var(--slate-dark);
+  white-space: nowrap;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.admin-user-list-empty {
+  font-size: 0.84rem;
+  color: var(--slate);
+  padding-block: 0.5rem 0.75rem;
+}
+
+/* Session rows get a small "this device" / "revoke" affordance —
+   distinct enough from account/card/transaction rows that it
+   earns its own modifier rather than overloading the trailing slot. */
+.admin-user-list-row--session .admin-user-list-trailing {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.admin-session-current-tag {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--green);
+  background: var(--green-bg);
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.admin-session-revoke-btn {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--red);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.admin-session-revoke-btn:hover {
+  text-decoration: underline;
+}
+
+/* -------------------------------------------------------------
+   5. Drawer — footer actions (freeze / unfreeze / reset)
+   -----------------------------------------------------------
+   Sticks to the bottom of the drawer's content flow (not
+   position:sticky — the drawer already scrolls as one column,
+   and these actions read better as the last thing in that flow
+   than pinned over the sub-lists above them).
+   ------------------------------------------------------------- */
+.admin-drawer-footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+}
+
+.admin-drawer-footer-actions .btn {
+  width: 100%;
+}
+
+.admin-drawer-footer-note {
+  font-size: 0.76rem;
+  color: var(--slate);
+  text-align: center;
+}
+
+/* -------------------------------------------------------------
+   6. Responsive
+   ------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .admin-user-summary {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-user-cell-meta span {
+    max-width: 140px;
+  }
+}
