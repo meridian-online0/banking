@@ -1,0 +1,273 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   pages/admin/admin-approvals.css
+
+   Page-specific styles for admin-approvals.html. Assumes assets/
+   css/admin.css already defines the shared admin shell
+   (.admin-main, .admin-page-head, .admin-tab-nav/.admin-tab-panel,
+   .admin-table, .skeleton, .btn, .modal-overlay/.modal-panel) and
+   the base CSS variables referenced below. Fallback values are
+   given for every var() — swap in your real token names if they
+   differ from these.
+   ============================================================= */
+
+/* -----------------------------------------------------------
+   Summary stat row
+   ----------------------------------------------------------- */
+.admin-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.admin-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--admin-border, #d1d5db);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #fff);
+}
+
+.admin-stat-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.admin-stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text, #111827);
+}
+
+.admin-stat-card--alert {
+  border-color: var(--color-warning-soft, #fde68a);
+  background: var(--color-warning-bg, #fffbeb);
+}
+
+.admin-stat-card--alert .admin-stat-value {
+  color: var(--color-warning-strong, #b45309);
+}
+
+/* -----------------------------------------------------------
+   Filter bar (shared shape for queue + audit tabs)
+   ----------------------------------------------------------- */
+.admin-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.admin-chip-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-filter-chip {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--admin-border, #d1d5db);
+  background: var(--color-surface, #fff);
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.admin-filter-chip:hover {
+  background: var(--color-surface-muted, #f3f4f6);
+}
+
+.admin-filter-chip.is-active {
+  background: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+  color: #fff;
+}
+
+.admin-filter-select {
+  min-width: 180px;
+}
+
+.admin-filter-bar .admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-filter-bar select,
+.admin-filter-bar input[type="date"] {
+  font: inherit;
+  font-size: 0.8125rem;
+  padding: 7px 10px;
+  border: 1px solid var(--admin-border, #d1d5db);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111827);
+}
+
+.admin-filter-bar select:focus,
+.admin-filter-bar input:focus {
+  outline: none;
+  border-color: var(--color-primary, #2563eb);
+  box-shadow: 0 0 0 3px var(--color-primary-soft, rgba(37, 99, 235, 0.15));
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* -----------------------------------------------------------
+   Tables (dense variant for the audit trail)
+   ----------------------------------------------------------- */
+.admin-table--dense th,
+.admin-table--dense td {
+  padding: 8px 10px;
+  font-size: 0.8125rem;
+}
+
+.admin-table-row-skeleton td {
+  padding: 10px;
+}
+
+.skeleton {
+  height: 16px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-muted, #f3f4f6) 25%,
+    var(--admin-border-light, #e5e7eb) 37%,
+    var(--color-surface-muted, #f3f4f6) 63%
+  );
+  background-size: 400% 100%;
+  animation: admin-skeleton-shine 1.4s ease infinite;
+}
+
+@keyframes admin-skeleton-shine {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+.admin-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+/* -----------------------------------------------------------
+   Approval review / decision modal
+   ----------------------------------------------------------- */
+.modal-panel--wide {
+  max-width: 640px;
+  width: 100%;
+}
+
+.admin-review-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px 20px;
+  margin: 0 0 16px;
+}
+
+.admin-review-meta div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-review-meta dt {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #9ca3af);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.admin-review-meta dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.admin-review-diff {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.admin-review-diff-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary, #6b7280);
+  margin-bottom: 6px;
+}
+
+.admin-review-diff pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--admin-border, #d1d5db);
+  background: var(--color-surface-muted, #f9fafb);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.admin-maker-checker-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-warning-bg, #fffbeb);
+  border: 1px solid var(--color-warning-soft, #fde68a);
+  color: var(--color-warning-strong, #b45309);
+  font-size: 0.8125rem;
+  margin-bottom: 16px;
+}
+
+.admin-maker-checker-notice svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* -----------------------------------------------------------
+   Responsive
+   ----------------------------------------------------------- */
+@media (max-width: 640px) {
+  .admin-review-diff {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-filter-select,
+  .admin-filter-search {
+    max-width: none;
+  }
+}
