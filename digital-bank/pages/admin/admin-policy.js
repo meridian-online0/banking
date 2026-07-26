@@ -1,16 +1,53 @@
 /* =============================================================
    MERIDIAN — Admin panel
    pages/admin/admin-policy.js
+
+   CHANGE LOG (this revision)
+   ---------------------------
+   - savePolicyGroup / saveCustomerPermissions / saveCustomerLimitOverrides
+     were passing admin.user.id into the reason parameter — all
+     three RPCs get the admin's identity server-side via auth.uid(),
+     so that UUID was landing in the reason column instead of an
+     actual explanation. Each now prompts for a real reason string
+     (same window.prompt() pattern initAccountStatusSave already
+     used correctly).
+   - applyValuesToForm(form, data?.values) → data?.policy_values
+     (the real column name on bank_policies).
+   - overrides?.values?.[key] → overrides?.override_values?.[key]
+     (the real column name on user_limit_overrides) in
+     loadCustomerPanel().
+   - Boot sequence now calls initAdminLayout() instead of manually
+     poking [data-admin-name]/[data-admin-role] and relying on the
+     page's bare components.js/admin-layout.js script tags to
+     inject the navbar as a side effect — see admin-layout.js's own
+     header comment for why that side-effect injection doesn't
+     actually work at pages/admin/ depth.
+
+   STILL OPEN — NOT FIXED HERE
+   ---------------------------
+   The 13 permission keys used below (transfers,
+   international_transfers, internal_transfers, card_payments,
+   atm_withdrawals, mobile_banking, online_banking, bill_payments,
+   investments, loans, statement_downloads, profile_updates,
+   beneficiary_creation) do NOT match the real user_permissions
+   columns (can_transfer, can_receive, can_withdraw, can_deposit,
+   can_use_card, can_request_card, can_open_account,
+   can_close_account, can_add_beneficiary,
+   can_international_transfer, can_apply_loan, can_invest,
+   can_contact_support). Submitting these as-is will make
+   admin_save_customer_permissions() reject every key. This is a
+   product decision (extend the schema vs. trim the UI to the real
+   13), not a typo — left unchanged pending that decision.
    ============================================================= */
 
 import { requireAdmin } from '../../assets/js/admin/admin-guard.js';
+import { initAdminLayout } from '../../assets/js/admin/admin-layout.js';
 import {
   getPolicyGroup, savePolicyGroup, getPolicyChangeHistory,
   searchCustomers, getCustomerPermissions, saveCustomerPermissions,
   getCustomerLimitOverrides, saveCustomerLimitOverrides,
   updateAccountStatus, performRestrictionAction, getCustomerRestrictionHistory,
 } from '../../supabase/admin.js';
-import { getMyProfile } from '../../supabase/database.js';
 import { debounce, getInitials } from '../../assets/js/utils.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
@@ -96,7 +133,7 @@ async function loadPolicyCards() {
     const group = form.dataset.policyGroup;
     const { data, error } = await getPolicyGroup(group);
     if (error) { console.warn(`[Meridian Admin] Could not load ${group}:`, error); return; }
-    applyValuesToForm(form, data?.values);
+    applyValuesToForm(form, data?.policy_values);
   }));
 }
 
@@ -105,6 +142,10 @@ function initPolicyCardForms() {
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       const group = form.dataset.policyGroup;
+      const groupLabel = form.querySelector('h2').textContent;
+      const reason = window.prompt(`Reason for updating "${groupLabel}"?`);
+      if (!reason) return;
+
       const values = formToValues(form);
       const submitBtn = $('button[type="submit"]', form);
       const errorEl = $('[data-group-error]', form);
@@ -112,7 +153,7 @@ function initPolicyCardForms() {
       errorEl.textContent = '';
       setButtonLoading(submitBtn, true);
 
-      const { error } = await savePolicyGroup(group, values, admin.user.id);
+      const { error } = await savePolicyGroup(group, values, reason);
 
       setButtonLoading(submitBtn, false);
 
@@ -122,7 +163,7 @@ function initPolicyCardForms() {
       }
       statusEl.hidden = false;
       setTimeout(() => { statusEl.hidden = true; }, 2500);
-      showToast(`${form.querySelector('h2').textContent} saved.`);
+      showToast(`${groupLabel} saved.`);
     });
   });
 }
@@ -231,10 +272,10 @@ async function loadCustomerPanel(customer) {
     checkbox.checked = Boolean(permissions?.[key]);
   });
 
-  const overridesForm = $('.admin-customer-panel form') || panel; // no <form> wrapper; apply by name directly
-  $$('[name$="_override"]', panel).forEach((field) => {
+  const panelScope = $('#customer-panel');
+  $$('[name$="_override"]', panelScope).forEach((field) => {
     const key = field.name.replace('_override', '');
-    field.value = overrides?.values?.[key] ?? '';
+    field.value = overrides?.override_values?.[key] ?? '';
   });
 
   renderRestrictionHistory(history);
@@ -277,6 +318,9 @@ function initAccountStatusSave() {
 function initPermissionsSave() {
   $('#save-permissions-btn').addEventListener('click', async () => {
     if (!selectedCustomer) return;
+    const reason = window.prompt('Reason for updating this customer\'s permissions?');
+    if (!reason) return;
+
     const permissions = {};
     $$('#customer-permission-list .admin-toggle-row').forEach((row) => {
       permissions[row.dataset.permission] = $('input', row).checked;
@@ -287,7 +331,7 @@ function initPermissionsSave() {
     errorEl.textContent = '';
     setButtonLoading(btn, true);
 
-    const { error } = await saveCustomerPermissions(selectedCustomer.id, permissions, admin.user.id);
+    const { error } = await saveCustomerPermissions(selectedCustomer.id, permissions, reason);
 
     setButtonLoading(btn, false);
     if (error) { errorEl.textContent = error; return; }
@@ -298,6 +342,9 @@ function initPermissionsSave() {
 function initOverridesSave() {
   $('#save-overrides-btn').addEventListener('click', async () => {
     if (!selectedCustomer) return;
+    const reason = window.prompt('Reason for updating this customer\'s limit overrides?');
+    if (!reason) return;
+
     const panel = $('#customer-panel');
     const overrides = {};
     $$('[name$="_override"]', panel).forEach((field) => {
@@ -307,7 +354,7 @@ function initOverridesSave() {
 
     const btn = $('#save-overrides-btn');
     setButtonLoading(btn, true);
-    const { error } = await saveCustomerLimitOverrides(selectedCustomer.id, overrides, admin.user.id);
+    const { error } = await saveCustomerLimitOverrides(selectedCustomer.id, overrides, reason);
     setButtonLoading(btn, false);
 
     if (error) { showToast(error, 'error'); return; }
@@ -377,9 +424,7 @@ function initRestrictionActions() {
   admin = await requireAdmin();
   if (!admin) return;
 
-  const { data: profile } = await getMyProfile(admin.user.id);
-  $$('[data-admin-name]').forEach((el) => { el.textContent = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Admin'; });
-  $$('[data-admin-role]').forEach((el) => { el.textContent = admin.profile.role; });
+  initAdminLayout(admin, { pageTitle: 'Policy & Permissions' });
 
   initTabs();
   initPolicyCardForms();
