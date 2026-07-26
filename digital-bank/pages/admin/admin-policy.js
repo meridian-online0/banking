@@ -4,6 +4,26 @@
 
    CHANGE LOG (this revision)
    ---------------------------
+   - Implemented the ?customer_id=<id> deep link from
+     admin-users.html's drawer. The previous revision's header
+     comment claimed this file "reads that query param on load,
+     switches to its Customer tab, and loads the customer
+     automatically" — but no such code existed anywhere in this
+     file. That's why clicking "Manage permissions & limits" on a
+     user just opened this page on the Global policies tab with
+     nothing selected. Added loadCustomerFromQueryParam(), wired
+     into init(), which:
+       1. reads customer_id from the URL,
+       2. programmatically activates the Customer tab,
+       3. fetches the profile via getUserDetail() (the same admin.js
+          helper admin-users.js already uses for its drawer), and
+       4. hands it to the existing loadCustomerPanel() so the rest
+          of the tab (permissions, overrides, restriction actions,
+          restriction history) populates exactly as it does for a
+          manually-searched customer.
+
+   CHANGE LOG (previous revision, kept for context)
+   ---------------------------
    - savePolicyGroup / saveCustomerPermissions / saveCustomerLimitOverrides
      were passing admin.user.id into the reason parameter — all
      three RPCs get the admin's identity server-side via auth.uid(),
@@ -47,6 +67,7 @@ import {
   searchCustomers, getCustomerPermissions, saveCustomerPermissions,
   getCustomerLimitOverrides, saveCustomerLimitOverrides,
   updateAccountStatus, performRestrictionAction, getCustomerRestrictionHistory,
+  getUserDetail,
 } from '../../supabase/admin.js';
 import { debounce, getInitials } from '../../assets/js/utils.js';
 
@@ -418,6 +439,43 @@ function initRestrictionActions() {
 }
 
 /* -----------------------------------------------------------
+   Deep link from admin-users.html's drawer:
+   admin-policy.html?customer_id=<id>
+
+   Activates the Customer tab and loads that customer's panel
+   automatically, so "Manage permissions & limits" on a user
+   actually lands you where it says it will.
+   ----------------------------------------------------------- */
+async function loadCustomerFromQueryParam() {
+  const params = new URLSearchParams(window.location.search);
+  const customerId = params.get('customer_id');
+  if (!customerId) return;
+
+  const customerTabBtn = $('.admin-tab-link[data-tab="customer"]');
+  if (customerTabBtn) customerTabBtn.click();
+
+  const { data, error } = await getUserDetail(customerId);
+  if (error || !data?.profile) {
+    showToast('Could not load that customer.', 'error');
+    return;
+  }
+
+  const { profile } = data;
+
+  const searchInput = $('#customer-search-input');
+  if (searchInput) searchInput.value = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+
+  await loadCustomerPanel({
+    id: profile.id,
+    first_name: profile.first_name,
+    last_name: profile.last_name,
+    email: profile.email,
+    account_status: profile.account_status,
+    created_at: profile.created_at,
+  });
+}
+
+/* -----------------------------------------------------------
    Init
    ----------------------------------------------------------- */
 (async function init() {
@@ -435,4 +493,5 @@ function initRestrictionActions() {
   initRestrictionActions();
 
   loadPolicyCards();
+  loadCustomerFromQueryParam();
 })();
