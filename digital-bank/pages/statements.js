@@ -25,10 +25,17 @@
        danger-zone actions) — no email provider is wired up yet.
      - Interest earned / investment income are intentionally left
        out of the summary cards per the current scope.
+     - Sections below "Statement Summary", "Cash flow", "Statement
+       transactions", "Spending analytics", "Generate an official
+       statement" and "Statement history" are collapsible cards
+       (see section 2b). Collapsing/expanding is purely a display
+       concern — it never skips loading or rendering data, so a
+       collapsed section is still up to date the moment it's opened.
 
    Sections:
      1. State & constants
      2. Header chrome (navbar wait, user menu, mobile nav, logout)
+     2b. Collapsible sections
      3. Toasts
      4. Period + filter handling
      5. Balance calculation (opening/closing via net transaction effect)
@@ -151,6 +158,37 @@ function initLogout() {
   const link = $('#logout-link');
   if (!link) return;
   link.addEventListener('click', async (e) => { e.preventDefault(); await signOutUser(); window.location.href = link.getAttribute('href'); });
+}
+
+/* -----------------------------------------------------------
+   2b. Collapsible sections
+   -----------------------------------------------------------
+   Generic accordion behaviour for every `.stmt-collapsible` card:
+   the whole header is the tap target, state lives in the
+   `is-open` class + `aria-expanded`, and the animated height comes
+   from CSS (grid-template-rows), so this stays a pure display
+   toggle with no effect on data loading below. Sections marked
+   `data-default-open="true"` in the markup start expanded.
+   ----------------------------------------------------------- */
+function initCollapsibles() {
+  $$('.stmt-collapsible').forEach((section) => {
+    const header = $('.stmt-collapsible-header', section);
+    const body = $('.stmt-collapsible-body', section);
+    if (!header || !body) return;
+
+    const startOpen = section.dataset.defaultOpen === 'true';
+    setSectionOpen(section, header, startOpen);
+
+    header.addEventListener('click', () => {
+      const willOpen = !section.classList.contains('is-open');
+      setSectionOpen(section, header, willOpen);
+    });
+  });
+}
+
+function setSectionOpen(section, header, open) {
+  section.classList.toggle('is-open', open);
+  header.setAttribute('aria-expanded', String(open));
 }
 
 /* -----------------------------------------------------------
@@ -854,8 +892,11 @@ async function loadHistory() {
         <p>Generate your first statement above — it'll show up here for quick re-download.</p>
       </div>
     `;
+    updateHistoryCount(0);
     return;
   }
+
+  updateHistoryCount(data.length);
 
   listEl.innerHTML = data.map((row) => `
     <div class="stmt-history-row" data-history-id="${row.id}">
@@ -883,6 +924,12 @@ async function loadHistory() {
       loadHistory();
     });
   });
+}
+
+function updateHistoryCount(count) {
+  const el = $('#stmt-history-count');
+  if (!el) return;
+  el.textContent = count ? `${count} saved` : 'None yet';
 }
 
 function initGeneratePanel() {
@@ -916,6 +963,7 @@ async function init() {
     initLogout();
   });
 
+  initCollapsibles();
   initPeriodTabs();
   initFilterToggle();
   initFilterInputs();
