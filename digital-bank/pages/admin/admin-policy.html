@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Policy &amp; Permissions — Meridian Admin</title>
+
+<!-- Fast, offline pre-check — same file the customer app uses,
+     kills flash-of-protected-content before admin-guard.js's
+     server-validated + role check runs. See auth-guard.js's own
+     header comment for why this doesn't touch <body> itself. -->
+<script src="../../assets/js/auth-guard.js"></script>
+
+<link rel="stylesheet" href="../../assets/css/admin.css">
+</head>
+<body class="app-body admin-body" data-auth="pending">
+
+  <!-- Hidden until admin-guard.js's requireAdmin() confirms a
+       real, role-checked session — see admin-guard.js header
+       comment for the two supported reveal patterns. -->
+  <div class="auth-loader" aria-hidden="true"><span class="auth-loader-mark"></span></div>
+
+  <div data-component="admin-navbar"></div>
+
+  <main class="admin-main">
+    <div class="admin-page-head">
+      <div>
+        <h1>Policy &amp; Permissions</h1>
+        <p class="admin-page-sub">Every limit and permission here is a database row, not code. Changes take effect immediately for the accounts they apply to.</p>
+      </div>
+      <div class="admin-page-head-actions">
+        <span class="admin-policy-scope-note" data-policy-version>
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 4.5v4l2.5 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="8" r="6.3" stroke="currentColor" stroke-width="1.3"/></svg>
+          Loading last updated…
+        </span>
+      </div>
+    </div>
+
+    <!-- ===============================================
+         Section nav — same tab pattern as settings.js
+         (.profile-nav-link / .profile-panel), reused here
+         so admin-policy.js can wire it the same way.
+         =============================================== -->
+    <nav class="admin-tab-nav" aria-label="Policy sections">
+      <button type="button" class="admin-tab-link is-active" data-tab="global">Global policies</button>
+      <button type="button" class="admin-tab-link" data-tab="customer">Customer permissions &amp; restrictions</button>
+      <button type="button" class="admin-tab-link" data-tab="history">Policy change history</button>
+    </nav>
+
+    <!-- ===============================================
+         TAB 1 — Global policies (bank-wide defaults)
+         =============================================== -->
+    <section class="admin-tab-panel is-active" data-panel="global">
+
+      <p class="admin-section-intro">
+        These are the defaults every new account inherits. Overriding a value for a single customer happens in
+        <strong>Customer permissions &amp; restrictions</strong> — it doesn't change the value here.
+      </p>
+
+      <div class="admin-policy-grid">
+
+        <!-- Transfer Controls -->
+        <form class="admin-card admin-policy-card" data-policy-group="transfer_controls">
+          <div class="admin-card-head">
+            <h2>Transfer controls</h2>
+            <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
+          </div>
+          <div class="admin-field-grid">
+            <label class="admin-field"><span>Daily transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_transfer_limit" min="0" step="0.01" placeholder="10000.00"></div></label>
+            <label class="admin-field"><span>Weekly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="weekly_transfer_limit" min="0" step="0.01" placeholder="35000.00"></div></label>
+            <label class="admin-field"><span>Monthly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_transfer_limit" min="0" step="0.01" placeholder="100000.00"></div></label>
+            <label class="admin-field"><span>Maximum single transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_single_transfer" min="0" step="0.01" placeholder="10000.00"></div></label>
+            <label class="admin-field"><span>Minimum transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="min_transfer" min="0" step="0.01" placeholder="1.00"></div></label>
+            <label class="admin-field"><span>Maximum internal transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_internal_transfer" min="0" step="0.01"></div></label>
+            <label class="admin-field"><span>Maximum external transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_external_transfer" min="0" step="0.01"></div></label>
+            <label class="admin-field"><span>Maximum international transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_international_transfer" min="0" step="0.01"></div></label>
+            <label class="admin-field"><span>Maximum scheduled transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_scheduled_transfer" min="0" step="0.01"></div></label>
+            <label class="admin-field"><span>Maximum beneficiaries</span><input type="number" name="max_beneficiaries" min="0" step="1" placeholder="20"></label>
+            <label class="admin-field"><span>Maximum daily transactions</span><input type="number" name="max_daily_transactions" min="0" step="1" placeholder="15"></label>
+            <label class="admin-field"><span>Maximum failed attempts</span><input type="number" name="max_failed_attempts" min="0" step="1" placeholder="5"></label>
+            <label class="admin-field"><span>Transfer approval threshold</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="transfer_approval_threshold" min="0" step="0.01" placeholder="5000.00"></div></label>
+            <label class="admin-field"><span>Large transaction approval threshold</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="large_transaction_approval_threshold" min="0" step="0.01" placeholder="25000.00"></div></label>
+            <label class="admin-field"><span>Cooling period after password change</span><div class="admin-input-suffix"><input type="number" name="cooling_period_password_change_hours" min="0" step="1" placeholder="24"><em>hours</em></div></label>
+            <label class="admin-field"><span>Cooling period after device change</span><div class="admin-input-suffix"><input type="number" name="cooling_period_device_change_hours" min="0" step="1" placeholder="12"><em>hours</em></div></label>
+            <label class="admin-field"><span>Transfer timeout</span><div class="admin-input-suffix"><input type="number" name="transfer_timeout_minutes" min="0" step="1" placeholder="15"><em>minutes</em></div></label>
+            <label class="admin-field"><span>Transfer hold period</span><div class="admin-input-suffix"><input type="number" name="transfer_hold_period_hours" min="0" step="1" placeholder="0"><em>hours</em></div></label>
+          </div>
+          <div class="admin-card-foot">
+            <span class="admin-field-error" data-group-error></span>
+            <button type="submit" class="btn btn-primary btn-sm">Save transfer controls</button>
+          </div>
+        </form>
+
+        <!-- Card Controls -->
+        <form class="admin-card admin-policy-card" data-policy-group="card_controls">
+          <div class="admin-card-head">
+            <h2>Card controls</h2>
+            <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
+          </div>
+          <div class="admin-field-grid">
+            <label class="admin-field"><span>Maximum physical cards</span><input type="number" name="max_physical_cards" min="0" step="1" placeholder="3"></label>
+            <label class="admin-field"><span>Maximum virtual cards</span><input type="number" name="max_virtual_cards" min="0" step="1" placeholder="5"></label>
+            <label class="admin-field"><span>Maximum active cards</span><input type="number" name="max_active_cards" min="0" step="1" placeholder="4"></label>
+            <label class="admin-field"><span>Maximum replacement cards</span><input type="number" name="max_replacement_cards" min="0" step="1" placeholder="2"></label>
+            <label class="admin-field"><span>Maximum card requests</span><div class="admin-input-suffix"><input type="number" name="max_card_requests" min="0" step="1" placeholder="3"><em>/ month</em></div></label>
+            <label class="admin-field"><span>Daily card spending limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_card_spending_limit" min="0" step="0.01" placeholder="2000.00"></div></label>
+            <label class="admin-field"><span>Monthly card spending limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_card_spending_limit" min="0" step="0.01" placeholder="15000.00"></div></label>
+            <label class="admin-field"><span>Maximum ATM withdrawal</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_atm_withdrawal" min="0" step="0.01" placeholder="500.00"></div></label>
+            <label class="admin-field"><span>Maximum contactless transaction</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_contactless_transaction" min="0" step="0.01" placeholder="100.00"></div></label>
+            <label class="admin-field"><span>PIN retry limit</span><input type="number" name="pin_retry_limit" min="0" step="1" placeholder="3"></label>
+            <label class="admin-field"><span>Card expiration policy</span><div class="admin-input-suffix"><input type="number" name="card_expiration_years" min="1" step="1" placeholder="4"><em>years</em></div></label>
+          </div>
+          <div class="admin-toggle-list">
+            <label class="admin-toggle-row"><span>Allow card freeze</span><input type="checkbox" class="admin-switch" name="allow_card_freeze" checked></label>
+            <label class="admin-toggle-row"><span>Allow card unfreeze</span><input type="checkbox" class="admin-switch" name="allow_card_unfreeze" checked></label>
+            <label class="admin-toggle-row"><span>Allow card replacement</span><input type="checkbox" class="admin-switch" name="allow_card_replacement" checked></label>
+            <label class="admin-toggle-row"><span>Allow international usage</span><input type="checkbox" class="admin-switch" name="allow_international_usage"></label>
+            <label class="admin-toggle-row"><span>Allow online purchases</span><input type="checkbox" class="admin-switch" name="allow_online_purchases" checked></label>
+            <label class="admin-toggle-row"><span>Allow contactless payments</span><input type="checkbox" class="admin-switch" name="allow_contactless_payments" checked></label>
+            <label class="admin-toggle-row"><span>Allow ATM withdrawals</span><input type="checkbox" class="admin-switch" name="allow_atm_withdrawals" checked></label>
+          </div>
+          <div class="admin-card-foot">
+            <span class="admin-field-error" data-group-error></span>
+            <button type="submit" class="btn btn-primary btn-sm">Save card controls</button>
+          </div>
+        </form>
+
+        <!-- Account Controls -->
+        <form class="admin-card admin-policy-card" data-policy-group="account_controls">
+          <div class="admin-card-head">
+            <h2>Account controls</h2>
+            <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
+          </div>
+          <div class="admin-field-grid">
+            <label class="admin-field"><span>Maximum accounts per customer</span><input type="number" name="max_accounts_per_customer" min="1" step="1" placeholder="6"></label>
+            <label class="admin-field admin-field--wide"><span>Allowed account types</span>
+              <select name="allowed_account_types" multiple>
+                <option value="personal" selected>Personal</option>
+                <option value="business" selected>Business</option>
+                <option value="joint">Joint</option>
+              </select>
+            </label>
+            <label class="admin-field admin-field--wide"><span>Allowed currencies</span>
+              <select name="allowed_currencies" multiple>
+                <option value="USD" selected>USD</option>
+                <option value="EUR" selected>EUR</option>
+                <option value="GBP" selected>GBP</option>
+                <option value="SGD" selected>SGD</option>
+                <option value="JPY">JPY</option>
+                <option value="NGN" selected>NGN</option>
+                <option value="CAD">CAD</option>
+                <option value="AUD">AUD</option>
+                <option value="CHF">CHF</option>
+              </select>
+            </label>
+            <label class="admin-field"><span>Minimum balance</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="minimum_balance" min="0" step="0.01" placeholder="0.00"></div></label>
+            <label class="admin-field"><span>Maximum balance</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="maximum_balance" min="0" step="0.01" placeholder="1000000.00"></div></label>
+            <label class="admin-field"><span>Dormant account period</span><div class="admin-input-suffix"><input type="number" name="dormant_account_period_days" min="0" step="1" placeholder="180"><em>days</em></div></label>
+            <label class="admin-field"><span>Overdraft limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="overdraft_limit" min="0" step="0.01" placeholder="0.00"></div></label>
+          </div>
+          <div class="admin-toggle-list">
+            <label class="admin-toggle-row"><span>Overdraft permission</span><input type="checkbox" class="admin-switch" name="overdraft_permission"></label>
+            <label class="admin-toggle-row"><span>Interest eligibility</span><input type="checkbox" class="admin-switch" name="interest_eligibility" checked></label>
+          </div>
+          <label class="admin-field admin-field--wide">
+            <span>Account closure rules</span>
+            <textarea name="account_closure_rules" rows="2" placeholder="e.g. Balance must be zero and no pending disputes before closure."></textarea>
+          </label>
+          <div class="admin-card-foot">
+            <span class="admin-field-error" data-group-error></span>
+            <button type="submit" class="btn btn-primary btn-sm">Save account controls</button>
+          </div>
+        </form>
+
+        <!-- Security Controls -->
+        <form class="admin-card admin-policy-card" data-policy-group="security_controls">
+          <div class="admin-card-head">
+            <h2>Security controls</h2>
+            <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
+          </div>
+          <div class="admin-field-grid">
+            <label class="admin-field"><span>Maximum login attempts</span><input type="number" name="max_login_attempts" min="1" step="1" placeholder="5"></label>
+            <label class="admin-field"><span>OTP expiration</span><div class="admin-input-suffix"><input type="number" name="otp_expiration_minutes" min="1" step="1" placeholder="5"><em>minutes</em></div></label>
+            <label class="admin-field"><span>Session timeout</span><div class="admin-input-suffix"><input type="number" name="session_timeout_minutes" min="1" step="1" placeholder="20"><em>minutes</em></div></label>
+            <label class="admin-field"><span>Maximum devices</span><input type="number" name="max_devices" min="1" step="1" placeholder="4"></label>
+            <label class="admin-field"><span>Password expiration</span><div class="admin-input-suffix"><input type="number" name="password_expiration_days" min="0" step="1" placeholder="90"><em>days</em></div></label>
+            <label class="admin-field"><span>Fraud detection threshold</span><input type="number" name="fraud_detection_threshold" min="0" max="100" step="1" placeholder="70"></label>
+            <label class="admin-field admin-field--wide"><span>Allowed countries</span><input type="text" name="allowed_countries" placeholder="Comma-separated ISO codes, e.g. NG, US, GB"></label>
+            <label class="admin-field admin-field--wide"><span>Blocked countries</span><input type="text" name="blocked_countries" placeholder="Comma-separated ISO codes"></label>
+            <label class="admin-field"><span>Password complexity</span>
+              <select name="password_complexity">
+                <option value="standard" selected>Standard (8+ chars, mixed case)</option>
+                <option value="high">High (12+ chars, symbols required)</option>
+              </select>
+            </label>
+          </div>
+          <div class="admin-toggle-list">
+            <label class="admin-toggle-row"><span>Require two-factor authentication</span><input type="checkbox" class="admin-switch" name="require_2fa" checked></label>
+            <label class="admin-toggle-row"><span>Require email verification</span><input type="checkbox" class="admin-switch" name="require_email_verification" checked></label>
+            <label class="admin-toggle-row"><span>Require phone verification</span><input type="checkbox" class="admin-switch" name="require_phone_verification"></label>
+            <label class="admin-toggle-row"><span>Require KYC</span><input type="checkbox" class="admin-switch" name="require_kyc" checked></label>
+            <label class="admin-toggle-row"><span>Device verification</span><input type="checkbox" class="admin-switch" name="device_verification" checked></label>
+            <label class="admin-toggle-row"><span>IP restrictions</span><input type="checkbox" class="admin-switch" name="ip_restrictions"></label>
+            <label class="admin-toggle-row"><span>VPN detection</span><input type="checkbox" class="admin-switch" name="vpn_detection"></label>
+          </div>
+          <div class="admin-card-foot">
+            <span class="admin-field-error" data-group-error></span>
+            <button type="submit" class="btn btn-primary btn-sm">Save security controls</button>
+          </div>
+        </form>
+
+      </div>
+    </section>
+
+    <!-- ===============================================
+         TAB 2 — Customer permissions & restrictions
+         =============================================== -->
+    <section class="admin-tab-panel" data-panel="customer">
+
+      <div class="admin-customer-search">
+        <div class="admin-search-input">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input type="search" id="customer-search-input" placeholder="Search by name, email, or account number…" autocomplete="off">
+        </div>
+        <ul class="admin-search-results" id="customer-search-results" hidden></ul>
+      </div>
+
+      <!-- Empty state — shown until a customer is selected -->
+      <div class="admin-empty-panel" id="customer-panel-empty">
+        <span class="empty-state-icon">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="7" r="3.2" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 17c1-3.5 4-5 6.5-5s5.5 1.5 6.5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </span>
+        <p>Search for a customer to view and edit their permissions.</p>
+      </div>
+
+      <!-- Selected customer panel — hidden until populated -->
+      <div class="admin-customer-panel" id="customer-panel" hidden>
+
+        <div class="admin-customer-summary">
+          <span class="avatar-initial avatar-initial--lg" data-customer-avatar>·</span>
+          <div class="admin-customer-summary-info">
+            <h2 data-customer-name>—</h2>
+            <p data-customer-email>—</p>
+            <span class="admin-customer-meta" data-customer-meta>Customer since —</span>
+          </div>
+          <div class="admin-customer-status">
+            <label class="admin-field">
+              <span>Account status</span>
+              <select id="customer-account-status">
+                <option value="Active">Active</option>
+                <option value="Pending Verification">Pending verification</option>
+                <option value="Restricted">Restricted</option>
+                <option value="Suspended">Suspended</option>
+                <option value="Frozen">Frozen</option>
+                <option value="Closed">Closed</option>
+              </select>
+            </label>
+            <button type="button" class="btn btn-primary btn-sm" id="save-account-status-btn">Save status</button>
+          </div>
+        </div>
+
+        <!-- Transaction permissions — 13 independently configurable toggles -->
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <h2>Transaction permissions</h2>
+            <span class="admin-card-head-note">Each toggle is stored per customer and overrides the global default.</span>
+          </div>
+          <div class="admin-toggle-list admin-toggle-list--grid" id="customer-permission-list">
+            <label class="admin-toggle-row" data-permission="transfers"><span>Transfers</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="international_transfers"><span>International transfers</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="internal_transfers"><span>Internal transfers</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="card_payments"><span>Card payments</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="atm_withdrawals"><span>ATM withdrawals</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="mobile_banking"><span>Mobile banking</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="online_banking"><span>Online banking</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="bill_payments"><span>Bill payments</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="investments"><span>Investments</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="loans"><span>Loans</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="statement_downloads"><span>Statement downloads</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="profile_updates"><span>Profile updates</span><input type="checkbox" class="admin-switch"></label>
+            <label class="admin-toggle-row" data-permission="beneficiary_creation"><span>Beneficiary creation</span><input type="checkbox" class="admin-switch"></label>
+          </div>
+          <div class="admin-card-foot">
+            <span class="admin-field-error" data-group-error></span>
+            <button type="button" class="btn btn-primary btn-sm" id="save-permissions-btn">Save permissions</button>
+          </div>
+        </div>
+
+        <!-- Per-customer transfer limit overrides -->
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <h2>Transfer limit overrides</h2>
+            <span class="admin-card-head-note">Leave blank to inherit the global value.</span>
+          </div>
+          <div class="admin-field-grid">
+            <label class="admin-field"><span>Daily transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_transfer_limit_override" min="0" step="0.01" placeholder="Inherit global"></div></label>
+            <label class="admin-field"><span>Monthly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_transfer_limit_override" min="0" step="0.01" placeholder="Inherit global"></div></label>
+            <label class="admin-field"><span>Maximum single transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_single_transfer_override" min="0" step="0.01" placeholder="Inherit global"></div></label>
+            <label class="admin-field"><span>Maximum beneficiaries</span><input type="number" name="max_beneficiaries_override" min="0" step="1" placeholder="Inherit global"></label>
+          </div>
+          <div class="admin-card-foot">
+            <span class="admin-field-error" data-group-error></span>
+            <button type="button" class="btn btn-primary btn-sm" id="save-overrides-btn">Save overrides</button>
+          </div>
+        </div>
+
+        <!-- Restriction actions — grouped by intent, each opens the
+             reason-required confirm modal below before it does anything. -->
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <h2>Restriction actions</h2>
+            <span class="admin-card-head-note">Every action below requires a reason and is written to the audit log.</span>
+          </div>
+
+          <div class="admin-restriction-group">
+            <h3>Account state</h3>
+            <div class="admin-chip-actions">
+              <button type="button" class="admin-action-chip" data-action="freeze_customer">Freeze customer</button>
+              <button type="button" class="admin-action-chip" data-action="unfreeze_customer">Unfreeze customer</button>
+              <button type="button" class="admin-action-chip" data-action="suspend_customer">Suspend customer</button>
+              <button type="button" class="admin-action-chip admin-action-chip--danger" data-action="close_account">Close account</button>
+            </div>
+          </div>
+
+          <div class="admin-restriction-group">
+            <h3>Access &amp; sessions</h3>
+            <div class="admin-chip-actions">
+              <button type="button" class="admin-action-chip" data-action="lock_online_banking">Lock online banking</button>
+              <button type="button" class="admin-action-chip" data-action="lock_mobile_banking">Lock mobile banking</button>
+              <button type="button" class="admin-action-chip" data-action="force_logout">Force logout</button>
+              <button type="button" class="admin-action-chip" data-action="require_password_reset">Require password reset</button>
+              <button type="button" class="admin-action-chip" data-action="require_new_kyc">Require new KYC</button>
+              <button type="button" class="admin-action-chip" data-action="reset_failed_login_counter">Reset failed login counter</button>
+              <button type="button" class="admin-action-chip" data-action="clear_device_list">Clear device list</button>
+            </div>
+          </div>
+
+          <div class="admin-restriction-group">
+            <h3>Disable services</h3>
+            <div class="admin-chip-actions">
+              <button type="button" class="admin-action-chip" data-action="disable_transfers">Disable transfers</button>
+              <button type="button" class="admin-action-chip" data-action="disable_investments">Disable investments</button>
+              <button type="button" class="admin-action-chip" data-action="disable_cards">Disable cards</button>
+              <button type="button" class="admin-action-chip" data-action="disable_loans">Disable loans</button>
+              <button type="button" class="admin-action-chip" data-action="disable_withdrawals">Disable withdrawals</button>
+              <button type="button" class="admin-action-chip" data-action="disable_deposits">Disable deposits</button>
+              <button type="button" class="admin-action-chip" data-action="disable_statements">Disable statements</button>
+              <button type="button" class="admin-action-chip" data-action="disable_notifications">Disable notifications</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent restriction history for this customer -->
+        <div class="admin-card">
+          <div class="admin-card-head">
+            <h2>Restriction history</h2>
+          </div>
+          <table class="admin-table" id="customer-restriction-history">
+            <thead>
+              <tr><th>Date</th><th>Action</th><th>Administrator</th><th>Reason</th></tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="4" class="statement-table-empty">No restriction history for this customer yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===============================================
+         TAB 3 — Policy change history (global policy audit)
+         =============================================== -->
+    <section class="admin-tab-panel" data-panel="history">
+      <div class="admin-card">
+        <div class="admin-card-head">
+          <h2>Policy change history</h2>
+          <span class="admin-card-head-note">Every save on the Global policies tab creates an immutable entry here.</span>
+        </div>
+        <table class="admin-table">
+          <thead>
+            <tr><th>Date</th><th>Administrator</th><th>Policy group</th><th>Field</th><th>Previous value</th><th>New value</th></tr>
+          </thead>
+          <tbody id="policy-history-body">
+            <tr><td colspan="6" class="statement-table-empty">No policy changes recorded yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================
+       Restriction confirm modal — shared by every button in
+       .admin-chip-actions. admin-policy.js sets the title/body
+       from the clicked chip's data-action and posts the reason
+       to the matching admin RPC + admin_audit_logs row.
+       ========================================================= -->
+  <div class="modal-overlay" id="restriction-confirm-modal" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="restriction-modal-title">
+      <button type="button" class="modal-close" aria-label="Close">&times;</button>
+      <h2 id="restriction-modal-title">Confirm action</h2>
+      <p class="modal-body-text" id="restriction-modal-body">This action will be applied immediately and logged to the audit trail.</p>
+      <form id="restriction-confirm-form">
+        <label class="admin-field admin-field--wide">
+          <span>Reason (required)</span>
+          <textarea name="reason" rows="3" required placeholder="Why is this action being taken?"></textarea>
+        </label>
+        <div class="admin-field-error" id="restriction-modal-error"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost modal-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="restriction-confirm-submit">Confirm</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="profile-toast-region" aria-live="polite"></div>
+
+  <script type="module" src="../../components/components.js"></script>
+  <script type="module" src="../../assets/js/admin/admin-layout.js"></script>
+  <!-- admin-policy.js — planned, not yet built -->
+  <script type="module" src="admin-policy.js"></script>
+
+</body>
+</html>
