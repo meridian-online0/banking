@@ -15,6 +15,7 @@
      1.  Statement header
      2.  Quick actions
      3.  Filter panel
+     3b. Collapsible section shell (accordion cards)
      4.  Summary cards
      5.  Cash flow chart (self-built bars, no charting library)
      6.  Transaction cards
@@ -225,11 +226,147 @@
 }
 
 /* -------------------------------------------------------------
+   3b. Collapsible section shell
+   -----------------------------------------------------------
+   Every major block below the filters (statement summary, cash
+   flow, transactions, analytics, generate, history) shares this
+   accordion shell so the page reads as a short list of named
+   sections instead of one long scroll. The header row is the
+   full-width tap target; the chevron rotates and the body height
+   animates via CSS grid-rows, no JS measuring involved. Sections
+   with [data-default-open="true"] start expanded; everything else
+   starts collapsed until the person taps to view it.
+   ------------------------------------------------------------- */
+.stmt-collapsible {
+  margin-bottom: 1.5rem;
+  padding: 0;
+  overflow: hidden;
+}
+
+.stmt-collapsible-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: none;
+  border: none;
+  padding: 1.5rem 1.75rem;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border-radius: var(--radius-md);
+  transition: background-color 0.15s ease;
+}
+
+.stmt-collapsible-header:hover {
+  background: rgba(181, 138, 68, 0.05);
+}
+
+.stmt-collapsible-header:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: -2px;
+}
+
+.stmt-collapsible-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.stmt-collapsible-titles h3 {
+  margin: 0;
+}
+
+.stmt-collapsible-sub {
+  font-size: 0.82rem;
+  color: var(--slate);
+  font-weight: 400;
+}
+
+.stmt-collapsible-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-shrink: 0;
+}
+
+.stmt-collapsible-count {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--slate);
+  white-space: nowrap;
+}
+
+.stmt-collapsible-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ivory);
+  color: var(--slate-dark);
+  flex-shrink: 0;
+  transition: transform 0.3s cubic-bezier(0.65, 0, 0.35, 1), background-color 0.15s ease;
+}
+
+.stmt-collapsible-chevron svg {
+  width: 13px;
+  height: 13px;
+}
+
+.stmt-collapsible.is-open .stmt-collapsible-chevron {
+  transform: rotate(180deg);
+  background: rgba(181, 138, 68, 0.14);
+  color: var(--brass-dark);
+}
+
+.stmt-collapsible-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stmt-collapsible.is-open > .stmt-collapsible-body {
+  grid-template-rows: 1fr;
+}
+
+.stmt-collapsible-body-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.stmt-collapsible-body-content {
+  padding: 0 1.75rem 1.75rem;
+}
+
+/* -------------------------------------------------------------
    4. Summary cards
    ------------------------------------------------------------- */
+.stmt-summary-section .stmt-collapsible-body-content {
+  padding-top: 0.25rem;
+}
+
 .stmt-summary-grid {
   grid-template-columns: repeat(5, 1fr);
-  margin-bottom: 1.75rem;
+}
+
+.stmt-summary-subgroup + .stmt-summary-subgroup {
+  margin-top: 1.5rem;
+}
+
+.stmt-summary-subgroup-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin-bottom: 0.75rem;
+  display: block;
 }
 
 .stmt-summary-card {
@@ -249,6 +386,11 @@
 .stmt-summary-card.is-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+.stmt-summary-card--accent {
+  background: var(--ivory);
+  border-color: rgba(181, 138, 68, 0.35);
 }
 
 .stmt-summary-label {
@@ -277,17 +419,10 @@
    bars whose height is set inline by statements.js as a
    percentage of the period's largest single-bucket value.
    ------------------------------------------------------------- */
-.stmt-chart-card {
-  margin-bottom: 1.75rem;
-}
-
-.stmt-chart-toolbar {
+.stmt-chart-legend-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.25rem;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
 }
 
 .stmt-chart-legend {
@@ -371,7 +506,7 @@
 /* -------------------------------------------------------------
    6. Transaction cards
    ------------------------------------------------------------- */
-.stmt-tx-section-head {
+.stmt-tx-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -388,7 +523,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 
 .stmt-tx-card {
@@ -556,12 +691,20 @@
    ------------------------------------------------------------- */
 .stmt-analytics-grid {
   grid-template-columns: 1fr 1fr;
-  margin-bottom: 1.75rem;
 }
 
 .stmt-analytics-list {
   display: flex;
   flex-direction: column;
+}
+
+.stmt-analytics-list-heading {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slate);
+  margin: 0 0 0.85rem;
 }
 
 .stmt-analytics-row {
@@ -611,6 +754,12 @@
 /* -------------------------------------------------------------
    9. Statement generation panel
    ------------------------------------------------------------- */
+.stmt-generate-card-desc {
+  font-size: 0.85rem;
+  color: var(--slate);
+  margin: -0.25rem 0 1.25rem;
+}
+
 .stmt-generate-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr auto;
@@ -740,7 +889,9 @@
    the browser's native print dialog (Save as PDF), scoped to
    #stmt-print-root via these rules. Honest about what it is:
    the UI copy says "Print / Save as PDF", not "Download PDF",
-   see statements.js.
+   see statements.js. Collapsed sections are forced open for
+   print so the exported page always includes everything,
+   regardless of what was expanded on screen.
    ------------------------------------------------------------- */
 @media print {
   body * {
@@ -759,10 +910,11 @@
   .app-header,
   .stmt-quick-actions,
   .stmt-filter-panel,
-  .stmt-chart-toolbar,
-  .stmt-tx-card,
-  .stmt-analytics-grid,
-  .stmt-generate-grid,
+  .stmt-collapsible-header,
+  .stmt-chart-card,
+  .stmt-tx-section,
+  .stmt-analytics-section,
+  .stmt-generate-card,
   #stmt-history-card,
   .toast-stack {
     display: none !important;
@@ -830,6 +982,9 @@
   .stmt-generate-grid {
     grid-template-columns: 1fr;
   }
+  .stmt-generate-grid .btn {
+    width: 100%;
+  }
   .stmt-tx-card {
     grid-template-columns: auto 1fr;
   }
@@ -848,6 +1003,18 @@
   .stmt-history-meta {
     display: none;
   }
+  .stmt-collapsible-header {
+    padding: 1.15rem 1.15rem;
+  }
+  .stmt-collapsible-body-content {
+    padding: 0 1.15rem 1.35rem;
+  }
+  .stmt-collapsible-sub {
+    display: none;
+  }
+  .stmt-collapsible-count {
+    display: none;
+  }
 }
 
 @media (max-width: 480px) {
@@ -859,5 +1026,13 @@
   }
   .stmt-chart {
     height: 140px;
+  }
+  .stmt-quick-actions {
+    flex-direction: column;
+  }
+  .stmt-quick-actions .btn,
+  .stmt-quick-actions a.btn {
+    width: 100%;
+    justify-content: center;
   }
 }
