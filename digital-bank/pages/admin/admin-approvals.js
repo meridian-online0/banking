@@ -6,7 +6,7 @@
 import { requireAdmin } from '../../assets/js/admin/admin-guard.js';
 import {
   getApprovalStats, getApprovalQueue, getApprovalRequest, decideApproval,
-  getAuditLog, getAuditFilterOptions,
+  listAdminAuditLog, getAuditFilterOptions,
 } from '../../supabase/admin.js';
 import { getMyProfile } from '../../supabase/database.js';
 
@@ -240,7 +240,7 @@ async function initAuditFilters() {
   });
 
   let searchDebounce;
-  $('#audit-customer-search').addEventListener('input', () => {
+  $('#audit-reason-search').addEventListener('input', () => {
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(() => { auditPage = 0; loadAuditLog(); }, 300);
   });
@@ -252,70 +252,73 @@ async function initAuditFilters() {
 }
 
 function getAuditFilters() {
+  const adminId = $('#audit-admin-filter').value;
+  const action = $('#audit-action-filter').value;
   return {
-    adminId: $('#audit-admin-filter').value,
-    action: $('#audit-action-filter').value,
+    adminId: adminId && adminId !== 'all' ? adminId : undefined,
+    action: action && action !== 'all' ? action : undefined,
     from: $('#audit-from-date').value || undefined,
     to: $('#audit-to-date').value ? `${$('#audit-to-date').value}T23:59:59` : undefined,
-    customerQuery: $('#audit-customer-search').value.trim() || undefined,
+    search: $('#audit-reason-search').value.trim() || undefined,
   };
+}
+
+function formatMetadata(metadata) {
+  if (!metadata || (typeof metadata === 'object' && !Object.keys(metadata).length)) return '—';
+  const str = JSON.stringify(metadata);
+  return str.length > 60 ? `${str.slice(0, 60)}…` : str;
 }
 
 async function loadAuditLog() {
   const body = $('#audit-log-body');
   const empty = $('#audit-log-empty');
   const panel = $('.admin-tab-panel[data-panel="audit"]');
-  body.innerHTML = '<tr class="admin-table-row-skeleton"><td colspan="8"><div class="skeleton"></div></td></tr>'.repeat(4);
+  body.innerHTML = '<tr class="admin-table-row-skeleton"><td colspan="6"><div class="skeleton"></div></td></tr>'.repeat(4);
   empty.hidden = true;
 
-  const { data, error, count } = await getAuditLog({
+  const { data, error } = await listAdminAuditLog({
     ...getAuditFilters(),
-    limit: AUDIT_PAGE_SIZE,
-    offset: auditPage * AUDIT_PAGE_SIZE,
+    page: auditPage + 1,
+    pageSize: AUDIT_PAGE_SIZE,
   });
 
   panel.dataset.loaded = 'true';
 
   if (error) { showToast(error, 'error'); body.innerHTML = ''; empty.hidden = false; return; }
-  if (!data.length) { body.innerHTML = ''; empty.hidden = false; return; }
+  if (!data.rows.length) { body.innerHTML = ''; empty.hidden = false; return; }
 
-  body.innerHTML = data.map((row) => `
+  body.innerHTML = data.rows.map((row) => `
     <tr>
       <td>${new Date(row.created_at).toLocaleString('en-US')}</td>
       <td>${row.admin ? `${row.admin.first_name} ${row.admin.last_name}` : '—'}</td>
       <td>${row.action}</td>
-      <td>${row.customer ? `${row.customer.first_name} ${row.customer.last_name}` : '—'}</td>
-      <td class="mono">${row.previous_value ? '…' : '—'} → ${row.new_value ? '…' : '—'}</td>
+      <td class="mono">${row.target_table || '—'}${row.target_id ? ` #${String(row.target_id).slice(0, 8)}` : ''}</td>
+      <td class="mono">${formatMetadata(row.metadata)}</td>
       <td>${row.reason || '—'}</td>
-      <td>${row.ip_address || '—'} · ${row.browser || '—'}</td>
-      <td><span class="status-pill">${row.approval_status}</span></td>
     </tr>
   `).join('');
 
   $('#audit-page-indicator').textContent = `Page ${auditPage + 1}`;
   $('#audit-prev-page').disabled = auditPage === 0;
-  $('#audit-next-page').disabled = (auditPage + 1) * AUDIT_PAGE_SIZE >= count;
+  $('#audit-next-page').disabled = (auditPage + 1) * AUDIT_PAGE_SIZE >= data.total;
 }
 
 async function exportAuditCsv() {
-  const { data, error } = await getAuditLog({ ...getAuditFilters(), limit: 5000, offset: 0 });
-  if (error || !data.length) { showToast('Nothing to export for these filters.', 'error'); return; }
+  const { data, error } = await listAdminAuditLog({ ...getAuditFilters(), page: 1, pageSize: 5000 });
+  if (error || !data.rows.length) { showToast('Nothing to export for these filters.', 'error'); return; }
 
   const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const header = ['Timestamp', 'Administrator', 'Action', 'Affected customer', 'Previous value', 'New value', 'Reason', 'IP', 'Browser', 'Approval status'];
+  const header = ['Timestamp', 'Administrator', 'Action', 'Target table', 'Target ID', 'Metadata', 'Reason'];
   const lines = [header.map(escape).join(',')];
-  data.forEach((row) => {
+  data.rows.forEach((row) => {
     lines.push([
       new Date(row.created_at).toLocaleString('en-US'),
       row.admin ? `${row.admin.first_name} ${row.admin.last_name}` : '',
       row.action,
-      row.customer ? `${row.customer.first_name} ${row.customer.last_name}` : '',
-      JSON.stringify(row.previous_value ?? ''),
-      JSON.stringify(row.new_value ?? ''),
-      row.reason,
-      row.ip_address,
-      row.browser,
-      row.approval_status,
+      row.target_table || '',
+      row.target_id || '',
+      row.metadata ? JSON.stringify(row.metadata) : '',
+      row.reason || '',
     ].map(escape).join(','));
   });
 
