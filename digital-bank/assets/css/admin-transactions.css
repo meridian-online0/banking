@@ -1,0 +1,352 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   assets/css/admin-transactions.css
+   SCOPE: pages/admin/admin-transactions.html only.
+
+   Everything admin.css / components.css already own is reused as
+   normal: .admin-stat-row/.admin-stat-card, .admin-toolbar,
+   .admin-search-field, .admin-table*, .admin-pagination,
+   .admin-drawer*, .modal-*, .field*, .btn* (including .btn-danger
+   for the reverse-transaction submit). This file only adds what's
+   specific to the transactions list + the reverse-transaction flow:
+
+   Contents:
+     1. Page head actions (Export CSV placement)
+     2. Toolbar — date range field
+     3. Table — sortable column headers
+     4. Table — amount column, status chips
+     5. Drawer — sender → receiver flow
+     6. Drawer — transaction summary grid
+     7. Drawer — footer actions (reverse / flag / receipt)
+     8. Reverse modal — danger note
+     9. Responsive
+   ============================================================= */
+
+/* -------------------------------------------------------------
+   1. Page head actions
+   -----------------------------------------------------------
+   page-head--split already puts the title block and this actions
+   block on opposite ends (components.css); this just governs the
+   internal spacing/wrap of whatever sits in the actions slot.
+   ------------------------------------------------------------- */
+.admin-page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.admin-page-head-actions .btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* -------------------------------------------------------------
+   2. Toolbar — date range field
+   -----------------------------------------------------------
+   admin-toolbar--wrap: this page's toolbar carries five controls
+   (search, two selects, a date range, a clear button) instead of
+   the two-control toolbar admin.css was written for, so it needs
+   a tighter gap to avoid feeling sparse when wrapped across two
+   lines on medium screens.
+   ------------------------------------------------------------- */
+.admin-toolbar--wrap {
+  row-gap: 0.6rem;
+}
+
+.admin-date-range {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-date-range input {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.7rem;
+  font-size: 0.83rem;
+  color: var(--slate-dark);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-date-range input:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(181, 138, 68, 0.18);
+}
+
+.admin-date-range-sep {
+  color: var(--slate);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------
+   3. Table — sortable column headers
+   ------------------------------------------------------------- */
+.admin-table th.is-sortable {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.sort-caret {
+  width: 9px;
+  height: 9px;
+  color: var(--slate);
+  opacity: 0.4;
+  transition: opacity 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.admin-table th.is-sortable:hover .sort-caret {
+  opacity: 0.75;
+}
+
+/* Sorted state: full-opacity brass caret marks the active sort
+   column. Note: the shared up/down glyph markup is vertically
+   symmetric, so a CSS rotate can't visually distinguish asc from
+   desc — that distinction should come from admin-transactions.js
+   swapping which caret markup it renders (an up-only vs down-only
+   path) alongside toggling these classes, rather than from CSS. */
+.admin-table th.is-sorted-asc .sort-caret,
+.admin-table th.is-sorted-desc .sort-caret {
+  opacity: 1;
+  color: var(--brass-dark);
+}
+
+/* -------------------------------------------------------------
+   4. Table — amount column, status chips
+   ------------------------------------------------------------- */
+.admin-table-amount {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.admin-table-amount.pos { color: var(--green); }
+.admin-table-amount.neg { color: var(--slate-dark); }
+
+/* This table's own status set (Completed / Processing / Failed /
+   Reversed) is distinct from admin-users.html's, so it gets its
+   own chip rather than overloading admin-users.css's variants. */
+.admin-tx-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.admin-tx-status-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.admin-tx-status-chip--completed {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.admin-tx-status-chip--processing {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
+.admin-tx-status-chip--failed {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.admin-tx-status-chip--reversed {
+  background: rgba(91, 107, 124, 0.14);
+  color: var(--slate-dark);
+}
+
+/* -------------------------------------------------------------
+   5. Drawer — sender → receiver flow
+   -----------------------------------------------------------
+   The one thing a transaction drawer needs that a user drawer
+   doesn't: a compact "who paid whom" visual up top, before the
+   label/value summary grid.
+   ------------------------------------------------------------- */
+.admin-tx-flow {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-tx-flow-party {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.admin-tx-flow-party--receiver {
+  text-align: right;
+}
+
+.admin-tx-flow-party span:first-child {
+  font-size: 0.72rem;
+  color: var(--slate);
+}
+
+.admin-tx-flow-party strong {
+  font-size: 0.88rem;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-tx-flow-arrow {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ivory);
+  color: var(--brass-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.admin-tx-flow-arrow svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* -------------------------------------------------------------
+   6. Drawer — transaction summary grid
+   ------------------------------------------------------------- */
+.admin-tx-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-tx-summary-field span {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--slate);
+  margin-bottom: 0.3rem;
+}
+
+.admin-tx-summary-field p {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--slate-dark);
+}
+
+.admin-tx-summary-field p.mono {
+  font-family: var(--font-mono);
+}
+
+.admin-tx-summary-field--amount p {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* -------------------------------------------------------------
+   7. Drawer — footer actions (reverse / flag / receipt)
+   ------------------------------------------------------------- */
+.admin-drawer-footer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.5rem;
+}
+
+.admin-drawer-footer-actions .btn {
+  width: 100%;
+}
+
+.admin-drawer-footer-note {
+  font-size: 0.76rem;
+  color: var(--slate);
+  text-align: center;
+}
+
+/* -------------------------------------------------------------
+   8. Reverse modal — danger note
+   -----------------------------------------------------------
+   A short callout above the reason field, reinforcing the "cannot
+   be undone" line already in the modal's copy with a visual
+   treatment consistent with .field-error's red, rather than a
+   plain paragraph easy to skim past.
+   ------------------------------------------------------------- */
+.admin-modal-danger-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: var(--red-bg);
+  color: var(--red);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+  font-size: 0.82rem;
+  margin-bottom: 1.1rem;
+}
+
+.admin-modal-danger-note svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+/* -------------------------------------------------------------
+   9. Responsive
+   ------------------------------------------------------------- */
+@media (max-width: 720px) {
+  .admin-tx-summary {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .admin-date-range {
+    width: 100%;
+  }
+  .admin-date-range input {
+    flex: 1;
+    min-width: 0;
+  }
+  .admin-page-head-actions {
+    width: 100%;
+  }
+  .admin-page-head-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-tx-flow {
+    align-items: flex-start;
+  }
+  .admin-tx-flow-party strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
