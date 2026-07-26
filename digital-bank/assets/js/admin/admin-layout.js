@@ -203,13 +203,13 @@ function wireMobileSidebarToggle() {
   if (!toggle || !sidebar) return;
 
   toggle.addEventListener('click', () => {
-    const isOpen = sidebar.classList.toggle('is-mobile-open');
+    const isOpen = sidebar.classList.toggle('is-open');
     toggle.setAttribute('aria-expanded', String(isOpen));
   });
   document.addEventListener('click', (event) => {
-    if (!sidebar.classList.contains('is-mobile-open')) return;
+    if (!sidebar.classList.contains('is-open')) return;
     if (!sidebar.contains(event.target) && !toggle.contains(event.target)) {
-      sidebar.classList.remove('is-mobile-open');
+      sidebar.classList.remove('is-open');
       toggle.setAttribute('aria-expanded', 'false');
     }
   });
