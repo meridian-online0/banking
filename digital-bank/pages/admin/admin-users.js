@@ -11,54 +11,30 @@
 
    CHANGE LOG (this revision)
    ---------------------------
-   - Drawer now also loads and renders a Permissions section and a
-     Limit overrides section for the active user, using
-     getCustomerPermissions/saveCustomerPermissions and
-     getCustomerLimitOverrides/saveCustomerLimitOverrides from
-     admin.js. Both reuse the existing confirm-modal pattern
-     (reason required, audit-logged server-side via the RPC) —
-     same as the freeze/unfreeze flow already on this page.
-   - Permissions render as real labeled checkboxes, one per column
-     in user_permissions (see PERMISSION_FIELDS below) — these
-     names are confirmed against 009_admin_policy_engine.sql.
-   - Limit overrides render as a raw JSON textarea, NOT labeled
-     inputs — user_limit_overrides.override_values is a JSONB blob
-     with no field names defined anywhere in the codebase yet (no
-     page, migration, or validator specifies them). Faking field
-     names for a real money-limit form would be worse than an
-     honest raw-JSON editor. Replace this with real inputs once
-     the actual field list is confirmed (transactionValidator.js
-     likely reads them).
+   - Removed the Permissions and Limit overrides sections that were
+     added to this drawer in the previous revision. They duplicated
+     what admin-policy.html's Customer permissions & restrictions
+     tab already does (and does more completely — account status,
+     restriction actions, restriction history, all in one place).
+     Two separate screens editing the same user_permissions /
+     user_limit_overrides rows was exactly the kind of drift that
+     caused the earlier policy_values/override_values column-name
+     bugs — better to have one owner for that data.
+   - The drawer now has a "Manage permissions & limits" button that
+     navigates to admin-policy.html?customer_id=<id>. admin-policy.js
+     reads that query param on load, switches to its Customer tab,
+     and loads the customer automatically.
+   - This drawer keeps the account/card/transaction/session snapshot
+     and the freeze/unfreeze action — that's operational account
+     state, distinct from policy/permissions.
    ============================================================= */
 
 import { requireAdmin, canAccess } from '../../assets/js/admin/admin-guard.js';
 import { initAdminLayout } from '../../assets/js/admin/admin-layout.js';
-import {
-  listUsers, getUserDetail, freezeAccount, unfreezeAccount,
-  getCustomerPermissions, saveCustomerPermissions,
-  getCustomerLimitOverrides, saveCustomerLimitOverrides,
-} from '../../supabase/admin.js';
+import { listUsers, getUserDetail, freezeAccount, unfreezeAccount } from '../../supabase/admin.js';
 import { $, $$, debounce, getInitials, formatTimestamp, formatCurrency } from '../../assets/js/utils.js';
 
 const PAGE_SIZE = 25;
-
-// Confirmed against user_permissions columns in
-// 009_admin_policy_engine.sql — keep in sync if that table changes.
-const PERMISSION_FIELDS = [
-  ['can_transfer', 'Transfer money'],
-  ['can_receive', 'Receive money'],
-  ['can_withdraw', 'Withdraw funds'],
-  ['can_deposit', 'Deposit funds'],
-  ['can_use_card', 'Use card'],
-  ['can_request_card', 'Request new card'],
-  ['can_open_account', 'Open account'],
-  ['can_close_account', 'Close account'],
-  ['can_add_beneficiary', 'Add beneficiary'],
-  ['can_international_transfer', 'International transfers'],
-  ['can_apply_loan', 'Apply for loan'],
-  ['can_invest', 'Invest'],
-  ['can_contact_support', 'Contact support'],
-];
 
 const state = {
   admin: null,
@@ -234,21 +210,16 @@ async function openDrawer(userId) {
   const body = $('#user-drawer-body');
   body.innerHTML = `<p class="field-hint">Loading…</p>`;
 
-  const [{ data: detail, error }, { data: permissions }, { data: overrides }] = await Promise.all([
-    getUserDetail(userId),
-    getCustomerPermissions(userId),
-    getCustomerLimitOverrides(userId),
-  ]);
-
+  const { data, error } = await getUserDetail(userId);
   if (error) {
     body.innerHTML = `<p class="field-hint" style="color:var(--red)">${escapeHtml(error)}</p>`;
     return;
   }
 
-  renderDrawer(detail, permissions, overrides);
+  renderDrawer(data);
 }
 
-function renderDrawer(detail, permissions, overrides) {
+function renderDrawer(detail) {
   const { profile, accounts, cards, recentTransactions, loginSessions } = detail;
   const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || '—';
 
@@ -295,18 +266,6 @@ function renderDrawer(detail, permissions, overrides) {
     ? loginSessions.slice(0, 5).map((s) => `<div class="admin-detail-row"><span>${formatTimestamp(s.login_time)}</span><span class="admin-drawer-subtitle">${escapeHtml(s.ip_address || '')}</span></div>`).join('')
     : `<p class="field-hint">No login history.</p>`;
 
-  const permissionsMarkup = PERMISSION_FIELDS.map(([key, label]) => {
-    // No row yet for this user → every permission defaults to
-    // allowed (true), matching the DEFAULT true on every column
-    // in the user_permissions table.
-    const checked = permissions ? permissions[key] !== false : true;
-    return `
-      <label class="admin-detail-row" style="cursor:pointer;">
-        <span>${escapeHtml(label)}</span>
-        <input type="checkbox" data-permission-field="${key}" ${checked ? 'checked' : ''}>
-      </label>`;
-  }).join('');
-
   $('#user-drawer-body').innerHTML = `
     <section class="admin-drawer-section">
       <h4>Accounts</h4>
@@ -325,15 +284,10 @@ function renderDrawer(detail, permissions, overrides) {
       ${sessionsMarkup}
     </section>
     <section class="admin-drawer-section">
-      <h4>Permissions</h4>
-      ${permissionsMarkup}
-      <button type="button" class="btn btn-primary btn-sm" id="save-permissions-btn" style="margin-top:10px;">Save permissions</button>
-    </section>
-    <section class="admin-drawer-section">
-      <h4>Limit overrides</h4>
-      <p class="field-hint">Raw JSON — field names for this table aren't defined anywhere in the codebase yet. Confirm the real shape (e.g. against transactionValidator.js) before relying on this for production limits.</p>
-      <textarea id="limit-overrides-json" rows="4" style="width:100%;font-family:monospace;font-size:0.8125rem;">${escapeHtml(JSON.stringify(overrides?.override_values ?? {}, null, 2))}</textarea>
-      <button type="button" class="btn btn-primary btn-sm" id="save-overrides-btn" style="margin-top:10px;">Save limit overrides</button>
+      <a href="admin-policy.html?customer_id=${encodeURIComponent(profile.id)}" class="btn btn-primary btn-sm" style="width:100%; text-align:center; display:block;">
+        Manage permissions &amp; limits
+      </a>
+      <p class="field-hint" style="text-align:center; margin-top:6px;">Opens this customer in Policy &amp; Permissions.</p>
     </section>
   `;
 
@@ -354,45 +308,12 @@ function renderDrawer(detail, permissions, overrides) {
       });
     });
   });
-
-  $('#save-permissions-btn').addEventListener('click', () => {
-    openConfirmModal({
-      title: 'Save permissions',
-      copy: 'This updates what this customer is allowed to do.',
-      action: (reason) => {
-        const collected = {};
-        PERMISSION_FIELDS.forEach(([key]) => {
-          collected[key] = $(`[data-permission-field="${key}"]`, $('#user-drawer-body')).checked;
-        });
-        return saveCustomerPermissions(state.activeUserId, collected, reason);
-      },
-      onSuccess: () => openDrawer(state.activeUserId),
-    });
-  });
-
-  $('#save-overrides-btn').addEventListener('click', () => {
-    openConfirmModal({
-      title: 'Save limit overrides',
-      copy: "This changes this customer's transfer/transaction limits.",
-      action: (reason) => {
-        let parsed;
-        try {
-          parsed = JSON.parse($('#limit-overrides-json').value);
-        } catch {
-          return Promise.resolve({ error: 'Invalid JSON — check for a trailing comma or missing quote.' });
-        }
-        return saveCustomerLimitOverrides(state.activeUserId, parsed, reason);
-      },
-      onSuccess: () => openDrawer(state.activeUserId),
-    });
-  });
 }
 
 /* -----------------------------------------------------------
    Shared confirmation modal — reused by any destructive action
-   on this page (currently freeze/unfreeze, save permissions, save
-   limit overrides; admin-cards.html / admin-transactions.html can
-   copy this same block).
+   on this page (currently freeze/unfreeze; admin-cards.html /
+   admin-transactions.html can copy this same block).
    ----------------------------------------------------------- */
 function wireConfirmModal() {
   const overlay = $('#confirm-modal');
