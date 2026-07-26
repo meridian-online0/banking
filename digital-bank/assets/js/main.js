@@ -60,6 +60,7 @@
 
     const openDrawer = () => {
       drawer.classList.add('is-open');
+      drawer.setAttribute('aria-hidden', 'false');
       toggle.setAttribute('aria-expanded', 'true');
       document.body.classList.add('drawer-open');
       const firstLink = links[0];
@@ -68,6 +69,7 @@
 
     const closeDrawer = () => {
       drawer.classList.remove('is-open');
+      drawer.setAttribute('aria-hidden', 'true');
       toggle.setAttribute('aria-expanded', 'false');
       document.body.classList.remove('drawer-open');
       toggle.focus({ preventScroll: true });
@@ -425,9 +427,12 @@
     const btn = $('.back-to-top');
     if (!btn) return;
 
-    window.addEventListener('scroll', () => {
+    const applyState = () => {
       btn.classList.toggle('is-visible', window.scrollY > 700);
-    }, { passive: true });
+    };
+
+    applyState();
+    window.addEventListener('scroll', applyState, { passive: true });
 
     btn.addEventListener('click', () => {
       window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
