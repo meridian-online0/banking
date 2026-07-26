@@ -132,7 +132,7 @@
         </label>
         <div class="admin-search-input admin-filter-search">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          <input type="search" id="audit-customer-search" placeholder="Affected customer…" autocomplete="off">
+          <input type="search" id="audit-reason-search" placeholder="Search reason…" autocomplete="off">
         </div>
         <button type="button" class="btn btn-ghost btn-sm" id="audit-export-btn">Export CSV</button>
       </div>
@@ -147,18 +147,16 @@
             <th>Timestamp</th>
             <th>Administrator</th>
             <th>Action</th>
-            <th>Affected customer</th>
-            <th>Previous → New</th>
+            <th>Target</th>
+            <th>Details</th>
             <th>Reason</th>
-            <th>IP / browser</th>
-            <th>Approval status</th>
           </tr>
         </thead>
         <tbody id="audit-log-body">
-          <tr class="admin-table-row-skeleton"><td colspan="8"><div class="skeleton"></div></td></tr>
-          <tr class="admin-table-row-skeleton"><td colspan="8"><div class="skeleton"></div></td></tr>
-          <tr class="admin-table-row-skeleton"><td colspan="8"><div class="skeleton"></div></td></tr>
-          <tr class="admin-table-row-skeleton"><td colspan="8"><div class="skeleton"></div></td></tr>
+          <tr class="admin-table-row-skeleton"><td colspan="6"><div class="skeleton"></div></td></tr>
+          <tr class="admin-table-row-skeleton"><td colspan="6"><div class="skeleton"></div></td></tr>
+          <tr class="admin-table-row-skeleton"><td colspan="6"><div class="skeleton"></div></td></tr>
+          <tr class="admin-table-row-skeleton"><td colspan="6"><div class="skeleton"></div></td></tr>
         </tbody>
       </table>
 
@@ -231,7 +229,6 @@
 
   <script type="module" src="../../components/components.js"></script>
   <script type="module" src="../../assets/js/admin/admin-layout.js"></script>
-  <!-- admin-approvals.js — planned, not yet built -->
   <script type="module" src="admin-approvals.js"></script>
 
 </body>
