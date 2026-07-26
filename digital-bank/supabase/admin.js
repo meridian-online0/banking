@@ -681,26 +681,41 @@ export async function getVolumeReport({ from, to }) {
   return { data: { byCurrency, rangeFrom: from, rangeTo: to }, error: null };
 }
 
+
+
+
+
 /* -----------------------------------------------------------
-   10. Audit log — admin-audit-log.html
+   10. Audit log — admin-audit-log.html, admin-approvals.js
    ----------------------------------------------------------- */
-export async function listAdminAuditLog({ adminId, targetTable, search, page = 1, pageSize = 50 } = {}) {
+export async function listAdminAuditLog({
+  adminId,
+  targetTable,
+  action,
+  from,
+  to,
+  search,
+  page = 1,
+  pageSize = 50,
+} = {}) {
   let query = supabase.from('admin_audit_logs').select('*', { count: 'exact' });
 
   if (adminId) query = query.eq('admin_id', adminId);
   if (targetTable) query = query.eq('target_table', targetTable);
+  if (action) query = query.eq('action', action);
+  if (from) query = query.gte('created_at', from);
+  if (to) query = query.lte('created_at', to);
   if (search) query = query.ilike('reason', `%${search}%`);
 
-  const from = (page - 1) * pageSize;
-  query = query.order('created_at', { ascending: false }).range(from, from + pageSize - 1);
+  const fromIdx = (page - 1) * pageSize;
+  query = query.order('created_at', { ascending: false }).range(fromIdx, fromIdx + pageSize - 1);
 
   const { data, error, count } = await query;
   if (error) return { data: null, error: friendlyAdminError(error) };
 
   // admin_audit_logs.admin_id references auth.users, not
   // user_profiles, so it can't be embedded via Supabase's foreign-
-  // table join syntax. Resolve admin names with a second lookup,
-  // same pattern as listSupportTickets()/listRiskFlags() above.
+  // table join syntax. Resolve admin names with a second lookup.
   const adminIds = [...new Set((data || []).map((r) => r.admin_id).filter(Boolean))];
   let adminsById = {};
   if (adminIds.length) {
@@ -715,37 +730,6 @@ export async function listAdminAuditLog({ adminId, targetTable, search, page = 1
   return { data: { rows, total: count ?? 0, page, pageSize }, error: null };
 }
 
-/**
- * Shim for admin-approvals.js's audit tab — see the CHANGE LOG at
- * the top of this file. Adapts listAdminAuditLog()'s real
- * { data: { rows, total } } shape into the flat
- * { data: rows, error, count } shape admin-approvals.js already
- * expects, without inventing columns that don't exist on
- * admin_audit_logs. `action` is filtered client-side (no
- * server-side support for it yet, so count/pagination can be
- * slightly off when it's active); `from`/`to` aren't applied at
- * all yet.
- */
-export async function getAuditLog({ adminId, action, from, to, customerQuery, limit = 25, offset = 0 } = {}) {
-  const page = Math.floor(offset / limit) + 1;
-
-  const { data, error } = await listAdminAuditLog({
-    adminId: adminId && adminId !== 'all' ? adminId : undefined,
-    search: customerQuery,
-    page,
-    pageSize: limit,
-  });
-
-  if (error) return { data: [], error, count: 0 };
-
-  let rows = data.rows;
-  if (action && action !== 'all') {
-    rows = rows.filter((r) => r.action === action);
-  }
-
-  return { data: rows, error: null, count: data.total };
-}
-
 export async function getAuditFilterOptions() {
   const [{ data: admins }, { data: actions }] = await Promise.all([
     supabase.from('user_profiles').select('id, first_name, last_name').in('role', ['support', 'admin', 'superadmin']),
@@ -755,6 +739,9 @@ export async function getAuditFilterOptions() {
   const uniqueActions = Array.from(new Set((actions || []).map((row) => row.action))).sort();
   return { data: { admins: admins || [], actions: uniqueActions }, error: null };
 }
+
+
+
 
 /* -----------------------------------------------------------
    11. Role management — admin-settings.html, superadmin only.
