@@ -4,14 +4,26 @@
 
    CHANGE LOG (this revision)
    ---------------------------
-   - listTransactions(): added optional from/to date-range filters
-     and sortField/sortDir, to back admin-transactions.html's
-     sortable columns + date range picker.
-   - getTransactionSummary(): NEW. A filtered aggregate (volume by
-     currency, count, reversed count, processing count) scoped to
-     the same filters as listTransactions(), so the stats row on
-     admin-transactions.html reflects the filtered set rather than
-     summing only the current page of 25 rows. Everything else is
+   - Merged the policy/permission/limit-override/restriction/
+     approval engine (previously a separate admin.js draft) into
+     this file. No function names collided with what was already
+     here.
+   - Rewrote every audit-log write to use the REAL admin_audit_logs
+     columns confirmed against admin_schema.sql: target_table,
+     target_id, metadata — NOT previous_value/new_value/
+     approval_status/affected_customer, which an earlier draft
+     assumed and which don't exist on this table.
+   - savePolicyGroup, saveCustomerPermissions, and
+     saveCustomerLimitOverrides now call SECURITY DEFINER RPCs
+     (admin_save_policy_group, admin_save_customer_permissions,
+     admin_save_customer_limit_overrides) from migration
+     009_admin_policy_engine.sql, rather than writing to
+     bank_policies/user_permissions/user_limit_overrides directly
+     from the client — same reasoning as freezeAccount/reverseTransaction
+     already being RPCs: the audit-log write must not be optional
+     or skippable from a client that skips the second call.
+   - Everything else (dashboard, users, transactions, KYC, cards,
+     support, risk, reports, listAdminAuditLog, role management) is
      unchanged from the previous revision.
 
    PURPOSE
@@ -19,62 +31,49 @@
    The admin-side counterpart to supabase/database.js — every
    pages/admin/*.js page script imports from here instead of
    calling `supabase.from(...)` or `supabase.rpc(...)` directly.
-   Same reason database.js exists for the customer app: one place
-   that knows the actual table/column shapes, so a schema change
-   only needs updating here.
 
    PATTERN
    -------
    Every export returns { data, error } — error is a friendly
-   string or null, never a thrown exception — same convention as
-   supabase/auth.js. Mutating exports (freezeAccount, approveKyc,
-   reverseTransaction, ...) call the SECURITY DEFINER RPCs from
-   admin_schema.sql via wrap(supabase.rpc(...)) rather than
-   `.update()`/`.delete()` — this file deliberately contains ZERO
-   direct writes to accounts, transactions, cards, or
-   user_profiles.role. The one exception is support ticket
-   assignment/resolution (see section 7), which admin_schema.sql's
-   own comments call out as a plain RLS-gated UPDATE rather than an
-   RPC, since a support reply isn't a sensitive-enough mutation to
-   need the audit-log treatment the money/status RPCs get.
+   string or null, never a thrown exception. Mutating exports call
+   SECURITY DEFINER RPCs from admin_schema.sql /
+   009_admin_policy_engine.sql via wrap(supabase.rpc(...)) rather
+   than `.update()`/`.delete()` directly — this file deliberately
+   contains ZERO direct writes to accounts, transactions, cards,
+   user_profiles.role, bank_policies, user_permissions, or
+   user_limit_overrides. The one exception remains support ticket
+   assignment/resolution (section 7), which admin_schema.sql calls
+   out as a plain RLS-gated UPDATE rather than an RPC.
 
-   ASSUMPTIONS FLAGGED BELOW (schema not directly seen — verify
-   before relying on these in production, same spirit as
-   settings.js's own "SCHEMA NOTES" block):
+   ASSUMPTIONS FLAGGED BELOW (verify before relying on these in
+   production):
 
      - support_tickets.status values assumed to be
-       'open' | 'assigned' | 'resolved' | 'closed'. Adjust the
-       filter functions below if your actual values differ.
+       'open' | 'assigned' | 'resolved' | 'closed'.
      - KYC "pending" is read as user_profiles.account_status =
-       'Pending' (set at signup in auth.js's signUpUser()).
-       admin_approve_kyc()/admin_reject_kyc() move it to
-       'active'/'rejected' respectively — there is no separate kyc
-       table, KYC status IS account_status.
-     - There is currently NO fraud/AML/velocity-flag table in the
-       schema — admin-risk.html's "flag/velocity alerts" have
-       nothing to query yet. getRiskFlags() below is a stub that
-       returns an empty result with a console.warn, not fabricated
-       data. A future migration (e.g. `risk_flags` table +
-       whatever detection populates it) needs to land before that
-       page can show anything real.
-     - getUserDetail()'s cards query below uses `.eq('user_id', ...)`
-       on the cards table, but database.js's getCardsForAccount()
+       'Pending'. admin_approve_kyc()/admin_reject_kyc() move it to
+       'active'/'rejected'.
+     - getUserDetail()'s cards query uses `.eq('user_id', ...)` on
+       the cards table, but database.js's getCardsForAccount()
        queries cards by account_id — cards has no known user_id
-       column. Flagging rather than silently "fixing" it, since I
-       haven't seen cards' actual schema: this likely needs to
-       become a query over the user's account ids instead.
+       column. This likely needs to become a query over the user's
+       account ids instead; not fixed here since I haven't seen
+       cards' actual schema.
+     - user_permissions' 13 boolean columns (in migration
+       009_admin_policy_engine.sql) are a STARTER GUESS — they must
+       match whatever field names admin-policy.js's checkboxes
+       actually send, or admin_save_customer_permissions() will
+       reject unknown keys. Reconcile before wiring up that page.
+     - approval_requests has no rows inserted anywhere yet — nothing
+       currently requires maker-checker sign-off. decideApproval()
+       below works once something starts creating requests.
    ============================================================= */
 
 import { supabase } from './config.js';
 import { getCurrentUser } from './auth.js';
 
 /* -----------------------------------------------------------
-   wrap() — normalizes a Supabase call (query builder promise or
-   .rpc() promise) into { data, error }. Supabase's client already
-   resolves rather than throws on most failures, but wrap() also
-   catches anything that does throw (network failure, a bad .rpc()
-   name, etc.) so no admin page script needs its own try/catch for
-   the common case.
+   wrap() — normalizes a Supabase call into { data, error }.
    ----------------------------------------------------------- */
 export async function wrap(promise) {
   try {
@@ -103,6 +102,25 @@ export async function resolveUserId(userId) {
   if (userId) return userId;
   const { data: user } = await getCurrentUser();
   return user?.id ?? null;
+}
+
+/**
+ * Every write function below that isn't already its own RPC
+ * (support ticket assignment/resolution) should end up going
+ * through log_admin_action() server-side. This client-side helper
+ * exists only for the couple of plain-UPDATE paths (section 7)
+ * that aren't RPC-wrapped; everything else logs inside its own
+ * SECURITY DEFINER function and never calls this directly.
+ */
+async function logAdminAction({ adminId, action, targetTable, targetId = null, reason = null, metadata = {} }) {
+  const { error } = await supabase.rpc('log_admin_action', {
+    p_action: action,
+    p_target_table: targetTable,
+    p_target_id: targetId,
+    p_reason: reason,
+    p_metadata: metadata,
+  });
+  if (error) console.error('[Meridian Admin] Failed to write audit log:', error.message);
 }
 
 /* -----------------------------------------------------------
@@ -144,7 +162,6 @@ export async function getDashboardStats() {
     error: null,
   };
 }
-
 
 /* -----------------------------------------------------------
    2. Users — admin-users.html / admin-user-detail.html
@@ -200,6 +217,38 @@ export async function getUserDetail(userId) {
   };
 }
 
+/**
+ * Matches on name/email (user_profiles) or account number
+ * (accounts) — for the customer picker on admin-user-detail.html
+ * / admin-policy.html.
+ */
+export async function searchCustomers(query) {
+  const clean = query.trim();
+  if (!clean) return { data: [], error: null };
+
+  const { data: byProfile, error: profileError } = await supabase
+    .from('user_profiles')
+    .select('id, first_name, last_name, email, account_status, avatar_url, created_at')
+    .or(`first_name.ilike.%${clean}%,last_name.ilike.%${clean}%,email.ilike.%${clean}%`)
+    .limit(10);
+
+  if (profileError) return { data: [], error: friendlyAdminError(profileError) };
+
+  const { data: byAccount } = await supabase
+    .from('accounts')
+    .select('user_id, account_number, user_profiles:user_id(id, first_name, last_name, email, account_status, avatar_url, created_at)')
+    .ilike('account_number', `%${clean}%`)
+    .limit(10);
+
+  const merged = new Map();
+  (byProfile || []).forEach((row) => merged.set(row.id, row));
+  (byAccount || []).forEach((row) => {
+    if (row.user_profiles) merged.set(row.user_profiles.id, row.user_profiles);
+  });
+
+  return { data: Array.from(merged.values()), error: null };
+}
+
 /* -----------------------------------------------------------
    3. Transactions — admin-transactions.html
    ----------------------------------------------------------- */
@@ -236,17 +285,6 @@ export async function listTransactions({
   return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
 }
 
-/**
- * Filtered aggregate for the stats row on admin-transactions.html —
- * scoped to the same status/currency/search/date filters as
- * listTransactions(), but not paginated. Pulls only the columns
- * needed to aggregate (amount, currency, status) rather than
- * full rows, and computes sums/counts client-side over that
- * narrow result. Fine at Meridian's current data volume; if this
- * gets slow, move it to a Postgres aggregate (e.g. a SQL function
- * with GROUP BY) the same way getVolumeReport() below is flagged
- * for a materialized view.
- */
 export async function getTransactionSummary({ status, currency, search, from: dateFrom, to: dateTo } = {}) {
   let query = supabase.from('transactions').select('amount, currency, status');
 
@@ -266,7 +304,7 @@ export async function getTransactionSummary({ status, currency, search, from: da
   for (const tx of data) {
     if (tx.status === 'Reversed') {
       reversedCount += 1;
-      continue; // don't double-count reversed originals in volume
+      continue;
     }
     if (tx.status === 'Processing') processingCount += 1;
     volumeByCurrency[tx.currency] = (volumeByCurrency[tx.currency] || 0) + Number(tx.amount || 0);
@@ -322,8 +360,6 @@ export async function listCards({ status, type, search, page = 1, pageSize = 25 
 
   if (status) query = query.eq('card_status', status);
   if (type) query = query.eq('card_type', type);
-  // card_number, not id — the field an admin actually has in hand
-  // (a customer reads out the last 4, or support pastes a full PAN).
   if (search) query = query.ilike('card_number', `%${search}%`);
 
   const from = (page - 1) * pageSize;
@@ -334,12 +370,6 @@ export async function listCards({ status, type, search, page = 1, pageSize = 25 
   return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
 }
 
-/**
- * Card + its owning account + that account's holder, for the
- * admin-cards.html detail drawer. cards has no direct user_id
- * (see getUserDetail()'s flagged assumption above) — it's reached
- * via cards.account_id -> accounts.user_id -> user_profiles.
- */
 export async function getCardDetail(cardId) {
   const { data: card, error: cardError } = await supabase.from('cards').select('*').eq('id', cardId).single();
   if (cardError) return { data: null, error: friendlyAdminError(cardError) };
@@ -360,11 +390,6 @@ export async function getCardDetail(cardId) {
   return { data: { card, account, holder: holder || null }, error: null };
 }
 
-/**
- * Counts of cards by status, for admin-cards.html's stat row. Four
- * lightweight head:true count queries (no rows over the wire) —
- * same shape as getDashboardStats() above, just scoped to one table.
- */
 export async function getCardStatusSummary() {
   const [active, frozen, pending, cancelled] = await Promise.all([
     supabase.from('cards').select('id', { count: 'exact', head: true }).eq('card_status', 'Active'),
@@ -396,7 +421,7 @@ export async function setCardStatus(cardId, status, reason) {
 }
 
 /* -----------------------------------------------------------
-   6. Accounts — freeze/unfreeze
+   6. Accounts — freeze/unfreeze, account status, restrictions
    ----------------------------------------------------------- */
 export async function freezeAccount(accountId, reason) {
   return wrap(supabase.rpc('admin_freeze_account', { p_account_id: accountId, p_reason: reason }));
@@ -404,6 +429,39 @@ export async function freezeAccount(accountId, reason) {
 
 export async function unfreezeAccount(accountId, reason) {
   return wrap(supabase.rpc('admin_unfreeze_account', { p_account_id: accountId, p_reason: reason }));
+}
+
+/**
+ * Customer-level status (active/restricted/suspended/closed) —
+ * distinct from freezeAccount()/unfreezeAccount() above, which
+ * operate on a single account row. Backs the Account Status
+ * control on admin-user-detail.html.
+ */
+export async function updateAccountStatus(userId, status, reason) {
+  return wrap(supabase.rpc('admin_set_account_status', {
+    p_user_id: userId,
+    p_status: status,
+    p_reason: reason,
+  }));
+}
+
+export async function performRestrictionAction(action, userId, reason) {
+  return wrap(supabase.rpc('admin_restriction_action', {
+    p_action: action,
+    p_user_id: userId,
+    p_reason: reason,
+  }));
+}
+
+export async function getCustomerRestrictionHistory(userId, { limit = 20 } = {}) {
+  return wrap(
+    supabase
+      .from('restriction_history')
+      .select('*, admin:performed_by(first_name,last_name)')
+      .eq('user_id', userId)
+      .order('performed_at', { ascending: false })
+      .limit(limit)
+  );
 }
 
 /* -----------------------------------------------------------
@@ -510,9 +568,6 @@ export async function reopenTicket(ticketId) {
   );
 }
 
-
-
-
 /* -----------------------------------------------------------
    8. Risk / fraud — admin-risk.html
    ----------------------------------------------------------- */
@@ -588,7 +643,6 @@ export async function resolveRiskFlag(flagId, reason) {
   return wrap(supabase.rpc('admin_resolve_risk_flag', { p_flag_id: flagId, p_reason: reason }));
 }
 
-
 /* -----------------------------------------------------------
    9. Reports — admin-reports.html
    ----------------------------------------------------------- */
@@ -628,7 +682,33 @@ export async function listAdminAuditLog({ adminId, targetTable, search, page = 1
 
   const { data, error, count } = await query;
   if (error) return { data: null, error: friendlyAdminError(error) };
-  return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
+
+  // admin_audit_logs.admin_id references auth.users, not
+  // user_profiles, so it can't be embedded via Supabase's foreign-
+  // table join syntax. Resolve admin names with a second lookup,
+  // same pattern as listSupportTickets()/listRiskFlags() above.
+  const adminIds = [...new Set((data || []).map((r) => r.admin_id).filter(Boolean))];
+  let adminsById = {};
+  if (adminIds.length) {
+    const { data: admins } = await supabase
+      .from('user_profiles')
+      .select('id, first_name, last_name')
+      .in('id', adminIds);
+    adminsById = Object.fromEntries((admins || []).map((a) => [a.id, a]));
+  }
+
+  const rows = (data || []).map((r) => ({ ...r, admin: adminsById[r.admin_id] || null }));
+  return { data: { rows, total: count ?? 0, page, pageSize }, error: null };
+}
+
+export async function getAuditFilterOptions() {
+  const [{ data: admins }, { data: actions }] = await Promise.all([
+    supabase.from('user_profiles').select('id, first_name, last_name').in('role', ['support', 'admin', 'superadmin']),
+    supabase.from('admin_audit_logs').select('action').limit(1000),
+  ]);
+
+  const uniqueActions = Array.from(new Set((actions || []).map((row) => row.action))).sort();
+  return { data: { admins: admins || [], actions: uniqueActions }, error: null };
 }
 
 /* -----------------------------------------------------------
@@ -638,6 +718,115 @@ export async function setUserRole(userId, role, reason) {
   return wrap(supabase.rpc('admin_set_user_role', {
     p_user_id: userId,
     p_role: role,
+    p_reason: reason,
+  }));
+}
+
+/* -----------------------------------------------------------
+   12. Bank policies (global defaults) — admin-policy.html
+   -----------------------------------------------------------
+   Writes go through admin_save_policy_group() (SECURITY DEFINER)
+   from 009_admin_policy_engine.sql — it does the upsert AND
+   writes the field-level policy_change_history rows in one
+   transaction, so the two can't desync the way two separate
+   client calls could.
+   ----------------------------------------------------------- */
+export async function getPolicyGroup(group) {
+  return wrap(supabase.from('bank_policies').select('*').eq('policy_group', group).maybeSingle());
+}
+
+export async function getAllPolicyGroups() {
+  return wrap(supabase.from('bank_policies').select('*'));
+}
+
+export async function savePolicyGroup(group, values, reason) {
+  return wrap(supabase.rpc('admin_save_policy_group', {
+    p_policy_group: group,
+    p_values: values,
+    p_reason: reason ?? null,
+  }));
+}
+
+export async function getPolicyChangeHistory({ limit = 50, offset = 0 } = {}) {
+  return wrap(
+    supabase
+      .from('policy_change_history')
+      .select('*, admin:changed_by(first_name,last_name)')
+      .order('changed_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+  );
+}
+
+/* -----------------------------------------------------------
+   13. Customer permissions & limit overrides —
+       admin-user-detail.html
+   ----------------------------------------------------------- */
+export async function getCustomerPermissions(userId) {
+  return wrap(supabase.from('user_permissions').select('*').eq('user_id', userId).maybeSingle());
+}
+
+export async function saveCustomerPermissions(userId, permissions, reason) {
+  return wrap(supabase.rpc('admin_save_customer_permissions', {
+    p_user_id: userId,
+    p_permissions: permissions,
+    p_reason: reason ?? null,
+  }));
+}
+
+export async function getCustomerLimitOverrides(userId) {
+  return wrap(supabase.from('user_limit_overrides').select('*').eq('user_id', userId).maybeSingle());
+}
+
+export async function saveCustomerLimitOverrides(userId, overrides, reason) {
+  return wrap(supabase.rpc('admin_save_customer_limit_overrides', {
+    p_user_id: userId,
+    p_overrides: overrides,
+    p_reason: reason ?? null,
+  }));
+}
+
+/* -----------------------------------------------------------
+   14. Approval workflow (maker-checker) — admin-approvals.html
+   ----------------------------------------------------------- */
+export async function getApprovalStats() {
+  return wrap(supabase.rpc('admin_get_approval_stats'));
+}
+
+export async function getApprovalQueue({ status = 'pending', type = 'all', limit = 25, offset = 0 } = {}) {
+  let query = supabase
+    .from('approval_requests')
+    .select('*, requester:requested_by(first_name,last_name), customer:customer_id(first_name,last_name)', { count: 'exact' })
+    .order('requested_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (status !== 'all') query = query.eq('status', status);
+  if (type !== 'all') query = query.eq('type', type);
+
+  const { data, error, count } = await query;
+  if (error) return { data: [], error: friendlyAdminError(error), count: 0 };
+  return { data: data ?? [], error: null, count: count ?? 0 };
+}
+
+export async function getApprovalRequest(requestId) {
+  return wrap(
+    supabase
+      .from('approval_requests')
+      .select('*, requester:requested_by(first_name,last_name), customer:customer_id(first_name,last_name)')
+      .eq('id', requestId)
+      .single()
+  );
+}
+
+/**
+ * Approves or rejects a request. The maker-checker rule ("no
+ * administrator approves their own request") is enforced inside
+ * admin_decide_approval() server-side — any disabled-button check
+ * in admin-approvals.js is UX only, not the real guard.
+ */
+export async function decideApproval(requestId, decision, reason) {
+  return wrap(supabase.rpc('admin_decide_approval', {
+    p_request_id: requestId,
+    p_decision: decision,
     p_reason: reason,
   }));
 }
