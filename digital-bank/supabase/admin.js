@@ -4,27 +4,35 @@
 
    CHANGE LOG (this revision)
    ---------------------------
-   - Merged the policy/permission/limit-override/restriction/
-     approval engine (previously a separate admin.js draft) into
-     this file. No function names collided with what was already
-     here.
-   - Rewrote every audit-log write to use the REAL admin_audit_logs
-     columns confirmed against admin_schema.sql: target_table,
-     target_id, metadata — NOT previous_value/new_value/
-     approval_status/affected_customer, which an earlier draft
-     assumed and which don't exist on this table.
-   - savePolicyGroup, saveCustomerPermissions, and
-     saveCustomerLimitOverrides now call SECURITY DEFINER RPCs
-     (admin_save_policy_group, admin_save_customer_permissions,
-     admin_save_customer_limit_overrides) from migration
-     009_admin_policy_engine.sql, rather than writing to
-     bank_policies/user_permissions/user_limit_overrides directly
-     from the client — same reasoning as freezeAccount/reverseTransaction
-     already being RPCs: the audit-log write must not be optional
-     or skippable from a client that skips the second call.
-   - Everything else (dashboard, users, transactions, KYC, cards,
-     support, risk, reports, listAdminAuditLog, role management) is
-     unchanged from the previous revision.
+   - Added getAuditLog() as a thin shim over listAdminAuditLog(),
+     since admin-approvals.js imports a `getAuditLog` that was
+     never actually added to this file — that's a static import,
+     so the missing export threw a SyntaxError at parse time and
+     admin-approvals.js's init() never ran at all, leaving the
+     page stuck on its loading skeleton forever with no on-page
+     error (only a console one). This shim adapts
+     listAdminAuditLog()'s real { data: { rows, total } } shape
+     into the flat { data: rows, error, count } shape
+     admin-approvals.js already expects, WITHOUT fabricating the
+     columns that don't actually exist on admin_audit_logs
+     (customer, previous_value/new_value, ip_address/browser,
+     approval_status) — those still render as "—" in
+     admin-approvals.js's existing fallback logic. Reconciling
+     admin-approvals.js's audit tab against the real schema
+     (target_table/target_id/metadata) is a separate follow-up
+     pass, not done here.
+     Known limitations of the shim, flagging rather than silently
+     hiding: the `action` filter is applied client-side after
+     fetching a page (listAdminAuditLog has no server-side action
+     filter), so pagination/count can be slightly off when that
+     filter is active; the `from`/`to` date filters aren't applied
+     at all (listAdminAuditLog doesn't support a date range yet).
+   - Everything else is unchanged from the previous revision:
+     merged policy/permission/limit-override/restriction/approval
+     engine; every audit-log write uses the real admin_audit_logs
+     columns (target_table/target_id/metadata); savePolicyGroup,
+     saveCustomerPermissions, saveCustomerLimitOverrides call
+     SECURITY DEFINER RPCs from 009_admin_policy_engine.sql.
 
    PURPOSE
    -------
@@ -67,6 +75,12 @@
      - approval_requests has no rows inserted anywhere yet — nothing
        currently requires maker-checker sign-off. decideApproval()
        below works once something starts creating requests.
+     - admin-approvals.js's audit tab still renders columns
+       (Affected customer, Previous → New, IP/browser, Approval
+       status) that don't exist on admin_audit_logs — see the
+       getAuditLog() shim note above. Those cells will show "—"
+       until that page's rendering is reconciled against the real
+       target_table/target_id/metadata columns.
    ============================================================= */
 
 import { supabase } from './config.js';
@@ -699,6 +713,37 @@ export async function listAdminAuditLog({ adminId, targetTable, search, page = 1
 
   const rows = (data || []).map((r) => ({ ...r, admin: adminsById[r.admin_id] || null }));
   return { data: { rows, total: count ?? 0, page, pageSize }, error: null };
+}
+
+/**
+ * Shim for admin-approvals.js's audit tab — see the CHANGE LOG at
+ * the top of this file. Adapts listAdminAuditLog()'s real
+ * { data: { rows, total } } shape into the flat
+ * { data: rows, error, count } shape admin-approvals.js already
+ * expects, without inventing columns that don't exist on
+ * admin_audit_logs. `action` is filtered client-side (no
+ * server-side support for it yet, so count/pagination can be
+ * slightly off when it's active); `from`/`to` aren't applied at
+ * all yet.
+ */
+export async function getAuditLog({ adminId, action, from, to, customerQuery, limit = 25, offset = 0 } = {}) {
+  const page = Math.floor(offset / limit) + 1;
+
+  const { data, error } = await listAdminAuditLog({
+    adminId: adminId && adminId !== 'all' ? adminId : undefined,
+    search: customerQuery,
+    page,
+    pageSize: limit,
+  });
+
+  if (error) return { data: [], error, count: 0 };
+
+  let rows = data.rows;
+  if (action && action !== 'all') {
+    rows = rows.filter((r) => r.action === action);
+  }
+
+  return { data: rows, error: null, count: data.total };
 }
 
 export async function getAuditFilterOptions() {
