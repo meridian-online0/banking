@@ -482,7 +482,11 @@
     </div>
   </div>
 
-  <div class="profile-toast-region" aria-live="polite"></div>
+  <!-- Renamed from .profile-toast-region to the canonical
+       .toast-stack owned by components.css — see admin-policy.js's
+       showToast() header note for why the previous naming rendered
+       invisibly. -->
+  <div class="toast-stack" aria-live="polite"></div>
 
   <script type="module" src="admin-policy.js"></script>
 
