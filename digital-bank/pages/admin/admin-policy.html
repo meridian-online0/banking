@@ -69,26 +69,43 @@
             <h2>Transfer controls</h2>
             <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
           </div>
-          <div class="admin-field-grid">
-            <label class="admin-field"><span>Daily transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_transfer_limit" min="0" step="0.01" placeholder="10000.00"></div></label>
-            <label class="admin-field"><span>Weekly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="weekly_transfer_limit" min="0" step="0.01" placeholder="35000.00"></div></label>
-            <label class="admin-field"><span>Monthly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_transfer_limit" min="0" step="0.01" placeholder="100000.00"></div></label>
-            <label class="admin-field"><span>Maximum single transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_single_transfer" min="0" step="0.01" placeholder="10000.00"></div></label>
-            <label class="admin-field"><span>Minimum transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="min_transfer" min="0" step="0.01" placeholder="1.00"></div></label>
-            <label class="admin-field"><span>Maximum internal transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_internal_transfer" min="0" step="0.01"></div></label>
-            <label class="admin-field"><span>Maximum external transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_external_transfer" min="0" step="0.01"></div></label>
-            <label class="admin-field"><span>Maximum international transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_international_transfer" min="0" step="0.01"></div></label>
-            <label class="admin-field"><span>Maximum scheduled transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_scheduled_transfer" min="0" step="0.01"></div></label>
-            <label class="admin-field"><span>Maximum beneficiaries</span><input type="number" name="max_beneficiaries" min="0" step="1" placeholder="20"></label>
-            <label class="admin-field"><span>Maximum daily transactions</span><input type="number" name="max_daily_transactions" min="0" step="1" placeholder="15"></label>
-            <label class="admin-field"><span>Maximum failed attempts</span><input type="number" name="max_failed_attempts" min="0" step="1" placeholder="5"></label>
-            <label class="admin-field"><span>Transfer approval threshold</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="transfer_approval_threshold" min="0" step="0.01" placeholder="5000.00"></div></label>
-            <label class="admin-field"><span>Large transaction approval threshold</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="large_transaction_approval_threshold" min="0" step="0.01" placeholder="25000.00"></div></label>
-            <label class="admin-field"><span>Cooling period after password change</span><div class="admin-input-suffix"><input type="number" name="cooling_period_password_change_hours" min="0" step="1" placeholder="24"><em>hours</em></div></label>
-            <label class="admin-field"><span>Cooling period after device change</span><div class="admin-input-suffix"><input type="number" name="cooling_period_device_change_hours" min="0" step="1" placeholder="12"><em>hours</em></div></label>
-            <label class="admin-field"><span>Transfer timeout</span><div class="admin-input-suffix"><input type="number" name="transfer_timeout_minutes" min="0" step="1" placeholder="15"><em>minutes</em></div></label>
-            <label class="admin-field"><span>Transfer hold period</span><div class="admin-input-suffix"><input type="number" name="transfer_hold_period_hours" min="0" step="1" placeholder="0"><em>hours</em></div></label>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Limits</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Daily transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_transfer_limit" min="0" step="0.01" placeholder="10000.00"></div></label>
+              <label class="admin-field"><span>Weekly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="weekly_transfer_limit" min="0" step="0.01" placeholder="35000.00"></div></label>
+              <label class="admin-field"><span>Monthly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_transfer_limit" min="0" step="0.01" placeholder="100000.00"></div></label>
+              <label class="admin-field"><span>Maximum single transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_single_transfer" min="0" step="0.01" placeholder="10000.00"></div></label>
+              <label class="admin-field"><span>Minimum transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="min_transfer" min="0" step="0.01" placeholder="1.00"></div></label>
+              <label class="admin-field"><span>Maximum internal transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_internal_transfer" min="0" step="0.01"></div></label>
+              <label class="admin-field"><span>Maximum external transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_external_transfer" min="0" step="0.01"></div></label>
+              <label class="admin-field"><span>Maximum international transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_international_transfer" min="0" step="0.01"></div></label>
+              <label class="admin-field"><span>Maximum scheduled transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_scheduled_transfer" min="0" step="0.01"></div></label>
+            </div>
           </div>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Thresholds &amp; counts</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Maximum beneficiaries</span><input type="number" name="max_beneficiaries" min="0" step="1" placeholder="20"></label>
+              <label class="admin-field"><span>Maximum daily transactions</span><input type="number" name="max_daily_transactions" min="0" step="1" placeholder="15"></label>
+              <label class="admin-field"><span>Maximum failed attempts</span><input type="number" name="max_failed_attempts" min="0" step="1" placeholder="5"></label>
+              <label class="admin-field"><span>Transfer approval threshold</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="transfer_approval_threshold" min="0" step="0.01" placeholder="5000.00"></div></label>
+              <label class="admin-field"><span>Large transaction approval threshold</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="large_transaction_approval_threshold" min="0" step="0.01" placeholder="25000.00"></div></label>
+            </div>
+          </div>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Timing</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Cooling period after password change</span><div class="admin-input-suffix"><input type="number" name="cooling_period_password_change_hours" min="0" step="1" placeholder="24"><em>hours</em></div></label>
+              <label class="admin-field"><span>Cooling period after device change</span><div class="admin-input-suffix"><input type="number" name="cooling_period_device_change_hours" min="0" step="1" placeholder="12"><em>hours</em></div></label>
+              <label class="admin-field"><span>Transfer timeout</span><div class="admin-input-suffix"><input type="number" name="transfer_timeout_minutes" min="0" step="1" placeholder="15"><em>minutes</em></div></label>
+              <label class="admin-field"><span>Transfer hold period</span><div class="admin-input-suffix"><input type="number" name="transfer_hold_period_hours" min="0" step="1" placeholder="0"><em>hours</em></div></label>
+            </div>
+          </div>
+
           <div class="admin-card-foot">
             <span class="admin-field-error" data-group-error></span>
             <button type="submit" class="btn btn-primary btn-sm">Save transfer controls</button>
@@ -101,19 +118,36 @@
             <h2>Card controls</h2>
             <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
           </div>
-          <div class="admin-field-grid">
-            <label class="admin-field"><span>Maximum physical cards</span><input type="number" name="max_physical_cards" min="0" step="1" placeholder="3"></label>
-            <label class="admin-field"><span>Maximum virtual cards</span><input type="number" name="max_virtual_cards" min="0" step="1" placeholder="5"></label>
-            <label class="admin-field"><span>Maximum active cards</span><input type="number" name="max_active_cards" min="0" step="1" placeholder="4"></label>
-            <label class="admin-field"><span>Maximum replacement cards</span><input type="number" name="max_replacement_cards" min="0" step="1" placeholder="2"></label>
-            <label class="admin-field"><span>Maximum card requests</span><div class="admin-input-suffix"><input type="number" name="max_card_requests" min="0" step="1" placeholder="3"><em>/ month</em></div></label>
-            <label class="admin-field"><span>Daily card spending limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_card_spending_limit" min="0" step="0.01" placeholder="2000.00"></div></label>
-            <label class="admin-field"><span>Monthly card spending limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_card_spending_limit" min="0" step="0.01" placeholder="15000.00"></div></label>
-            <label class="admin-field"><span>Maximum ATM withdrawal</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_atm_withdrawal" min="0" step="0.01" placeholder="500.00"></div></label>
-            <label class="admin-field"><span>Maximum contactless transaction</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_contactless_transaction" min="0" step="0.01" placeholder="100.00"></div></label>
-            <label class="admin-field"><span>PIN retry limit</span><input type="number" name="pin_retry_limit" min="0" step="1" placeholder="3"></label>
-            <label class="admin-field"><span>Card expiration policy</span><div class="admin-input-suffix"><input type="number" name="card_expiration_years" min="1" step="1" placeholder="4"><em>years</em></div></label>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Quotas</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Maximum physical cards</span><input type="number" name="max_physical_cards" min="0" step="1" placeholder="3"></label>
+              <label class="admin-field"><span>Maximum virtual cards</span><input type="number" name="max_virtual_cards" min="0" step="1" placeholder="5"></label>
+              <label class="admin-field"><span>Maximum active cards</span><input type="number" name="max_active_cards" min="0" step="1" placeholder="4"></label>
+              <label class="admin-field"><span>Maximum replacement cards</span><input type="number" name="max_replacement_cards" min="0" step="1" placeholder="2"></label>
+              <label class="admin-field"><span>Maximum card requests</span><div class="admin-input-suffix"><input type="number" name="max_card_requests" min="0" step="1" placeholder="3"><em>/ month</em></div></label>
+            </div>
           </div>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Spending limits</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Daily card spending limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_card_spending_limit" min="0" step="0.01" placeholder="2000.00"></div></label>
+              <label class="admin-field"><span>Monthly card spending limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_card_spending_limit" min="0" step="0.01" placeholder="15000.00"></div></label>
+              <label class="admin-field"><span>Maximum ATM withdrawal</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_atm_withdrawal" min="0" step="0.01" placeholder="500.00"></div></label>
+              <label class="admin-field"><span>Maximum contactless transaction</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_contactless_transaction" min="0" step="0.01" placeholder="100.00"></div></label>
+            </div>
+          </div>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Security</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>PIN retry limit</span><input type="number" name="pin_retry_limit" min="0" step="1" placeholder="3"></label>
+              <label class="admin-field"><span>Card expiration policy</span><div class="admin-input-suffix"><input type="number" name="card_expiration_years" min="1" step="1" placeholder="4"><em>years</em></div></label>
+            </div>
+          </div>
+
           <div class="admin-toggle-list">
             <label class="admin-toggle-row"><span>Allow card freeze</span><input type="checkbox" class="admin-switch" name="allow_card_freeze" checked></label>
             <label class="admin-toggle-row"><span>Allow card unfreeze</span><input type="checkbox" class="admin-switch" name="allow_card_unfreeze" checked></label>
@@ -123,6 +157,7 @@
             <label class="admin-toggle-row"><span>Allow contactless payments</span><input type="checkbox" class="admin-switch" name="allow_contactless_payments" checked></label>
             <label class="admin-toggle-row"><span>Allow ATM withdrawals</span><input type="checkbox" class="admin-switch" name="allow_atm_withdrawals" checked></label>
           </div>
+
           <div class="admin-card-foot">
             <span class="admin-field-error" data-group-error></span>
             <button type="submit" class="btn btn-primary btn-sm">Save card controls</button>
@@ -135,41 +170,54 @@
             <h2>Account controls</h2>
             <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
           </div>
-          <div class="admin-field-grid">
-            <label class="admin-field"><span>Maximum accounts per customer</span><input type="number" name="max_accounts_per_customer" min="1" step="1" placeholder="6"></label>
-            <label class="admin-field admin-field--wide"><span>Allowed account types</span>
-              <select name="allowed_account_types" multiple>
-                <option value="personal" selected>Personal</option>
-                <option value="business" selected>Business</option>
-                <option value="joint">Joint</option>
-              </select>
-            </label>
-            <label class="admin-field admin-field--wide"><span>Allowed currencies</span>
-              <select name="allowed_currencies" multiple>
-                <option value="USD" selected>USD</option>
-                <option value="EUR" selected>EUR</option>
-                <option value="GBP" selected>GBP</option>
-                <option value="SGD" selected>SGD</option>
-                <option value="JPY">JPY</option>
-                <option value="NGN" selected>NGN</option>
-                <option value="CAD">CAD</option>
-                <option value="AUD">AUD</option>
-                <option value="CHF">CHF</option>
-              </select>
-            </label>
-            <label class="admin-field"><span>Minimum balance</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="minimum_balance" min="0" step="0.01" placeholder="0.00"></div></label>
-            <label class="admin-field"><span>Maximum balance</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="maximum_balance" min="0" step="0.01" placeholder="1000000.00"></div></label>
-            <label class="admin-field"><span>Dormant account period</span><div class="admin-input-suffix"><input type="number" name="dormant_account_period_days" min="0" step="1" placeholder="180"><em>days</em></div></label>
-            <label class="admin-field"><span>Overdraft limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="overdraft_limit" min="0" step="0.01" placeholder="0.00"></div></label>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Configuration</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Maximum accounts per customer</span><input type="number" name="max_accounts_per_customer" min="1" step="1" placeholder="6"></label>
+              <label class="admin-field admin-field--wide"><span>Allowed account types</span>
+                <select name="allowed_account_types" multiple>
+                  <option value="personal" selected>Personal</option>
+                  <option value="business" selected>Business</option>
+                  <option value="joint">Joint</option>
+                </select>
+              </label>
+              <label class="admin-field admin-field--wide"><span>Allowed currencies</span>
+                <select name="allowed_currencies" multiple>
+                  <option value="USD" selected>USD</option>
+                  <option value="EUR" selected>EUR</option>
+                  <option value="GBP" selected>GBP</option>
+                  <option value="SGD" selected>SGD</option>
+                  <option value="JPY">JPY</option>
+                  <option value="NGN" selected>NGN</option>
+                  <option value="CAD">CAD</option>
+                  <option value="AUD">AUD</option>
+                  <option value="CHF">CHF</option>
+                </select>
+              </label>
+            </div>
           </div>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Balance &amp; activity limits</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Minimum balance</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="minimum_balance" min="0" step="0.01" placeholder="0.00"></div></label>
+              <label class="admin-field"><span>Maximum balance</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="maximum_balance" min="0" step="0.01" placeholder="1000000.00"></div></label>
+              <label class="admin-field"><span>Dormant account period</span><div class="admin-input-suffix"><input type="number" name="dormant_account_period_days" min="0" step="1" placeholder="180"><em>days</em></div></label>
+              <label class="admin-field"><span>Overdraft limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="overdraft_limit" min="0" step="0.01" placeholder="0.00"></div></label>
+            </div>
+          </div>
+
           <div class="admin-toggle-list">
             <label class="admin-toggle-row"><span>Overdraft permission</span><input type="checkbox" class="admin-switch" name="overdraft_permission"></label>
             <label class="admin-toggle-row"><span>Interest eligibility</span><input type="checkbox" class="admin-switch" name="interest_eligibility" checked></label>
           </div>
+
           <label class="admin-field admin-field--wide">
             <span>Account closure rules</span>
             <textarea name="account_closure_rules" rows="2" placeholder="e.g. Balance must be zero and no pending disputes before closure."></textarea>
           </label>
+
           <div class="admin-card-foot">
             <span class="admin-field-error" data-group-error></span>
             <button type="submit" class="btn btn-primary btn-sm">Save account controls</button>
@@ -182,22 +230,33 @@
             <h2>Security controls</h2>
             <span class="status-pill status-pill--verified" data-group-status hidden>Saved</span>
           </div>
-          <div class="admin-field-grid">
-            <label class="admin-field"><span>Maximum login attempts</span><input type="number" name="max_login_attempts" min="1" step="1" placeholder="5"></label>
-            <label class="admin-field"><span>OTP expiration</span><div class="admin-input-suffix"><input type="number" name="otp_expiration_minutes" min="1" step="1" placeholder="5"><em>minutes</em></div></label>
-            <label class="admin-field"><span>Session timeout</span><div class="admin-input-suffix"><input type="number" name="session_timeout_minutes" min="1" step="1" placeholder="20"><em>minutes</em></div></label>
-            <label class="admin-field"><span>Maximum devices</span><input type="number" name="max_devices" min="1" step="1" placeholder="4"></label>
-            <label class="admin-field"><span>Password expiration</span><div class="admin-input-suffix"><input type="number" name="password_expiration_days" min="0" step="1" placeholder="90"><em>days</em></div></label>
-            <label class="admin-field"><span>Fraud detection threshold</span><input type="number" name="fraud_detection_threshold" min="0" max="100" step="1" placeholder="70"></label>
-            <label class="admin-field admin-field--wide"><span>Allowed countries</span><input type="text" name="allowed_countries" placeholder="Comma-separated ISO codes, e.g. NG, US, GB"></label>
-            <label class="admin-field admin-field--wide"><span>Blocked countries</span><input type="text" name="blocked_countries" placeholder="Comma-separated ISO codes"></label>
-            <label class="admin-field"><span>Password complexity</span>
-              <select name="password_complexity">
-                <option value="standard" selected>Standard (8+ chars, mixed case)</option>
-                <option value="high">High (12+ chars, symbols required)</option>
-              </select>
-            </label>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Authentication</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Maximum login attempts</span><input type="number" name="max_login_attempts" min="1" step="1" placeholder="5"></label>
+              <label class="admin-field"><span>OTP expiration</span><div class="admin-input-suffix"><input type="number" name="otp_expiration_minutes" min="1" step="1" placeholder="5"><em>minutes</em></div></label>
+              <label class="admin-field"><span>Session timeout</span><div class="admin-input-suffix"><input type="number" name="session_timeout_minutes" min="1" step="1" placeholder="20"><em>minutes</em></div></label>
+              <label class="admin-field"><span>Maximum devices</span><input type="number" name="max_devices" min="1" step="1" placeholder="4"></label>
+              <label class="admin-field"><span>Password expiration</span><div class="admin-input-suffix"><input type="number" name="password_expiration_days" min="0" step="1" placeholder="90"><em>days</em></div></label>
+              <label class="admin-field"><span>Password complexity</span>
+                <select name="password_complexity">
+                  <option value="standard" selected>Standard (8+ chars, mixed case)</option>
+                  <option value="high">High (12+ chars, symbols required)</option>
+                </select>
+              </label>
+            </div>
           </div>
+
+          <div class="admin-field-subgroup">
+            <p class="admin-field-subgroup-title">Fraud &amp; geography</p>
+            <div class="admin-field-grid">
+              <label class="admin-field"><span>Fraud detection threshold</span><input type="number" name="fraud_detection_threshold" min="0" max="100" step="1" placeholder="70"></label>
+              <label class="admin-field admin-field--wide"><span>Allowed countries</span><input type="text" name="allowed_countries" placeholder="Comma-separated ISO codes, e.g. NG, US, GB"></label>
+              <label class="admin-field admin-field--wide"><span>Blocked countries</span><input type="text" name="blocked_countries" placeholder="Comma-separated ISO codes"></label>
+            </div>
+          </div>
+
           <div class="admin-toggle-list">
             <label class="admin-toggle-row"><span>Require two-factor authentication</span><input type="checkbox" class="admin-switch" name="require_2fa" checked></label>
             <label class="admin-toggle-row"><span>Require email verification</span><input type="checkbox" class="admin-switch" name="require_email_verification" checked></label>
@@ -207,6 +266,7 @@
             <label class="admin-toggle-row"><span>IP restrictions</span><input type="checkbox" class="admin-switch" name="ip_restrictions"></label>
             <label class="admin-toggle-row"><span>VPN detection</span><input type="checkbox" class="admin-switch" name="vpn_detection"></label>
           </div>
+
           <div class="admin-card-foot">
             <span class="admin-field-error" data-group-error></span>
             <button type="submit" class="btn btn-primary btn-sm">Save security controls</button>
