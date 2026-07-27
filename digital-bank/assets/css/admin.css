@@ -41,6 +41,22 @@
    NOTE: dashboard KPI grid / recent-activity panel styles live in
    admin-dashboard.css, not here — they're specific to
    admin-dashboard.html's markup.
+
+   FIX LOG
+   -------
+   - Section 11 (max-width: 900px): the mobile sidebar backdrop
+     (body:has(.admin-sidebar.is-open) .admin-main::before) had
+     z-index: 740, which sits ABOVE .admin-shell-chrome's
+     z-index: 700 in the shared top-level stacking context —
+     .admin-sidebar's own z-index: 750 only applies inside
+     .admin-shell-chrome's stacking context and can't escape it to
+     beat a sibling's. Net effect: once the mobile sidebar opened,
+     the backdrop silently sat on top of the entire sidebar+topbar
+     chrome, swallowing every click on every nav link and the
+     toggle itself, even though everything looked visually correct.
+     Backdrop z-index dropped to 10 — high enough to sit above
+     .admin-main's own ordinary content, safely below
+     .admin-shell-chrome's 700.
    ============================================================= */
 
 /* -------------------------------------------------------------
@@ -902,7 +918,18 @@
      admin-layout.js's mobile toggle to add .is-open to .admin-sidebar
      (see the note in section 4); a click on .admin-main while the
      sidebar is open should close it, same contract as the customer
-     app's own mobile nav. */
+     app's own mobile nav.
+
+     z-index: 10, NOT 740 — .admin-shell-chrome (the sidebar +
+     topbar wrapper) is z-index: 700 in this same top-level stacking
+     context. A backdrop z-index above 700 sits ON TOP of the entire
+     chrome and silently swallows every click on the sidebar links
+     and the toggle itself, even though .admin-sidebar's own
+     z-index: 750 looks like it should win — that 750 only applies
+     inside .admin-shell-chrome's own stacking context and can't
+     escape it to beat a sibling element's z-index from outside. 10
+     is enough to sit above .admin-main's ordinary content while
+     staying well under 700. */
   body:has(.admin-sidebar.is-open) .admin-main {
     position: relative;
   }
@@ -911,7 +938,7 @@
     position: fixed;
     inset: 0;
     background: rgba(10, 22, 40, 0.45);
-    z-index: 740;
+    z-index: 10;
   }
   body:has(.admin-sidebar.is-open) {
     overflow: hidden;
