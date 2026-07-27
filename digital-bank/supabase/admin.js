@@ -4,35 +4,46 @@
 
    CHANGE LOG (this revision)
    ---------------------------
-   - Added getAuditLog() as a thin shim over listAdminAuditLog(),
-     since admin-approvals.js imports a `getAuditLog` that was
-     never actually added to this file — that's a static import,
-     so the missing export threw a SyntaxError at parse time and
-     admin-approvals.js's init() never ran at all, leaving the
-     page stuck on its loading skeleton forever with no on-page
-     error (only a console one). This shim adapts
-     listAdminAuditLog()'s real { data: { rows, total } } shape
-     into the flat { data: rows, error, count } shape
-     admin-approvals.js already expects, WITHOUT fabricating the
-     columns that don't actually exist on admin_audit_logs
-     (customer, previous_value/new_value, ip_address/browser,
-     approval_status) — those still render as "—" in
-     admin-approvals.js's existing fallback logic. Reconciling
-     admin-approvals.js's audit tab against the real schema
-     (target_table/target_id/metadata) is a separate follow-up
-     pass, not done here.
-     Known limitations of the shim, flagging rather than silently
-     hiding: the `action` filter is applied client-side after
-     fetching a page (listAdminAuditLog has no server-side action
-     filter), so pagination/count can be slightly off when that
-     filter is active; the `from`/`to` date filters aren't applied
-     at all (listAdminAuditLog doesn't support a date range yet).
+   - getUserDetail()'s cards query used `.eq('user_id', userId)` on
+     the cards table, but cards has no user_id column — only
+     account_id (confirmed against database.js's getCardsForAccount(),
+     which correctly queries by account_id). Every call to this page
+     for a customer with cards triggered a 400 from PostgREST.
+     Restructured so cards (and the transactions fetch, which
+     depended on the same account ids) are queried using the
+     account ids already fetched in the same Promise.all, instead
+     of guessing a user_id column that doesn't exist.
+   - getCustomerRestrictionHistory()'s embedded select
+     (`admin:performed_by(first_name,last_name)`) 400'd for the same
+     reason listAdminAuditLog()'s admin_id embed used to:
+     restriction_history.performed_by references auth.users(id), and
+     auth.users has no first_name/last_name columns — those live on
+     user_profiles, which PostgREST can't embed through a FK that
+     doesn't point there. Replaced with the same two-step shim
+     pattern already used in listAdminAuditLog(): fetch the rows
+     plain, then resolve performed_by -> user_profiles in a second
+     query and attach it as `admin` client-side.
    - Everything else is unchanged from the previous revision:
      merged policy/permission/limit-override/restriction/approval
      engine; every audit-log write uses the real admin_audit_logs
      columns (target_table/target_id/metadata); savePolicyGroup,
      saveCustomerPermissions, saveCustomerLimitOverrides call
      SECURITY DEFINER RPCs from 009_admin_policy_engine.sql.
+
+   STILL OPEN — NOT FIXED HERE
+   ---------------------------
+   - admin_set_account_status()'s allow-list ('active' | 'restricted'
+     | 'suspended' | 'closed' | 'Pending' | 'rejected') doesn't match
+     the casing/values admin-policy.html's #customer-account-status
+     dropdown actually sends ('Active' | 'Pending Verification' |
+     'Restricted' | 'Suspended' | 'Frozen' | 'Closed') — every save
+     from that dropdown currently 400s with 'Invalid account
+     status.' Needs a decision on which side to change before fixing.
+   - admin_restriction_action() (confirmed from its SQL) only ever
+     writes an audit-trail row — it has no target column for the
+     "Access & sessions" / "Disable services" chips to actually
+     enforce or read back. Those chips remain write-only/audit-only
+     until a real schema (table + columns) exists for them.
 
    PURPOSE
    -------
@@ -61,17 +72,11 @@
      - KYC "pending" is read as user_profiles.account_status =
        'Pending'. admin_approve_kyc()/admin_reject_kyc() move it to
        'active'/'rejected'.
-     - getUserDetail()'s cards query uses `.eq('user_id', ...)` on
-       the cards table, but database.js's getCardsForAccount()
-       queries cards by account_id — cards has no known user_id
-       column. This likely needs to become a query over the user's
-       account ids instead; not fixed here since I haven't seen
-       cards' actual schema.
      - user_permissions' 13 boolean columns (in migration
-       009_admin_policy_engine.sql) are a STARTER GUESS — they must
-       match whatever field names admin-policy.js's checkboxes
-       actually send, or admin_save_customer_permissions() will
-       reject unknown keys. Reconcile before wiring up that page.
+       009_admin_policy_engine.sql, extended in
+       012_extend_customer_permissions.sql) must match whatever
+       field names admin-policy.js's checkboxes actually send —
+       reconciled via PERMISSION_KEY_MAP in admin-policy.js.
      - approval_requests has no rows inserted anywhere yet — nothing
        currently requires maker-checker sign-off. decideApproval()
        below works once something starts creating requests.
@@ -213,34 +218,45 @@ export async function listUsers({ search, status, page = 1, pageSize = 25 } = {}
   return { data: { rows: data, total: count ?? 0, page, pageSize }, error: null };
 }
 
+/**
+ * cards is queried by account_id (via the accounts already fetched
+ * below), NOT by a user_id column — cards has no such column. See
+ * this file's header note and database.js's getCardsForAccount()
+ * for the confirmed schema shape. The transactions fetch depends on
+ * the same account ids, so it's folded into the same second-stage
+ * Promise.all rather than recomputed separately.
+ */
 export async function getUserDetail(userId) {
-  const [profile, accounts, cards, sessions] = await Promise.all([
+  const [profile, accounts, sessions] = await Promise.all([
     supabase.from('user_profiles').select('*').eq('id', userId).single(),
     supabase.from('accounts').select('*').eq('user_id', userId),
-    supabase.from('cards').select('*').eq('user_id', userId), // see file header flag
     supabase.from('login_sessions').select('*').eq('user_id', userId).order('login_time', { ascending: false }).limit(20),
   ]);
 
   if (profile.error) return { data: null, error: friendlyAdminError(profile.error) };
 
   const accountIds = (accounts.data || []).map((a) => a.id);
-  let transactions = [];
-  if (accountIds.length) {
-    const { data: txData } = await supabase
-      .from('transactions')
-      .select('*')
-      .or(accountIds.map((id) => `sender_account.eq.${id}`).concat(accountIds.map((id) => `receiver_account.eq.${id}`)).join(','))
-      .order('created_at', { ascending: false })
-      .limit(50);
-    transactions = txData || [];
-  }
+
+  const [cardsResult, txResult] = await Promise.all([
+    accountIds.length
+      ? supabase.from('cards').select('*').in('account_id', accountIds)
+      : Promise.resolve({ data: [] }),
+    accountIds.length
+      ? supabase
+          .from('transactions')
+          .select('*')
+          .or(accountIds.map((id) => `sender_account.eq.${id}`).concat(accountIds.map((id) => `receiver_account.eq.${id}`)).join(','))
+          .order('created_at', { ascending: false })
+          .limit(50)
+      : Promise.resolve({ data: [] }),
+  ]);
 
   return {
     data: {
       profile: profile.data,
       accounts: accounts.data || [],
-      cards: cards.data || [],
-      recentTransactions: transactions,
+      cards: cardsResult.data || [],
+      recentTransactions: txResult.data || [],
       loginSessions: sessions.data || [],
       notes: [],
     },
@@ -472,7 +488,14 @@ export async function unfreezeAccount(accountId, reason) {
  * Customer-level status (active/restricted/suspended/closed) —
  * distinct from freezeAccount()/unfreezeAccount() above, which
  * operate on a single account row. Backs the Account Status
- * control on admin-user-detail.html.
+ * control on admin-user-detail.html / admin-policy.html.
+ *
+ * KNOWN ISSUE (not fixed here — flagging, not guessing): the RPC's
+ * allow-list ('active' | 'restricted' | 'suspended' | 'closed' |
+ * 'Pending' | 'rejected') doesn't match the values the
+ * #customer-account-status dropdown actually sends ('Active' |
+ * 'Pending Verification' | 'Restricted' | 'Suspended' | 'Frozen' |
+ * 'Closed') — every call from that dropdown currently 400s.
  */
 export async function updateAccountStatus(userId, status, reason) {
   return wrap(supabase.rpc('admin_set_account_status', {
@@ -490,15 +513,37 @@ export async function performRestrictionAction(action, userId, reason) {
   }));
 }
 
+/**
+ * restriction_history.performed_by references auth.users(id), which
+ * has no first_name/last_name columns — those live on
+ * user_profiles. PostgREST can't embed a join to columns that don't
+ * exist on the referenced table (`admin:performed_by(first_name,
+ * last_name)` used to 400 outright). Fetches the rows plain, then
+ * resolves performed_by -> user_profiles in a second query, same
+ * shim pattern as listAdminAuditLog()'s admin_id resolution below.
+ */
 export async function getCustomerRestrictionHistory(userId, { limit = 20 } = {}) {
-  return wrap(
-    supabase
-      .from('restriction_history')
-      .select('*, admin:performed_by(first_name,last_name)')
-      .eq('user_id', userId)
-      .order('performed_at', { ascending: false })
-      .limit(limit)
-  );
+  const { data, error } = await supabase
+    .from('restriction_history')
+    .select('*')
+    .eq('user_id', userId)
+    .order('performed_at', { ascending: false })
+    .limit(limit);
+
+  if (error) return { data: null, error: friendlyAdminError(error) };
+
+  const adminIds = [...new Set((data || []).map((r) => r.performed_by).filter(Boolean))];
+  let adminsById = {};
+  if (adminIds.length) {
+    const { data: admins } = await supabase
+      .from('user_profiles')
+      .select('id, first_name, last_name')
+      .in('id', adminIds);
+    adminsById = Object.fromEntries((admins || []).map((a) => [a.id, a]));
+  }
+
+  const rows = (data || []).map((r) => ({ ...r, admin: adminsById[r.performed_by] || null }));
+  return { data: rows, error: null };
 }
 
 /* -----------------------------------------------------------
@@ -753,6 +798,30 @@ export async function listAdminAuditLog({
   return { data: { rows, total: count ?? 0, page, pageSize }, error: null };
 }
 
+/**
+ * Thin shim over listAdminAuditLog() — admin-approvals.js imports a
+ * `getAuditLog` that isn't otherwise defined here. Adapts
+ * listAdminAuditLog()'s { data: { rows, total } } shape into the
+ * flat { data: rows, error, count } shape admin-approvals.js
+ * expects, without fabricating columns that don't exist on
+ * admin_audit_logs (customer, previous_value/new_value,
+ * ip_address/browser, approval_status).
+ *
+ * Known limitations: the `action` filter is applied client-side
+ * after fetching a page, so pagination/count can be slightly off
+ * when that filter is active; the `from`/`to` date filters aren't
+ * applied at all (listAdminAuditLog doesn't support a date range).
+ */
+export async function getAuditLog({ action, ...rest } = {}) {
+  const { data, error } = await listAdminAuditLog(rest);
+  if (error) return { data: [], error, count: 0 };
+
+  let rows = data.rows;
+  if (action) rows = rows.filter((r) => r.action === action);
+
+  return { data: rows, error: null, count: data.total };
+}
+
 export async function getAuditFilterOptions() {
   const [{ data: admins }, { data: actions }] = await Promise.all([
     supabase.from('user_profiles').select('id, first_name, last_name').in('role', ['support', 'admin', 'superadmin']),
@@ -814,7 +883,7 @@ export async function getPolicyChangeHistory({ limit = 50, offset = 0 } = {}) {
 
 /* -----------------------------------------------------------
    13. Customer permissions & limit overrides —
-       admin-user-detail.html
+       admin-user-detail.html / admin-policy.html
    ----------------------------------------------------------- */
 export async function getCustomerPermissions(userId) {
   return wrap(supabase.from('user_permissions').select('*').eq('user_id', userId).maybeSingle());
