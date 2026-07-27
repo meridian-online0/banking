@@ -4,6 +4,20 @@
 
    CHANGE LOG (this revision)
    ---------------------------
+   - Toasts were silently invisible on every save (success or
+     error) on this page. showToast() built `.profile-toast` /
+     `.profile-toast-region` elements — a naming pattern borrowed
+     from settings.js — but components.css (the single owner of
+     the app's toast styling) only defines `.toast-stack` / `.toast`
+     / `.toast--success` / `.toast--error` / `.is-visible`. Nothing
+     anywhere styled `.profile-toast*`, so the element was created
+     and `.is-visible` was added, but no CSS rule ever made it
+     visible (no opacity/position/transform tied to that class
+     name) — it just sat in the DOM, invisible, every time. Renamed
+     showToast() to build `.toast` / `.toast--success` /
+     `.toast--error` and target `.toast-stack` (also renamed in
+     admin-policy.html) so this page now uses the same canonical
+     toast components.css already implements correctly elsewhere.
    - Customer permission toggles were completely disconnected from
      the database. 012_extend_customer_permissions.sql's own header
      documents a PERMISSION_KEY_MAP this file was supposed to have
@@ -50,23 +64,28 @@
 
    STILL OPEN — NOT FIXED HERE
    ---------------------------
-   The "Access & sessions" and "Disable services" restriction chips
-   (lock_online_banking, lock_mobile_banking, disable_transfers,
-   disable_investments, disable_cards, disable_loans,
-   disable_withdrawals, disable_deposits, disable_statements,
-   disable_notifications, force_logout, require_password_reset,
-   require_new_kyc, reset_failed_login_counter, clear_device_list)
-   all route through the same admin_restriction_action RPC as the
-   account-state actions, but I haven't seen that function's SQL —
-   only that it's a single dispatcher keyed on the action string.
-   I don't know what column(s) it writes for these (a boolean per
-   service on user_permissions? a separate user_restrictions table?
-   something on user_profiles?), so there's currently no way to
-   show "online banking is locked" or "transfers are disabled" back
-   in the UI, and I'm not willing to invent a schema to display
-   against. Needed to finish this: the SQL definition of
-   admin_restriction_action() (likely alongside admin_freeze_account/
-   admin_unfreeze_account in admin_schema.sql or a migration file).
+   1. Account status casing mismatch: the #customer-account-status
+      dropdown sends 'Active' | 'Pending Verification' | 'Restricted'
+      | 'Suspended' | 'Frozen' | 'Closed', but
+      admin_set_account_status()'s allow-list only accepts 'active'
+      | 'restricted' | 'suspended' | 'closed' | 'Pending' | 'rejected'.
+      Every save from this dropdown currently 400s with 'Invalid
+      account status.' Needs a decision on which side to change
+      (the RPC's allow-list, or the dropdown's values / a mapping
+      layer) before this can be fixed — not guessed at here.
+   2. The "Access & sessions" and "Disable services" restriction
+      chips (lock_online_banking, disable_transfers, etc.) call
+      admin_restriction_action(), which — now confirmed from its
+      SQL — only writes an audit-trail row (restriction_history +
+      admin_audit_logs). It does not persist to any enforceable
+      column anywhere (no user_restrictions table, no per-service
+      booleans). So these chips are currently write-only/audit-only:
+      clicking them logs the action but nothing exists yet for the
+      UI to read back and show "online banking is locked". Needed
+      to actually finish this: a real schema decision (e.g. a
+      user_restrictions table or boolean columns) plus a rewrite of
+      admin_restriction_action() to write to it — not something to
+      invent unilaterally here.
 
    CHANGE LOG (previous revision, kept for context)
    ---------------------------
@@ -170,13 +189,19 @@ let selectedCustomer = null;
 let pendingRestriction = null; // { action, label } while the confirm modal is open
 
 /* -----------------------------------------------------------
-   Toast (same small helper pattern as settings.js)
+   Toast
+   -----------------------------------------------------------
+   Uses the canonical .toast-stack / .toast / .toast--success /
+   .toast--error / .is-visible primitives owned by components.css
+   (see its "6. Toast notifications" section) — NOT the
+   .profile-toast* naming this file used previously, which had no
+   matching CSS anywhere and rendered invisibly every time.
    ----------------------------------------------------------- */
 function showToast(message, type = 'success') {
-  const region = $('.profile-toast-region');
+  const region = $('.toast-stack');
   if (!region) return;
   const toast = document.createElement('div');
-  toast.className = `profile-toast profile-toast--${type}`;
+  toast.className = `toast toast--${type}`;
   toast.textContent = message;
   region.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('is-visible'));
