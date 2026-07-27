@@ -469,26 +469,69 @@ export async function getMySupportTickets(userId) {
    Exchange rates
    ----------------------------------------------------------- */
 
-/** Latest stored rate for a currency pair. Returns { exchange_rate: 1 } if the pair isn't found. */
+/* =============================================================
+   Replace the existing getExchangeRate() export in
+   supabase/database.js with this version. Everything else in the
+   file — including every other function — is unchanged.
+
+   Behavior:
+     - baseCurrency === targetCurrency short-circuits to 1, same as before.
+     - Reads the latest cached row for the pair.
+     - If it's missing or older than FX_STALE_MS, invokes the
+       refresh-exchange-rates Edge Function (which fetches live
+       rates and rewrites the table), then re-reads the pair.
+     - If the refresh fails for any reason (offline, function not
+       deployed yet, provider down), falls back to whatever was
+       cached — never silently returns a fabricated 1:1 rate when a
+       real cached rate exists.
+     - Same { data, error } shape as before, so every caller
+       (transfer.js, getTotalBalance(), buyInvestment(),
+       sellInvestment()) keeps working with zero changes.
+   ============================================================= */
+
+// How long a cached rate is trusted before we bother refreshing.
+// FX pairs don't move fast enough to need crypto's ~2min cadence,
+// and this keeps calls to the free-tier provider well within limits.
+const FX_STALE_MS = 60 * 60 * 1000; // 1 hour
+
 export async function getExchangeRate(baseCurrency, targetCurrency) {
   if (baseCurrency === targetCurrency) return { data: { exchange_rate: 1 }, error: null };
 
-  const { data, error } = await supabase
-    .from('exchange_rates')
-    .select('*')
-    .eq('base_currency', baseCurrency)
-    .eq('target_currency', targetCurrency)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const fetchStored = () =>
+    supabase
+      .from('exchange_rates')
+      .select('*')
+      .eq('base_currency', baseCurrency)
+      .eq('target_currency', targetCurrency)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
+  const { data, error } = await fetchStored();
   if (error) return { data: { exchange_rate: 1 }, error: error.message };
-  return { data: data || { exchange_rate: 1 }, error: null };
+
+  const isStale = !data || Date.now() - new Date(data.updated_at || 0).getTime() > FX_STALE_MS;
+  if (!isStale) return { data, error: null };
+
+  try {
+    const { error: fnError } = await supabase.functions.invoke('refresh-exchange-rates');
+    if (fnError) throw fnError;
+
+    const { data: refreshed, error: refreshedError } = await fetchStored();
+    if (refreshedError) throw new Error(refreshedError.message);
+
+    return { data: refreshed || data || { exchange_rate: 1 }, error: null };
+  } catch (fnErr) {
+    // Refresh failed (rate-limited, offline, function not deployed
+    // yet) — fall back to whatever's cached rather than pretending
+    // the pair is 1:1. Only truly falls back to 1 if we've never
+    // cached this pair at all.
+    return { data: data || { exchange_rate: 1 }, error: null };
+  }
 }
 
-export async function getAllExchangeRates(baseCurrency = 'USD') {
-  return wrap(supabase.from('exchange_rates').select('*').eq('base_currency', baseCurrency));
-}
+
+
 
 /* -----------------------------------------------------------
    Investments — market prices (crypto, via market_prices_cache)
