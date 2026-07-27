@@ -4,6 +4,72 @@
 
    CHANGE LOG (this revision)
    ---------------------------
+   - Customer permission toggles were completely disconnected from
+     the database. 012_extend_customer_permissions.sql's own header
+     documents a PERMISSION_KEY_MAP this file was supposed to have
+     ("transfers -> can_transfer", etc.) but never actually
+     contained — the toggles read and wrote the 13 UI names
+     (transfers, international_transfers, ...) directly as JSON
+     keys. Loading always showed every toggle unchecked, because
+     permissions?.transfers never matched the real can_transfer
+     column; saving always failed outright, because
+     admin_save_customer_permissions()'s allow-list only recognizes
+     can_* names and raises 'Unknown permission field: %' on
+     anything else. Added the actual PERMISSION_KEY_MAP (13 entries,
+     taken from the migration's documented mapping) and
+     applyPermissionsToToggles(), used both when loading a customer
+     and after a successful save — the latter reconciles the
+     toggles against the row admin_save_customer_permissions()
+     actually returns (it RETURNS the full row, not just success),
+     rather than assuming the clicked state persisted as-is.
+   - Account status was going stale after any restriction action.
+     The "Freeze customer" / "Unfreeze customer" / "Suspend
+     customer" / "Close account" chips call performRestrictionAction(),
+     which posts to a single server-side dispatcher RPC
+     (admin_restriction_action) — but the previous revision only
+     re-fetched restriction *history* after a chip action succeeded,
+     never the customer's actual account_status. So freezing a
+     customer would work server-side and log correctly, but the
+     status select at the top of the panel — and the customer's
+     record in memory — kept showing whatever status was loaded
+     before the click, until you re-searched them from scratch.
+     Added syncCustomerStatus(), which re-fetches the customer via
+     getUserDetail() (the same helper the deep-link flow already
+     uses) and reapplies profile.account_status to both
+     selectedCustomer and the UI. It's now called after every
+     restriction action and after the manual "Save status" button,
+     instead of trusting the value assumed going in.
+   - Added a non-editable status badge next to the customer's name
+     (admin-status-badge, data-customer-status-badge) so status is
+     visible at a glance without opening the "Account status"
+     dropdown — matches the status-pill shown per row in the
+     customer search results, which the selected-customer panel
+     didn't have before. Styling lives in admin-policy.css, keyed
+     off a data-status attribute so it doesn't depend on guessing
+     status-pill modifier classes from components.css.
+
+   STILL OPEN — NOT FIXED HERE
+   ---------------------------
+   The "Access & sessions" and "Disable services" restriction chips
+   (lock_online_banking, lock_mobile_banking, disable_transfers,
+   disable_investments, disable_cards, disable_loans,
+   disable_withdrawals, disable_deposits, disable_statements,
+   disable_notifications, force_logout, require_password_reset,
+   require_new_kyc, reset_failed_login_counter, clear_device_list)
+   all route through the same admin_restriction_action RPC as the
+   account-state actions, but I haven't seen that function's SQL —
+   only that it's a single dispatcher keyed on the action string.
+   I don't know what column(s) it writes for these (a boolean per
+   service on user_permissions? a separate user_restrictions table?
+   something on user_profiles?), so there's currently no way to
+   show "online banking is locked" or "transfers are disabled" back
+   in the UI, and I'm not willing to invent a schema to display
+   against. Needed to finish this: the SQL definition of
+   admin_restriction_action() (likely alongside admin_freeze_account/
+   admin_unfreeze_account in admin_schema.sql or a migration file).
+
+   CHANGE LOG (previous revision, kept for context)
+   ---------------------------
    - Implemented the ?customer_id=<id> deep link from
      admin-users.html's drawer. The previous revision's header
      comment claimed this file "reads that query param on load,
@@ -22,7 +88,7 @@
           restriction history) populates exactly as it does for a
           manually-searched customer.
 
-   CHANGE LOG (previous revision, kept for context)
+   CHANGE LOG (two revisions ago, kept for context)
    ---------------------------
    - savePolicyGroup / saveCustomerPermissions / saveCustomerLimitOverrides
      were passing admin.user.id into the reason parameter — all
@@ -42,22 +108,6 @@
      inject the navbar as a side effect — see admin-layout.js's own
      header comment for why that side-effect injection doesn't
      actually work at pages/admin/ depth.
-
-   STILL OPEN — NOT FIXED HERE
-   ---------------------------
-   The 13 permission keys used below (transfers,
-   international_transfers, internal_transfers, card_payments,
-   atm_withdrawals, mobile_banking, online_banking, bill_payments,
-   investments, loans, statement_downloads, profile_updates,
-   beneficiary_creation) do NOT match the real user_permissions
-   columns (can_transfer, can_receive, can_withdraw, can_deposit,
-   can_use_card, can_request_card, can_open_account,
-   can_close_account, can_add_beneficiary,
-   can_international_transfer, can_apply_loan, can_invest,
-   can_contact_support). Submitting these as-is will make
-   admin_save_customer_permissions() reject every key. This is a
-   product decision (extend the schema vs. trim the UI to the real
-   13), not a typo — left unchanged pending that decision.
    ============================================================= */
 
 import { requireAdmin } from '../../assets/js/admin/admin-guard.js';
@@ -73,6 +123,47 @@ import { debounce, getInitials } from '../../assets/js/utils.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
 const $$ = (selector, scope) => Array.from((scope || document).querySelectorAll(selector));
+
+/**
+ * Translates the 13 UI toggle names (admin-policy.html's
+ * data-permission attributes) to the real user_permissions column
+ * names admin_save_customer_permissions() actually accepts —
+ * per the mapping documented in
+ * 012_extend_customer_permissions.sql's header comment. Without
+ * this, every toggle loaded unchecked (permissions?.[uiKey] never
+ * matched a real column) and every save was rejected outright
+ * ('Unknown permission field: %') since the RPC's allow-list only
+ * knows the can_* names.
+ */
+const PERMISSION_KEY_MAP = {
+  transfers: 'can_transfer',
+  international_transfers: 'can_international_transfer',
+  internal_transfers: 'can_internal_transfer',
+  card_payments: 'can_card_payment',
+  atm_withdrawals: 'can_atm_withdrawal',
+  mobile_banking: 'can_mobile_banking',
+  online_banking: 'can_online_banking',
+  bill_payments: 'can_bill_payment',
+  investments: 'can_invest',
+  loans: 'can_apply_loan',
+  statement_downloads: 'can_download_statement',
+  profile_updates: 'can_update_profile',
+  beneficiary_creation: 'can_add_beneficiary',
+};
+
+/**
+ * Sets every permission toggle from a real user_permissions row
+ * (real column names in, UI toggles out). Used both after loading
+ * a customer and after a save, so the checkboxes always reflect
+ * whatever Postgres actually has — not just what was clicked.
+ */
+function applyPermissionsToToggles(permissions) {
+  $$('#customer-permission-list .admin-toggle-row').forEach((row) => {
+    const column = PERMISSION_KEY_MAP[row.dataset.permission];
+    const checkbox = $('input', row);
+    checkbox.checked = column ? Boolean(permissions?.[column]) : false;
+  });
+}
 
 let admin = null;
 let selectedCustomer = null;
@@ -266,6 +357,45 @@ function initCustomerSearch() {
 /* -----------------------------------------------------------
    Selected customer panel
    ----------------------------------------------------------- */
+
+/**
+ * Renders the account_status badge next to the customer's name.
+ * Purely presentational — driven off a data-status attribute so
+ * the coloring lives in admin-policy.css and doesn't depend on
+ * guessing status-pill modifier classes from components.css,
+ * which this file has no visibility into.
+ */
+function renderCustomerStatusBadge(status) {
+  const badge = $('[data-customer-status-badge]');
+  if (!badge) return;
+  const value = status || 'Active';
+  badge.textContent = value;
+  badge.dataset.status = value;
+}
+
+/**
+ * Re-fetches the customer's real profile and reapplies
+ * account_status to both selectedCustomer and the UI (the status
+ * select + the badge). Called after every restriction action and
+ * after the manual status save, instead of trusting whatever value
+ * was true before the action ran — the account_status column is
+ * the one thing about this customer we can currently verify, since
+ * admin_set_account_status / the restriction dispatcher are RPCs
+ * whose return values this file doesn't rely on.
+ */
+async function syncCustomerStatus(userId) {
+  const { data, error } = await getUserDetail(userId);
+  if (error || !data?.profile) return;
+
+  const status = data.profile.account_status || 'Active';
+  if (selectedCustomer && selectedCustomer.id === userId) {
+    selectedCustomer.account_status = status;
+  }
+  const select = $('#customer-account-status');
+  if (select) select.value = status;
+  renderCustomerStatusBadge(status);
+}
+
 async function loadCustomerPanel(customer) {
   selectedCustomer = customer;
 
@@ -280,6 +410,7 @@ async function loadCustomerPanel(customer) {
     ? `Customer since ${new Date(customer.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`
     : '';
   $('#customer-account-status').value = customer.account_status || 'Active';
+  renderCustomerStatusBadge(customer.account_status);
 
   const [{ data: permissions }, { data: overrides }, { data: history }] = await Promise.all([
     getCustomerPermissions(customer.id),
@@ -287,11 +418,7 @@ async function loadCustomerPanel(customer) {
     getCustomerRestrictionHistory(customer.id),
   ]);
 
-  $$('#customer-permission-list .admin-toggle-row').forEach((row) => {
-    const key = row.dataset.permission;
-    const checkbox = $('input', row);
-    checkbox.checked = Boolean(permissions?.[key]);
-  });
+  applyPermissionsToToggles(permissions);
 
   const panelScope = $('#customer-panel');
   $$('[name$="_override"]', panelScope).forEach((field) => {
@@ -300,6 +427,11 @@ async function loadCustomerPanel(customer) {
   });
 
   renderRestrictionHistory(history);
+
+  // Belt-and-suspenders: reconcile against the live row in case the
+  // customer object we were handed (from search results, or the
+  // deep-link profile) is even slightly stale.
+  syncCustomerStatus(customer.id);
 }
 
 function renderRestrictionHistory(rows) {
@@ -331,7 +463,7 @@ function initAccountStatusSave() {
     setButtonLoading(btn, false);
 
     if (error) { showToast(error, 'error'); return; }
-    selectedCustomer.account_status = status;
+    await syncCustomerStatus(selectedCustomer.id);
     showToast('Account status updated.');
   });
 }
@@ -344,7 +476,8 @@ function initPermissionsSave() {
 
     const permissions = {};
     $$('#customer-permission-list .admin-toggle-row').forEach((row) => {
-      permissions[row.dataset.permission] = $('input', row).checked;
+      const column = PERMISSION_KEY_MAP[row.dataset.permission];
+      if (column) permissions[column] = $('input', row).checked;
     });
 
     const btn = $('#save-permissions-btn');
@@ -352,10 +485,14 @@ function initPermissionsSave() {
     errorEl.textContent = '';
     setButtonLoading(btn, true);
 
-    const { error } = await saveCustomerPermissions(selectedCustomer.id, permissions, reason);
+    const { data, error } = await saveCustomerPermissions(selectedCustomer.id, permissions, reason);
 
     setButtonLoading(btn, false);
     if (error) { errorEl.textContent = error; return; }
+    // admin_save_customer_permissions() returns the actual saved
+    // row (real column names) — reconcile the toggles against it
+    // rather than assuming the click state persisted as-is.
+    if (data) applyPermissionsToToggles(data);
     showToast('Permissions saved.');
   });
 }
@@ -386,6 +523,13 @@ function initOverridesSave() {
 /* -----------------------------------------------------------
    Restriction action chips + confirm modal
    ----------------------------------------------------------- */
+
+// Actions that plausibly touch user_profiles.account_status server
+// side — worth an explicit note here since it's the only signal we
+// have that syncCustomerStatus() is meaningful to call. It's called
+// after EVERY action below regardless (cheap, and harmless for the
+// lock/disable actions that don't touch status), rather than trying
+// to guess which ones matter from the action name alone.
 function initRestrictionActions() {
   const modal = $('#restriction-confirm-modal');
   const form = $('#restriction-confirm-form');
@@ -433,8 +577,11 @@ function initRestrictionActions() {
 
     showToast(`${pendingRestriction.label} applied.`);
     closeModal();
-    const { data: history } = await getCustomerRestrictionHistory(selectedCustomer.id);
+
+    const customerId = selectedCustomer.id;
+    const { data: history } = await getCustomerRestrictionHistory(customerId);
     renderRestrictionHistory(history);
+    await syncCustomerStatus(customerId);
   });
 }
 
