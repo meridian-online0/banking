@@ -36,7 +36,11 @@
      8.  Data table
      9.  Detail drawer
      10. Small shared bits (role pill, env tag, field-optional)
-     11. Responsive breakpoints
+     11. Page head, tabs & card shell — shared across every admin
+         page that uses .admin-page-head / .admin-tab-nav /
+         .admin-tab-panel / .admin-card (admin-policy.html today;
+         any future admin page can reuse these as-is)
+     12. Responsive breakpoints
 
    NOTE: dashboard KPI grid / recent-activity panel styles live in
    admin-dashboard.css, not here — they're specific to
@@ -44,7 +48,7 @@
 
    FIX LOG
    -------
-   - Section 11 (max-width: 900px): the mobile sidebar backdrop
+   - Section 12 (max-width: 900px): the mobile sidebar backdrop
      (body:has(.admin-sidebar.is-open) .admin-main::before) had
      z-index: 740, which sits ABOVE .admin-shell-chrome's
      z-index: 700 in the shared top-level stacking context —
@@ -57,6 +61,16 @@
      Backdrop z-index dropped to 10 — high enough to sit above
      .admin-main's own ordinary content, safely below
      .admin-shell-chrome's 700.
+   - Section 11 added: .admin-page-head, .admin-tab-nav/.admin-tab-
+     link/.admin-tab-panel, and .admin-card were referenced by
+     admin-policy.html and assumed (in admin-policy.css's own header
+     comment) to live here, but were never actually defined anywhere
+     in the codebase. Concretely this meant: the three policy tabs
+     had no active/inactive state, so all three panels' content
+     rendered stacked and visible simultaneously at all times; every
+     "card" on the page was unboxed raw content with no border,
+     background, or spacing; and the page head had no layout at all.
+     Added below so any admin page can use these classes correctly.
    ============================================================= */
 
 /* -------------------------------------------------------------
@@ -879,7 +893,130 @@
 }
 
 /* -------------------------------------------------------------
-   11. Responsive breakpoints
+   11. Page head, tabs & card shell
+   Shared across any admin page using these classes — currently
+   admin-policy.html. Kept here (not in a page-specific stylesheet)
+   because a data table page, a settings page, or any future admin
+   screen will want the exact same head/tab/card primitives.
+   ------------------------------------------------------------- */
+
+/* Page head — title + subtitle on the left, actions (a scope note,
+   a button, whatever the page needs) on the right. Matches the
+   customer app's .page-head.page-head--split pattern used on
+   admin-users.html, but admin-policy.html marks it up as
+   .admin-page-head, so it's defined natively rather than forcing a
+   class rename. */
+.admin-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-page-head h1 {
+  font-size: 1.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.admin-page-head .admin-page-sub {
+  max-width: 56ch;
+  font-size: 0.9rem;
+}
+
+.admin-page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+  padding-top: 0.2rem;
+}
+
+/* Tab nav — underline-indicator tabs. Only .is-active gets the
+   brass underline + ink text; everything else is muted slate. */
+.admin-tab-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.75rem;
+  overflow-x: auto;
+}
+
+.admin-tab-link {
+  appearance: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--slate);
+  padding: 0.85rem 1rem;
+  white-space: nowrap;
+  position: relative;
+  transition: color 0.15s ease;
+}
+
+.admin-tab-link:hover {
+  color: var(--ink);
+}
+
+.admin-tab-link.is-active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.admin-tab-link.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0.15rem;
+  right: 0.15rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--brass);
+}
+
+/* Panels — the part that was silently missing entirely. Without
+   this rule every .admin-tab-panel rendered stacked at once. */
+.admin-tab-panel {
+  display: none;
+}
+
+.admin-tab-panel.is-active {
+  display: block;
+  animation: admin-tab-fade-in 0.15s ease;
+}
+
+@keyframes admin-tab-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-tab-panel.is-active {
+    animation: none;
+  }
+}
+
+/* Card shell — every .admin-card on the page (policy group forms,
+   the customer summary card, restriction actions, history tables)
+   shares this box. Page-specific internals (field grids, toggle
+   lists, etc.) stay in admin-policy.css. */
+.admin-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 1.5rem 1.5rem 1.35rem;
+}
+
+/* -------------------------------------------------------------
+   12. Responsive breakpoints
    ------------------------------------------------------------- */
 @media (max-width: 1080px) {
   .admin-kpi-grid {
@@ -943,6 +1080,10 @@
   body:has(.admin-sidebar.is-open) {
     overflow: hidden;
   }
+
+  .admin-page-head-actions {
+    width: 100%;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1002,6 +1143,11 @@
 
   .admin-login-card {
     padding: 2rem 1.5rem;
+  }
+
+  .admin-tab-link {
+    padding: 0.75rem 0.75rem;
+    font-size: 0.82rem;
   }
 }
 
