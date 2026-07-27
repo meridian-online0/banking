@@ -11,6 +11,23 @@
 
    CHANGE LOG (this revision)
    ---------------------------
+   - Fixed the user detail drawer and the freeze/unfreeze confirm
+     modal never actually becoming visible. admin.css's
+     .admin-drawer-overlay and dashboard.css's .modal-overlay are
+     both hidden by default (opacity:0; visibility:hidden) and only
+     become visible when the .is-open class is added — aria-hidden
+     has no visual effect on its own, it's an accessibility
+     attribute only. openDrawer()/closeDrawer() and
+     openConfirmModal()/closeConfirmModal() were only ever toggling
+     aria-hidden, so clicking "View" (or a freeze/unfreeze button)
+     ran all the way through — fetched data, populated the drawer —
+     with nothing appearing on screen. Both pairs now toggle
+     .is-open alongside aria-hidden, matching the pattern
+     admin-policy.js's own restriction-confirm-modal already uses
+     correctly.
+
+   CHANGE LOG (previous revision)
+   ---------------------------
    - Removed the Permissions and Limit overrides sections that were
      added to this drawer in the previous revision. They duplicated
      what admin-policy.html's Customer permissions & restrictions
@@ -198,13 +215,16 @@ function wireDrawer() {
 }
 
 function closeDrawer() {
-  $('#user-drawer-overlay').setAttribute('aria-hidden', 'true');
+  const overlay = $('#user-drawer-overlay');
+  overlay.classList.remove('is-open');
+  overlay.setAttribute('aria-hidden', 'true');
   state.activeUserId = null;
 }
 
 async function openDrawer(userId) {
   state.activeUserId = userId;
   const overlay = $('#user-drawer-overlay');
+  overlay.classList.add('is-open');
   overlay.setAttribute('aria-hidden', 'false');
 
   const body = $('#user-drawer-body');
@@ -361,15 +381,19 @@ function wireConfirmModal() {
 
 function openConfirmModal({ title, copy, action, onSuccess }) {
   state.pendingAction = { action, onSuccess };
+  const modal = $('#confirm-modal');
   $('#confirm-modal-title').textContent = title;
   $('#confirm-modal-copy').textContent = copy;
   $('#confirm-modal-reason').value = '';
   $('#confirm-modal-error').style.display = 'none';
-  $('#confirm-modal').setAttribute('aria-hidden', 'false');
+  modal.classList.add('is-open');
+  modal.setAttribute('aria-hidden', 'false');
 }
 
 function closeConfirmModal() {
-  $('#confirm-modal').setAttribute('aria-hidden', 'true');
+  const modal = $('#confirm-modal');
+  modal.classList.remove('is-open');
+  modal.setAttribute('aria-hidden', 'true');
   state.pendingAction = null;
 }
 
