@@ -451,9 +451,60 @@
   min-width: 180px;
 }
 
+.admin-customer-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 .admin-customer-summary-info h2 {
   margin: 0 0 2px;
   font-size: 1.0625rem;
+}
+
+/* Status badge — self-owned (not borrowed from components.css'
+   .status-pill modifiers, which this page doesn't have visibility
+   into) so its coloring is driven entirely by data-status here. */
+.admin-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: var(--ivory);
+  color: var(--slate);
+  border: 1px solid var(--line);
+}
+
+.admin-status-badge[data-status="Active"] {
+  color: var(--green);
+  background: var(--green-bg);
+  border-color: transparent;
+}
+
+.admin-status-badge[data-status="Pending Verification"] {
+  color: var(--amber);
+  background: var(--amber-bg);
+  border-color: transparent;
+}
+
+.admin-status-badge[data-status="Restricted"],
+.admin-status-badge[data-status="Suspended"] {
+  color: var(--amber);
+  background: var(--amber-bg);
+  border-color: transparent;
+}
+
+.admin-status-badge[data-status="Frozen"],
+.admin-status-badge[data-status="Closed"] {
+  color: var(--red);
+  background: var(--red-bg);
+  border-color: transparent;
 }
 
 .admin-customer-summary-info p {
