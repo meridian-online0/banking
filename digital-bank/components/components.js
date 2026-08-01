@@ -33,6 +33,15 @@
    unlike app-navbar/notifications, this one doesn't need a
    [data-component] placeholder at all; it injects its own markup
    and stylesheet directly into the page. See bootChatWidget().
+
+   FIX (chat widget not mounting on pages with no [data-component]
+   placeholders): loadComponents() used to `return` early when a
+   page had zero [data-component] elements, which skipped the
+   bootChatWidget() call at the bottom entirely — silently
+   preventing the widget from ever mounting on such pages. The
+   placeholder-loading logic now only runs when placeholders
+   exist, but bootChatWidget() always runs regardless, matching
+   the "doesn't need a placeholder" behavior described above.
    ============================================================= */
 
 /* -----------------------------------------------------------
@@ -152,7 +161,9 @@ async function bootNotificationCenter(loadedNames) {
  * [data-component] partial having loaded — mountChatWidget() injects
  * its own markup and stylesheet directly, so this can run
  * unconditionally as long as the current page isn't excluded and a
- * user is actually signed in.
+ * user is actually signed in. Called directly from loadComponents()
+ * regardless of whether the page has any [data-component]
+ * placeholders at all — see the FIX note at the top of this file.
  */
 async function bootChatWidget() {
   const currentFile = window.location.pathname.split('/').pop() || 'index.html';
@@ -176,21 +187,28 @@ async function bootChatWidget() {
  * partial, then marks the active nav link and dispatches
  * `component:loaded` on `document` once everything has settled —
  * auth-ui.js listens for this before touching header elements.
+ *
+ * The chat widget is booted unconditionally at the end, whether or
+ * not the page has any [data-component] placeholders — it used to
+ * be skipped on placeholder-less pages because of an early return;
+ * see the FIX note at the top of this file.
  */
 export async function loadComponents() {
   const placeholders = Array.from(document.querySelectorAll('[data-component]'));
-  if (!placeholders.length) return;
 
-  const base = resolveComponentsBase();
-  const names = placeholders.map((el) => el.getAttribute('data-component'));
+  if (placeholders.length) {
+    const base = resolveComponentsBase();
+    const names = placeholders.map((el) => el.getAttribute('data-component'));
 
-  await Promise.all(
-    placeholders.map((el) => injectComponent(el, el.getAttribute('data-component'), base))
-  );
+    await Promise.all(
+      placeholders.map((el) => injectComponent(el, el.getAttribute('data-component'), base))
+    );
 
-  markActiveNavLink();
-  document.dispatchEvent(new CustomEvent('component:loaded'));
-  bootNotificationCenter(names);
+    markActiveNavLink();
+    document.dispatchEvent(new CustomEvent('component:loaded'));
+    bootNotificationCenter(names);
+  }
+
   bootChatWidget();
 }
 
