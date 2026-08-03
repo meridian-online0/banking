@@ -3,7 +3,7 @@
    assets/css/admin-chat.css
 
    SCOPE: pages/admin/admin-chat.html only. Reuses tokens and
-   .btn*/.status-pill*/.tag/.empty-state/.skeleton/.avatar-initial*
+   .btn.status-pill.tag/.empty-state/.skeleton/.avatar-initial*
    primitives from style.css/components.css/admin.css — this file
    only styles markup unique to the live-chat two-pane layout.
 
