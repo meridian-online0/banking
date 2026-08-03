@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Live Chat — Meridian Admin</title>
+<link rel="stylesheet" href="../../assets/css/style.css">
+<link rel="stylesheet" href="../../assets/css/components.css">
+<link rel="stylesheet" href="../../assets/css/admin.css">
+<link rel="stylesheet" href="../../assets/css/admin-chat.css">
+</head>
+<body class="app-body admin-body" data-auth="pending">
+
+<div class="auth-loader" aria-hidden="true"><span class="auth-loader-mark"></span></div>
+
+<div data-component="admin-navbar"></div>
+
+<main class="admin-main">
+  <div class="admin-main-inner">
+
+    <div class="admin-chat-shell">
+
+      <!-- =====================================================
+           THREAD LIST (left pane)
+           ===================================================== -->
+      <section class="admin-chat-list" aria-label="Support conversations">
+        <div class="admin-chat-list-head">
+          <h1 class="admin-chat-list-title">Live chat</h1>
+
+          <div class="admin-chat-tabs" role="tablist" aria-label="Filter conversations">
+            <button type="button" class="admin-chat-tab is-active" role="tab" aria-selected="true" data-thread-filter="open">
+              Open
+              <span class="admin-nav-badge" data-thread-filter-count="open" hidden>0</span>
+            </button>
+            <button type="button" class="admin-chat-tab" role="tab" aria-selected="false" data-thread-filter="closed">Closed</button>
+            <button type="button" class="admin-chat-tab" role="tab" aria-selected="false" data-thread-filter="all">All</button>
+          </div>
+
+          <div class="admin-chat-search">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.5"/><path d="m17 17-3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <label for="admin-chat-search-input" class="sr-only">Search conversations</label>
+            <input type="text" id="admin-chat-search-input" data-thread-search placeholder="Search by name or message...">
+          </div>
+        </div>
+
+        <div class="admin-chat-list-body" data-thread-list-body>
+          <ul class="admin-chat-thread-list" data-thread-list hidden>
+            <!-- Populated by admin-chat.js. Reference shape of a
+                 single thread item, kept here as a comment only so
+                 admin-chat.js and admin-chat.css agree on structure —
+                 the real items are rendered, never left in the DOM
+                 statically:
+
+            <li class="admin-chat-thread-item" data-thread-item data-thread-id="">
+              <button type="button" class="admin-chat-thread-btn">
+                <span class="avatar-initial avatar-initial--sm" data-thread-avatar>·</span>
+                <span class="admin-chat-thread-presence" data-thread-presence data-state="offline"></span>
+                <span class="admin-chat-thread-info">
+                  <span class="admin-chat-thread-row">
+                    <span class="admin-chat-thread-name" data-thread-name>Visitor</span>
+                    <span class="tag admin-chat-thread-visitor-tag" data-thread-visitor-tag hidden>Visitor</span>
+                    <span class="admin-chat-thread-time" data-thread-time></span>
+                  </span>
+                  <span class="admin-chat-thread-preview" data-thread-preview></span>
+                </span>
+                <span class="admin-nav-badge" data-thread-unread hidden>0</span>
+              </button>
+            </li>
+
+            -->
+          </ul>
+
+          <div class="admin-chat-state admin-chat-state--loading" data-thread-list-loading>
+            <div class="admin-chat-thread-skeleton skeleton"></div>
+            <div class="admin-chat-thread-skeleton skeleton"></div>
+            <div class="admin-chat-thread-skeleton skeleton"></div>
+            <div class="admin-chat-thread-skeleton skeleton"></div>
+          </div>
+
+          <div class="empty-state admin-chat-state" data-thread-list-empty hidden>
+            <span class="empty-state-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 9.5a7 7 0 0 1 14 0v3.5a1.8 1.8 0 0 1-1.8 1.8H14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="2.7" y="9.5" width="3.4" height="4.6" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="13.9" y="9.5" width="3.4" height="4.6" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
+            </span>
+            <h3>No conversations</h3>
+            <p>Nothing here right now — new chats will appear automatically.</p>
+          </div>
+
+          <div class="admin-chat-state admin-chat-state--error" data-thread-list-error hidden>
+            <p>Couldn't load conversations.</p>
+            <button type="button" class="link-arrow-sm" data-thread-list-retry>Try again</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           CONVERSATION (right pane)
+           ===================================================== -->
+      <section class="admin-chat-conversation" aria-label="Conversation">
+
+        <div class="admin-chat-conversation-empty" data-conversation-empty>
+          <span class="empty-state-icon">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 9.5a7 7 0 0 1 14 0v3.5a1.8 1.8 0 0 1-1.8 1.8H14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="2.7" y="9.5" width="3.4" height="4.6" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="13.9" y="9.5" width="3.4" height="4.6" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
+          </span>
+          <h3>Select a conversation</h3>
+          <p>Pick a thread on the left to view and reply.</p>
+        </div>
+
+        <div class="admin-chat-conversation-active" data-conversation-active hidden>
+
+          <header class="admin-chat-conversation-head">
+            <div class="admin-chat-conversation-who">
+              <span class="avatar-initial" data-conversation-avatar>·</span>
+              <div>
+                <span class="admin-chat-conversation-name-row">
+                  <strong data-conversation-name>Visitor</strong>
+                  <span class="tag" data-conversation-visitor-tag hidden>Visitor</span>
+                </span>
+                <span class="admin-chat-conversation-presence" data-conversation-presence data-state="offline">
+                  <span class="admin-chat-presence-dot"></span>
+                  <span data-conversation-presence-text>Offline</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="admin-chat-conversation-actions">
+              <span class="status-pill status-pill--verified" data-conversation-status-pill>Open</span>
+              <button type="button" class="btn btn-ghost btn-sm" data-conversation-toggle-status>Mark as closed</button>
+            </div>
+          </header>
+
+          <div class="admin-chat-conversation-body" data-admin-messages role="log" aria-live="polite">
+            <!-- Populated by admin-chat.js -->
+          </div>
+
+          <form class="admin-chat-conversation-input" data-admin-reply-form>
+            <label for="admin-chat-reply-input" class="sr-only">Type a reply</label>
+            <input type="file" id="admin-chat-file-input" data-admin-file-input hidden>
+            <button type="button" class="chat-icon-btn" data-admin-attach aria-label="Attach a picture or document">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M13.5 6.5 8 12a2.5 2.5 0 1 0 3.5 3.5L17 10a4.5 4.5 0 1 0-6.5-6.5L4.5 9.5a6.5 6.5 0 1 0 9 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <textarea id="admin-chat-reply-input" data-admin-reply-input rows="1" placeholder="Type a reply..."></textarea>
+            <button type="submit" class="chat-send-btn" data-admin-reply-send aria-label="Send reply" disabled>
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17.5 2.5 9 11M17.5 2.5 12 17.5l-3-6.5-6.5-3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            </button>
+          </form>
+        </div>
+
+      </section>
+
+    </div>
+
+  </div>
+</main>
+
+<script type="module" src="admin-chat.js"></script>
+</body>
+</html>
