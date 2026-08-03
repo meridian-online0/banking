@@ -11,14 +11,32 @@
    project's directory tree) — same direct-supabase-call pattern
    settings.js already uses for tables with no wrapper.
 
+   FIX LOG (this revision)
+   ------------------------
+   - ATTACHMENTS: chat_messages now has attachment_url/attachment_
+     type/attachment_name (see supabase/chat_schema_attachments.sql)
+     and a public 'chat-attachments' storage bucket. wireAttach()
+     used to just alert() — it now uploads the picked file, inserts
+     a chat_messages row referencing it, and messageHtml() renders
+     it (image inline, other files as a download chip) using the
+     .chat-attachment* classes components.css already defines for
+     the customer-facing widget.
+   - Every place that read m.body / t.lastMessage.body now guards
+     for null, since a message can be attachment-only (body is no
+     longer NOT NULL — see the migration). Previously
+     t.lastMessage.body.toLowerCase() in applySearchAndRender()
+     would throw on an image-only last message.
+   - The "page stuck on loading" / "empty state never clears" bugs
+     reported alongside this were actually in admin-chat.css (the
+     `hidden` attribute was being silently overridden by unrelated
+     display:flex rules) — fixed there, not in this file.
+
    KNOWN GAPS — flagging rather than silently faking:
    -----------------------------------------------------
-   1. ATTACHMENTS: the file-attach button in admin-chat.html is
-      wired to a stub. chat_schema.sql's chat_messages table only
-      has a text `body` column — there's no attachment_url column,
-      no chat_attachments table, and no Supabase Storage bucket or
-      policy anywhere in the schema for this. Needs a real schema +
-      storage decision before this can do anything but alert().
+   1. VISITOR-SIDE UPLOAD: this file only adds upload/render support
+      for the admin side. The customer-facing chat-widget.js needs
+      the equivalent upload flow before a visitor can actually send
+      an image — not fixed here, that file wasn't provided.
    2. OPEN-TAB COUNT: the badge next to the "Open" tab
       (data-thread-filter-count="open") only updates while you're
       ON the Open tab, since it's just threads.length for whatever
@@ -42,6 +60,7 @@ const $ = (selector, scope) => (scope || document).querySelector(selector);
 const $$ = (selector, scope) => Array.from((scope || document).querySelectorAll(selector));
 
 const ONLINE_THRESHOLD_MS = 60 * 1000;
+const CHAT_ATTACHMENTS_BUCKET = 'chat-attachments';
 
 let admin = null;
 let threads = [];              // threads for the CURRENT filter only
@@ -112,7 +131,7 @@ async function loadThreads() {
     supabase.from('user_profiles').select('id, first_name, last_name, email').in('id', userIds),
     supabase
       .from('chat_messages')
-      .select('id, thread_id, sender_type, body, created_at, read_at')
+      .select('id, thread_id, sender_type, body, attachment_url, attachment_type, attachment_name, created_at, read_at')
       .in('thread_id', threadIds)
       .order('created_at', { ascending: true }),
   ]);
@@ -162,7 +181,10 @@ function applySearchAndRender() {
   const filtered = term
     ? threads.filter((t) => {
         const nameMatch = t.displayName.toLowerCase().includes(term);
-        const bodyMatch = t.lastMessage && t.lastMessage.body.toLowerCase().includes(term);
+        // A last message can be attachment-only (body is nullable
+        // now — see chat_schema_attachments.sql), so guard before
+        // calling .toLowerCase() on it.
+        const bodyMatch = Boolean(t.lastMessage && t.lastMessage.body && t.lastMessage.body.toLowerCase().includes(term));
         return nameMatch || bodyMatch;
       })
     : threads;
@@ -193,7 +215,7 @@ function renderThreadList(list) {
 }
 
 function threadItemHtml(t) {
-  const preview = t.lastMessage ? escapeHtml(t.lastMessage.body) : 'No messages yet';
+  const preview = threadPreviewText(t.lastMessage);
   const time = t.lastMessage ? formatRelativeTime(t.lastMessage.created_at) : '';
 
   return `
@@ -214,6 +236,18 @@ function threadItemHtml(t) {
         <span class="admin-nav-badge" data-thread-unread${t.unreadCount ? '' : ' hidden'}>${t.unreadCount}</span>
       </button>
     </li>`;
+}
+
+// A last message can have a body, an attachment, or both — pick
+// the most useful one-line preview for the thread list.
+function threadPreviewText(lastMessage) {
+  if (!lastMessage) return 'No messages yet';
+  if (lastMessage.body) return escapeHtml(lastMessage.body);
+  if (lastMessage.attachment_url) {
+    const isImage = (lastMessage.attachment_type || '').startsWith('image/');
+    return isImage ? '📷 Photo' : `📎 ${escapeHtml(lastMessage.attachment_name || 'Attachment')}`;
+  }
+  return 'No messages yet';
 }
 
 function updateOpenTabCount() {
@@ -314,7 +348,7 @@ async function loadMessages(threadId) {
 
   const { data, error } = await supabase
     .from('chat_messages')
-    .select('id, sender_type, body, created_at, read_at')
+    .select('id, sender_type, body, attachment_url, attachment_type, attachment_name, created_at, read_at')
     .eq('thread_id', threadId)
     .order('created_at', { ascending: true });
 
@@ -348,10 +382,39 @@ function messageHtml(m) {
 
   const label = m.sender_type === 'admin' ? 'You' : m.sender_type === 'system' ? 'System' : 'Visitor';
 
+  const bodyHtml = m.body ? `<div class="admin-chat-msg-body">${escapeHtml(m.body)}</div>` : '';
+  const attachmentHtml = m.attachment_url ? attachmentHtmlFor(m) : '';
+
   return `
     <div class="${cls}" data-message-id="${m.id}">
       <div class="admin-chat-msg-meta"><span>${label}</span><span>${formatClockTime(m.created_at)}</span></div>
-      <div class="admin-chat-msg-body">${escapeHtml(m.body)}</div>
+      ${bodyHtml}
+      ${attachmentHtml}
+    </div>`;
+}
+
+// Reuses .chat-attachment* classes already defined in components.css
+// for the customer-facing widget — same visual language on both
+// sides, no new styles needed beyond a couple of tweaks in
+// admin-chat.css section 5.
+function attachmentHtmlFor(m) {
+  const isImage = (m.attachment_type || '').startsWith('image/');
+  const url = escapeHtml(m.attachment_url);
+  const name = escapeHtml(m.attachment_name || 'Attachment');
+
+  if (isImage) {
+    return `
+      <div class="chat-attachment">
+        <img class="chat-attachment-image" src="${url}" alt="${name}" loading="lazy">
+      </div>`;
+  }
+
+  return `
+    <div class="chat-attachment">
+      <a class="chat-attachment-file" href="${url}" target="_blank" rel="noopener noreferrer">
+        <svg class="chat-attachment-file-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 3.5h9l3 3v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        <span class="chat-attachment-file-name">${name}</span>
+      </a>
     </div>`;
 }
 
@@ -526,16 +589,66 @@ function handleIncomingMessage(message) {
 }
 
 /* -----------------------------------------------------------
-   9. Attachments — stub (see gap #1 at top of file)
+   9. Attachments — real upload flow.
+   -----------------------------------------------------------
+   Requires supabase/chat_schema_attachments.sql to have been run
+   (adds attachment_url/attachment_type/attachment_name to
+   chat_messages, plus the public 'chat-attachments' storage bucket
+   and its upload policies). Uploads under
+   `${admin.user.id}/${timestamp}-${filename}` — the "Admins can
+   upload chat attachments" storage policy allows any path for an
+   is_admin() user, but namespacing by uploader keeps objects easy
+   to trace back to who sent them.
    ----------------------------------------------------------- */
 function wireAttach() {
   const attachBtn = $('[data-admin-attach]');
-  if (!attachBtn) return;
+  const fileInput = $('[data-admin-file-input]');
+  if (!attachBtn || !fileInput) return;
 
-  attachBtn.addEventListener('click', () => {
-    window.alert(
-      "File attachments aren't wired up yet — chat_messages has no attachment column and there's no storage bucket for chat uploads in the schema yet."
-    );
+  attachBtn.addEventListener('click', () => fileInput.click());
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    fileInput.value = ''; // allow picking the same file twice in a row
+    if (!file || !activeThreadId) return;
+
+    const sendBtn = $('[data-admin-reply-send]');
+    const replyInput = $('[data-admin-reply-input]');
+    attachBtn.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+
+    try {
+      const path = `${admin.user.id}/${Date.now()}-${file.name}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(CHAT_ATTACHMENTS_BUCKET)
+        .upload(path, file, { upsert: false, contentType: file.type || undefined });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from(CHAT_ATTACHMENTS_BUCKET)
+        .getPublicUrl(path);
+
+      const { error: insertError } = await supabase.from('chat_messages').insert({
+        thread_id: activeThreadId,
+        sender_type: 'admin',
+        sender_id: admin.user.id,
+        body: null,
+        attachment_url: publicUrlData.publicUrl,
+        attachment_type: file.type || null,
+        attachment_name: file.name,
+      });
+
+      if (insertError) throw insertError;
+      // Realtime subscription (section 8) appends it to the log.
+    } catch (err) {
+      console.error('[Meridian Admin] Failed to send attachment:', err.message);
+      window.alert("Couldn't send that file — please try again.");
+    } finally {
+      attachBtn.disabled = false;
+      if (sendBtn) sendBtn.disabled = !(replyInput && replyInput.value.trim());
+    }
   });
 }
 
