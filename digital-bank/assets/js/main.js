@@ -895,6 +895,5 @@
     initContactForm();
     initNewsletterForm();
     initFooterYear();
-    initChatWidget();
   });
 })();
