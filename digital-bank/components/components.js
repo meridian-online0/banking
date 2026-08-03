@@ -57,7 +57,7 @@ const COMPONENT_MAP = {
 };
 
 /** Pages the floating chat widget should never appear on. */
-const CHAT_WIDGET_EXCLUDED_PAGES = ['login.html', 'register.html', 'settings.html', 'profile.html'];
+const CHAT_WIDGET_EXCLUDED_PAGES = ['login.html', 'register.html'];
 
 /**
  * Resolves the components/ directory relative to the current page,
