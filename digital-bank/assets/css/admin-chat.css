@@ -22,21 +22,31 @@
 
    FIX LOG
    -------
-   - Section 0 added: .admin-chat-state--loading, .admin-chat-
-     thread-list, .admin-chat-conversation-empty, .admin-chat-
-     conversation-active (plus .empty-state in components.css) all
-     set `display: flex` with no [hidden] guard. Because [hidden]
-     (browser default, specificity 0,1,0) and a plain class rule
-     (also 0,1,0) tie on specificity, and author stylesheets load
-     after the UA stylesheet, the `display: flex` rules always won
-     — admin-chat.js's `el.hidden = true/false` toggling was
-     visually inert. Symptoms: the loading skeleton never went
-     away, "Select a conversation" stayed visible after picking a
-     thread, and the active conversation pane (including the reply
-     composer) was fighting the empty state for the same flex
-     space instead of getting the full pane to itself. The single
-     `[hidden] { display: none !important; }` rule below restores
-     the attribute's real behavior for every element on this page.
+   - Section 0: [hidden] { display: none !important; } — several
+     classes set `display: flex` with no [hidden] guard, which tied
+     specificity with the browser's own [hidden] rule and silently
+     overrode it. Fixed the stuck loading skeleton, "Select a
+     conversation" not clearing, and the active pane fighting the
+     empty state for space.
+
+   - Section 5 (NEW): .admin-chat-conversation-body was missing
+     min-height: 0. Flex items default to min-height: auto, which
+     means "never shrink below your own content's natural height" —
+     so `overflow-y: auto` on this element never actually engaged;
+     there was nothing to scroll, the box just kept growing to fit
+     its content instead. This was invisible while admin-chat.js
+     referenced the wrong attachment column (attachment_url instead
+     of the real attachment_path) — no image ever rendered, so the
+     log stayed short enough that the missing scroll never mattered.
+     The moment attachment rendering was fixed and real <img> tags
+     started appearing in the log, there was finally enough content
+     to expose it: the message log grew unbounded, pushing the reply
+     composer down out of view and inflating the whole page's
+     height. min-height: 0 (plus the same fix on the two grid-item
+     panes, .admin-chat-list and .admin-chat-conversation, which had
+     the equivalent default-min-height issue as CSS Grid items) is
+     what actually makes overflow-y: auto do its job — the log now
+     scrolls WITHIN its allotted space instead of expanding past it.
 
    Contents:
      0. Hidden-attribute fix
@@ -77,6 +87,12 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Grid items default to min-height: auto (same underlying issue
+     fixed on .admin-chat-conversation-body in section 5) — without
+     this, a long thread list could similarly push .admin-chat-shell
+     taller than its intended height instead of scrolling internally
+     via .admin-chat-list-body's own overflow-y: auto below. */
+  min-height: 0;
   border-right: 1px solid var(--line);
   background: var(--ivory);
 }
@@ -167,6 +183,7 @@
 
 .admin-chat-list-body {
   flex: 1;
+  min-height: 0; /* see FIX LOG — same reasoning as .admin-chat-conversation-body */
   overflow-y: auto;
 }
 
@@ -315,6 +332,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Grid item — see FIX LOG. Without this, a long conversation
+     could still push .admin-chat-shell taller than intended even
+     with the fixes below, since a grid item's default min-height
+     is its content size, same failure mode one level up. */
+  min-height: 0;
   background: var(--paper);
 }
 
@@ -416,6 +438,14 @@
    ------------------------------------------------------------- */
 .admin-chat-conversation-body {
   flex: 1;
+  /* THE critical fix — see FIX LOG at the top of this file. Without
+     this, overflow-y: auto below never actually engages: this box
+     just grows to fit however much content is inside it (all
+     messages, all images) instead of clipping to the space its flex
+     parent (.admin-chat-conversation-active, flex: 1) actually gave
+     it, pushing everything below it — the reply composer — out of
+     view and inflating the whole page's height. */
+  min-height: 0;
   overflow-y: auto;
   padding: 1.25rem;
   display: flex;
@@ -463,8 +493,8 @@
    .chat-attachment / .chat-attachment-image / .chat-attachment-file
    / .chat-attachment-file-icon / .chat-attachment-file-name from
    components.css — same visual language as the customer-facing
-   chat widget, no need to redeclare them here. See renderAttachmentHtml()
-   in admin-chat.js. */
+   chat widget, no need to redeclare them here. See
+   renderAttachmentInto() in admin-chat.js. */
 .admin-chat-msg .chat-attachment {
   margin-top: 0.3rem;
 }
