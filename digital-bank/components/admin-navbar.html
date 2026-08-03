@@ -16,6 +16,15 @@
      slim topbar rather than app-navbar's single horizontal header,
      which is itself part of the "obviously not the customer app"
      signal, independent of the color theme in admin.css.
+
+     NOTE — Support vs. Live chat: two separate systems, two
+     separate nav entries. admin-support.html is the ticket queue
+     (subject/priority/category, support_tickets table). admin-
+     chat.html is the realtime live-chat inbox (chat_threads/
+     chat_messages, presence, Visitor labeling). They intentionally
+     don't share a link — badges are independent too:
+     data-tickets-badge counts open tickets, data-chat-badge counts
+     unread chat threads.
      ========================================================= -->
 <div class="admin-shell-chrome">
   <aside class="admin-sidebar" data-admin-sidebar>
@@ -55,6 +64,11 @@
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 9.5a7 7 0 0 1 14 0v3.5a1.8 1.8 0 0 1-1.8 1.8H14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="2.7" y="9.5" width="3.4" height="4.6" rx="1" stroke="currentColor" stroke-width="1.4"/><rect x="13.9" y="9.5" width="3.4" height="4.6" rx="1" stroke="currentColor" stroke-width="1.4"/></svg>
         Support
         <span class="admin-nav-badge" data-tickets-badge hidden>0</span>
+      </a>
+      <a href="admin-chat.html" data-nav="admin-chat.html">
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3h9A2.5 2.5 0 0 1 17 5.5v5A2.5 2.5 0 0 1 14.5 13H9l-3.8 3v-3H5.5A2.5 2.5 0 0 1 3 10.5v-5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="7" cy="8" r="0.9" fill="currentColor"/><circle cx="10" cy="8" r="0.9" fill="currentColor"/><circle cx="13" cy="8" r="0.9" fill="currentColor"/></svg>
+        Live chat
+        <span class="admin-nav-badge" data-chat-badge hidden>0</span>
       </a>
       <a href="admin-risk.html" data-nav="admin-risk.html">
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 17 6v5c0 4-3 6.7-7 8.5-4-1.8-7-4.5-7-8.5V6l7-3.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
