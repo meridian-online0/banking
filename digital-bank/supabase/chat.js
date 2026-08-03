@@ -250,3 +250,38 @@ export async function getUnreadAdminMessageCount(threadId) {
 
   return { data: count ?? 0, error: error ? error.message : null };
 }
+
+
+
+/* -----------------------------------------------------------
+   Thread lifecycle — closing
+   -----------------------------------------------------------
+   Wraps chat_close_thread(), a SECURITY DEFINER RPC (see the
+   addition to chat_schema.sql) rather than a direct table update,
+   since chat_threads has no user-facing UPDATE policy — only
+   admins can update it directly. Used by "Clear conversation" in
+   chat-widget.js, which immediately calls getOrCreateMyThread()
+   again afterward to spin up a fresh thread (and its own real
+   welcome message).
+   ----------------------------------------------------------- */
+export async function closeMyThread(threadId) {
+  if (!threadId) return { data: null, error: 'No active conversation.' };
+  return wrap(supabase.rpc('chat_close_thread', { p_thread_id: threadId }));
+}
+
+/* -----------------------------------------------------------
+   Presence — heartbeat
+   -----------------------------------------------------------
+   Thin wrapper around chat_heartbeat(), called on an interval by
+   chat-widget.js while the panel is open, so a visitor reading
+   silently doesn't go stale in the admin inbox's last-seen column.
+   Deliberately fire-and-forget from the caller's side — a missed
+   heartbeat just means slightly staler presence, not a broken UI,
+   so callers aren't expected to surface its error to the user.
+   ----------------------------------------------------------- */
+export async function sendHeartbeat(threadId) {
+  if (!threadId) return { data: null, error: 'No active conversation.' };
+  return wrap(supabase.rpc('chat_heartbeat', { p_thread_id: threadId }));
+}
+
+
