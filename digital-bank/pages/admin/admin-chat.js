@@ -13,40 +13,44 @@
 
    FIX LOG (this revision)
    ------------------------
-   - ATTACHMENTS: chat_messages now has attachment_url/attachment_
-     type/attachment_name (see supabase/chat_schema_attachments.sql)
-     and a public 'chat-attachments' storage bucket. wireAttach()
-     used to just alert() — it now uploads the picked file, inserts
-     a chat_messages row referencing it, and messageHtml() renders
-     it (image inline, other files as a download chip) using the
-     .chat-attachment* classes components.css already defines for
-     the customer-facing widget.
-   - Every place that read m.body / t.lastMessage.body now guards
-     for null, since a message can be attachment-only (body is no
-     longer NOT NULL — see the migration). Previously
-     t.lastMessage.body.toLowerCase() in applySearchAndRender()
-     would throw on an image-only last message.
-   - The "page stuck on loading" / "empty state never clears" bugs
-     reported alongside this were actually in admin-chat.css (the
-     `hidden` attribute was being silently overridden by unrelated
-     display:flex rules) — fixed there, not in this file.
+   - ATTACHMENT SCHEME CORRECTED: this file previously read/wrote
+     attachment_url/attachment_type/attachment_name and used
+     getPublicUrl() against a public bucket. That never matched the
+     live schema — information_schema confirms chat_messages has
+     attachment_path/attachment_name/attachment_type/attachment_size
+     (NOT attachment_url), and storage.buckets confirms
+     'chat-attachments' is public: false. Every admin-side
+     attachment insert was therefore failing (referencing a column
+     that doesn't exist), and every read was checking a field that
+     was always undefined. This revision now uses attachment_path
+     with getAttachmentSignedUrl() from supabase/chat.js — the exact
+     scheme chat.js/chat-widget.js (visitor side) already use, so
+     both sides are finally on ONE canonical implementation.
+   - Also required a NEW storage policy — see
+     supabase/migrations/009_admin_chat_attachments_upload_policy.sql
+     — since the only existing admin storage policy was SELECT;
+     there was no INSERT policy letting an admin upload to a thread
+     they don't own. Without that migration applied, uploads from
+     this file will still fail with an RLS error.
+   - Rendering attachments is now async (a signed URL has to be
+     fetched per message), so messageHtml()/renderMessages()/
+     appendMessage() no longer build attachment markup inline —
+     they insert a placeholder container and fill it in afterward,
+     the same pattern chat-widget.js's renderAttachment() already
+     uses on the visitor side.
 
    KNOWN GAPS — flagging rather than silently faking:
    -----------------------------------------------------
-   1. VISITOR-SIDE UPLOAD: this file only adds upload/render support
-      for the admin side. The customer-facing chat-widget.js needs
-      the equivalent upload flow before a visitor can actually send
-      an image — not fixed here, that file wasn't provided.
-   2. OPEN-TAB COUNT: the badge next to the "Open" tab
+   1. OPEN-TAB COUNT: the badge next to the "Open" tab
       (data-thread-filter-count="open") only updates while you're
       ON the Open tab, since it's just threads.length for whatever
       filter is currently loaded — getting a live open-count while
       viewing Closed/All would need a second, separate count query.
       Minor, but not a real unread-style badge across tabs.
-   3. MOBILE PANE SWITCH: admin-chat.css's ≤720px breakpoint expects
-      an `is-conversation-open` class on .admin-chat-shell to swap
-      from list view to conversation view. That's toggled below in
-      selectThread()/backToThreadList() — see section 8.
+   2. Uniform attachment image sizing (consistent width/margin) is
+      meant to live in components.css alongside .chat-attachment-image
+      (shared with the customer widget) — not added here, pending
+      that file.
 
    ROLE: any of support/admin/superadmin can access this page (the
    requireAdmin() default), matching admin-support.html's own tier.
@@ -55,6 +59,11 @@
 import { requireAdmin } from '../../assets/js/admin/admin-guard.js';
 import { initAdminLayout } from '../../assets/js/admin/admin-layout.js';
 import { supabase } from '../../supabase/config.js';
+import {
+  getAttachmentSignedUrl,
+  MAX_ATTACHMENT_BYTES,
+  ALLOWED_ATTACHMENT_TYPES,
+} from '../../supabase/chat.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
 const $$ = (selector, scope) => Array.from((scope || document).querySelectorAll(selector));
@@ -131,7 +140,7 @@ async function loadThreads() {
     supabase.from('user_profiles').select('id, first_name, last_name, email').in('id', userIds),
     supabase
       .from('chat_messages')
-      .select('id, thread_id, sender_type, body, attachment_url, attachment_type, attachment_name, created_at, read_at')
+      .select('id, thread_id, sender_type, body, attachment_path, attachment_type, attachment_name, created_at, read_at')
       .in('thread_id', threadIds)
       .order('created_at', { ascending: true }),
   ]);
@@ -181,9 +190,8 @@ function applySearchAndRender() {
   const filtered = term
     ? threads.filter((t) => {
         const nameMatch = t.displayName.toLowerCase().includes(term);
-        // A last message can be attachment-only (body is nullable
-        // now — see chat_schema_attachments.sql), so guard before
-        // calling .toLowerCase() on it.
+        // A last message can be attachment-only (body is nullable —
+        // see chat_schema.sql), so guard before calling .toLowerCase().
         const bodyMatch = Boolean(t.lastMessage && t.lastMessage.body && t.lastMessage.body.toLowerCase().includes(term));
         return nameMatch || bodyMatch;
       })
@@ -243,7 +251,7 @@ function threadItemHtml(t) {
 function threadPreviewText(lastMessage) {
   if (!lastMessage) return 'No messages yet';
   if (lastMessage.body) return escapeHtml(lastMessage.body);
-  if (lastMessage.attachment_url) {
+  if (lastMessage.attachment_path) {
     const isImage = (lastMessage.attachment_type || '').startsWith('image/');
     return isImage ? '📷 Photo' : `📎 ${escapeHtml(lastMessage.attachment_name || 'Attachment')}`;
   }
@@ -251,7 +259,7 @@ function threadPreviewText(lastMessage) {
 }
 
 function updateOpenTabCount() {
-  // Only meaningful while viewing the Open tab itself — see gap #2
+  // Only meaningful while viewing the Open tab itself — see gap #1
   // in the file header comment.
   const el = $('[data-thread-filter-count="open"]');
   if (!el || activeFilter !== 'open') return;
@@ -348,7 +356,7 @@ async function loadMessages(threadId) {
 
   const { data, error } = await supabase
     .from('chat_messages')
-    .select('id, sender_type, body, attachment_url, attachment_type, attachment_name, created_at, read_at')
+    .select('id, sender_type, body, attachment_path, attachment_type, attachment_name, created_at, read_at')
     .eq('thread_id', threadId)
     .order('created_at', { ascending: true });
 
@@ -361,10 +369,20 @@ async function loadMessages(threadId) {
   renderMessages(data || []);
 }
 
+// Renders every message's text synchronously, then resolves each
+// attachment's signed URL asynchronously and fills it in — a signed
+// URL requires a network round-trip per message, so building the
+// whole log can't wait on all of them before showing anything.
 function renderMessages(msgs) {
   const container = $('[data-admin-messages]');
   container.innerHTML = msgs.map(messageHtml).join('');
   container.scrollTop = container.scrollHeight;
+
+  msgs.forEach((m) => {
+    if (!m.attachment_path) return;
+    const bubble = container.querySelector(`[data-message-id="${m.id}"] .admin-chat-msg-attachment-slot`);
+    if (bubble) renderAttachmentInto(bubble, m);
+  });
 }
 
 function appendMessage(msg) {
@@ -372,6 +390,11 @@ function appendMessage(msg) {
   if (!container) return;
   container.insertAdjacentHTML('beforeend', messageHtml(msg));
   container.scrollTop = container.scrollHeight;
+
+  if (msg.attachment_path) {
+    const bubble = container.querySelector(`[data-message-id="${msg.id}"] .admin-chat-msg-attachment-slot`);
+    if (bubble) renderAttachmentInto(bubble, msg);
+  }
 }
 
 function messageHtml(m) {
@@ -383,37 +406,47 @@ function messageHtml(m) {
   const label = m.sender_type === 'admin' ? 'You' : m.sender_type === 'system' ? 'System' : 'Visitor';
 
   const bodyHtml = m.body ? `<div class="admin-chat-msg-body">${escapeHtml(m.body)}</div>` : '';
-  const attachmentHtml = m.attachment_url ? attachmentHtmlFor(m) : '';
+  // Empty slot now, filled asynchronously by renderAttachmentInto()
+  // once its signed URL resolves — see renderMessages()/appendMessage().
+  const attachmentSlotHtml = m.attachment_path ? `<div class="admin-chat-msg-attachment-slot"></div>` : '';
 
   return `
     <div class="${cls}" data-message-id="${m.id}">
       <div class="admin-chat-msg-meta"><span>${label}</span><span>${formatClockTime(m.created_at)}</span></div>
       ${bodyHtml}
-      ${attachmentHtml}
+      ${attachmentSlotHtml}
     </div>`;
 }
 
-// Reuses .chat-attachment* classes already defined in components.css
-// for the customer-facing widget — same visual language on both
-// sides, no new styles needed beyond a couple of tweaks in
-// admin-chat.css section 5.
-function attachmentHtmlFor(m) {
+// Resolves a signed URL for the attachment (private bucket — see
+// getAttachmentSignedUrl() in supabase/chat.js, shared with the
+// visitor-facing widget so both sides mint URLs the same way) and
+// fills in an inline image or a download chip. Reuses the
+// .chat-attachment* classes from components.css, same as
+// chat-widget.js does on the customer side.
+async function renderAttachmentInto(slot, m) {
   const isImage = (m.attachment_type || '').startsWith('image/');
-  const url = escapeHtml(m.attachment_url);
-  const name = escapeHtml(m.attachment_name || 'Attachment');
+  const { data: url, error } = await getAttachmentSignedUrl(m.attachment_path);
 
-  if (isImage) {
-    return `
-      <div class="chat-attachment">
-        <img class="chat-attachment-image" src="${url}" alt="${name}" loading="lazy">
-      </div>`;
+  if (error || !url) {
+    slot.innerHTML = `<div class="chat-attachment"><span class="admin-chat-state">Couldn't load attachment.</span></div>`;
+    return;
   }
 
-  return `
+  if (isImage) {
+    slot.innerHTML = `
+      <div class="chat-attachment">
+        <img class="chat-attachment-image" src="${escapeHtml(url)}" alt="${escapeHtml(m.attachment_name || 'Attachment')}" loading="lazy">
+      </div>`;
+    slot.querySelector('img')?.addEventListener('click', () => window.open(url, '_blank', 'noopener'));
+    return;
+  }
+
+  slot.innerHTML = `
     <div class="chat-attachment">
-      <a class="chat-attachment-file" href="${url}" target="_blank" rel="noopener noreferrer">
+      <a class="chat-attachment-file" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">
         <svg class="chat-attachment-file-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 3.5h9l3 3v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-        <span class="chat-attachment-file-name">${name}</span>
+        <span class="chat-attachment-file-name">${escapeHtml(m.attachment_name || 'Document')}</span>
       </a>
     </div>`;
 }
@@ -591,14 +624,15 @@ function handleIncomingMessage(message) {
 /* -----------------------------------------------------------
    9. Attachments — real upload flow.
    -----------------------------------------------------------
-   Requires supabase/chat_schema_attachments.sql to have been run
-   (adds attachment_url/attachment_type/attachment_name to
-   chat_messages, plus the public 'chat-attachments' storage bucket
-   and its upload policies). Uploads under
-   `${admin.user.id}/${timestamp}-${filename}` — the "Admins can
-   upload chat attachments" storage policy allows any path for an
-   is_admin() user, but namespacing by uploader keeps objects easy
-   to trace back to who sent them.
+   Matches chat.js's sendAttachment() exactly in shape (same path
+   structure, same private bucket, same column names) but can't
+   reuse that function directly — it hardcodes sender_type: 'user'
+   and resolves the CUSTOMER's own id via resolveUserId(), neither
+   of which is correct for an admin reply. Requires
+   supabase/migrations/009_admin_chat_attachments_upload_policy.sql
+   to have been run — without it, this upload will fail with an RLS
+   error, since the only pre-existing admin storage policy was
+   SELECT, not INSERT.
    ----------------------------------------------------------- */
 function wireAttach() {
   const attachBtn = $('[data-admin-attach]');
@@ -612,32 +646,39 @@ function wireAttach() {
     fileInput.value = ''; // allow picking the same file twice in a row
     if (!file || !activeThreadId) return;
 
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      window.alert('That file is too large — attachments must be 10MB or smaller.');
+      return;
+    }
+    if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
+      window.alert("That file type isn't supported — try an image, PDF, or Word doc.");
+      return;
+    }
+
     const sendBtn = $('[data-admin-reply-send]');
     const replyInput = $('[data-admin-reply-input]');
     attachBtn.disabled = true;
     if (sendBtn) sendBtn.disabled = true;
 
     try {
-      const path = `${admin.user.id}/${Date.now()}-${file.name}`;
+      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const path = `${activeThreadId}/${crypto.randomUUID()}-${safeName}`;
 
       const { error: uploadError } = await supabase.storage
         .from(CHAT_ATTACHMENTS_BUCKET)
-        .upload(path, file, { upsert: false, contentType: file.type || undefined });
+        .upload(path, file, { cacheControl: '3600', upsert: false, contentType: file.type || undefined });
 
       if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from(CHAT_ATTACHMENTS_BUCKET)
-        .getPublicUrl(path);
 
       const { error: insertError } = await supabase.from('chat_messages').insert({
         thread_id: activeThreadId,
         sender_type: 'admin',
         sender_id: admin.user.id,
         body: null,
-        attachment_url: publicUrlData.publicUrl,
-        attachment_type: file.type || null,
+        attachment_path: path,
         attachment_name: file.name,
+        attachment_type: file.type,
+        attachment_size: file.size,
       });
 
       if (insertError) throw insertError;
