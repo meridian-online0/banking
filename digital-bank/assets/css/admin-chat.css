@@ -322,6 +322,30 @@
   border-bottom: 1px solid var(--line);
 }
 
+.admin-chat-back-btn {
+  display: none;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  color: var(--slate);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.admin-chat-back-btn:hover {
+  background: rgba(10, 22, 40, 0.05);
+  color: var(--ink);
+}
+
+.admin-chat-back-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
 .admin-chat-conversation-who {
   display: flex;
   align-items: center;
@@ -507,20 +531,29 @@
 @media (max-width: 720px) {
   .admin-chat-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 1fr;
     height: calc(100vh - var(--admin-topbar-h) - 2.5rem);
   }
 
-  /* Single-column: show the thread list OR the conversation, not
-     both stacked full-height — the active thread's pane takes
-     over. admin-chat.js should toggle a class on .admin-chat-shell
-     (e.g. .is-conversation-open) when a thread is selected; until
-     that's wired up both panes simply stack, which is usable but
-     not ideal on a phone. */
+  /* Single-column: show ONE pane at a time. Default (no thread
+     selected yet) shows the list; admin-chat.js adds
+     .is-conversation-open to .admin-chat-shell on selectThread()
+     and removes it in wireBackToList(), so the back button (shown
+     below) is the only way back to the list on mobile. */
   .admin-chat-list {
     border-right: none;
-    border-bottom: 1px solid var(--line);
-    max-height: 45vh;
+  }
+
+  .admin-chat-shell.is-conversation-open .admin-chat-list {
+    display: none;
+  }
+
+  .admin-chat-shell:not(.is-conversation-open) .admin-chat-conversation {
+    display: none;
+  }
+
+  .admin-chat-back-btn {
+    display: flex;
   }
 
   .admin-chat-msg {
