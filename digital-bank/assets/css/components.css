@@ -15,6 +15,23 @@
    different, out-of-sync version. If you add a new shared widget,
    it goes here, not in dashboard.css.
 
+   FIX LOG (this revision)
+   ------------------------
+   - .chat-attachment-image: was sized with only max-height (180px)
+     and object-fit:cover, with no explicit width. That let each
+     image's rendered WIDTH vary with its own aspect ratio once
+     height was capped, so a tall photo and a wide photo ended up
+     visibly different widths in the log — inconsistent, not
+     "smooth". Now uses a fixed width + aspect-ratio instead, so
+     every attachment image renders at the same size. max-width:100%
+     is kept so it still shrinks on narrow bubbles/mobile WITHOUT
+     distorting — a fixed height paired with a shrinking width would
+     squish the image, which aspect-ratio avoids (width and height
+     scale down together). This is shared by BOTH the customer chat
+     widget (chat-widget.js) and the admin inbox (admin-chat.js) —
+     they render the exact same .chat-attachment-image class, so
+     this one rule fixes both sides at once.
+
    Contents:
      1.  Back-to-top button
      2.  Chat support widget
@@ -732,7 +749,9 @@
 }
 
 /* Attachment bubble contents (image thumbnail or file chip),
-   rendered inside .chat-bubble by renderAttachment() */
+   rendered inside .chat-bubble by renderAttachment() (chat-widget.js,
+   customer side) and renderAttachmentInto() (admin-chat.js, admin
+   side) — both sides render this exact markup/class set. */
 .chat-attachment {
   display: flex;
   align-items: center;
@@ -740,16 +759,23 @@
   margin-top: 0.4rem;
 }
 
+/* Fixed width + aspect-ratio (not max-height) so every attachment
+   image renders at the SAME size regardless of its own aspect
+   ratio — see FIX LOG at the top of this file. max-width:100% lets
+   it shrink on narrow bubbles/mobile; aspect-ratio keeps width and
+   height shrinking together so it never distorts. object-fit:cover
+   crops the source image to fill that fixed box cleanly. */
 .chat-attachment-image {
   display: block;
+  width: 200px;
   max-width: 100%;
-  max-height: 180px;
+  aspect-ratio: 4 / 3;
+  height: auto;
+  margin: 0;
   border-radius: 10px;
   cursor: pointer;
   object-fit: cover;
   background: rgba(10, 22, 40, 0.06);
-  min-width: 60px;
-  min-height: 60px;
 }
 
 .chat-attachment-file {
