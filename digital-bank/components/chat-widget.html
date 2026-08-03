@@ -1,103 +1,216 @@
 <!-- =========================================================
      COMPONENT: Live support chat widget (floating button + panel)
-     Injected on every authenticated customer page EXCEPT
-     login.html, register.html, settings.html, profile.html —
-     see CHAT_WIDGET_EXCLUDED_PAGES in assets/js/chat-widget.js.
+     Merged widget — replaces the old decorative inline widget
+     (formerly in index.html/main.js) and the old plain-styled
+     Supabase widget (formerly components/chat-widget.html).
 
-     Loaded by mountChatWidget() in assets/js/chat-widget.js,
-     booted from components/components.js the same way the
-     notification bell is booted after app-navbar loads (see
-     bootChatWidget() added to components.js). Do not copy this
-     markup into individual pages — edit it here only.
+     Real backend, ink/brass visual design:
+       - Markup/classes: System A (chat-widget, chat-launcher,
+         chat-panel, chat-body, chat-msg, chat-bubble, chat-menu...)
+       - Behavior hooks: System B's data-chat-* attributes, so the
+         rewritten assets/js/chat-widget.js (file 3, next) can drive
+         this without caring about class names.
+       - New: attach button / file input / file-preview chip, none
+         of which existed in A — added with the same data-chat-*
+         convention as the rest of B's hooks.
+       - New: the options menu (sound / transcript / accessibility /
+         privacy & GDPR / clear conversation) from A, kept and about
+         to be wired for real in file 3 — not decorative.
 
-     This connects to a REAL human agent, not a bot — the header
-     copy and the first message (sent server-side, see
-     chat_thread_welcome_message() in chat_schema.sql) both say
-     so explicitly. Supports sending pictures and documents as
-     attachments (see attach button in the input row) alongside
-     plain text.
+     Removed on purpose (do not re-add):
+       - The hardcoded "Hi, I'm here to help..." first bubble and
+         the three quick-reply buttons — A invented these client-side;
+         a real thread's first message comes from the DB trigger
+         (chat_thread_welcome_message() in chat_schema.sql), rendered
+         via getThreadMessages(), never authored here.
+       - The chat-typing "•••" simulation — there's no real typing
+         signal from an admin yet, so faking one would reintroduce
+         exactly the fakery this merge is meant to remove.
+       - A's "Meridian is a demo brand; this chat does not send real
+         messages" disclaimer — no longer true.
+
+     BOOTING (unchanged from System B)
+     ----------------------------------
+     Not linked directly as a <script src> on any page. Fetched and
+     injected by mountChatWidget() in assets/js/chat-widget.js, which
+     is booted from components/components.js's bootChatWidget() —
+     same pattern as the notification bell. Do not paste this markup
+     into individual pages; edit it here only.
+
+     Shown on every page except login.html and register.html — see
+     CHAT_WIDGET_EXCLUDED_PAGES in chat-widget.js. settings.html and
+     profile.html inclusion is still unconfirmed (flagged again in
+     file 3's notes). Guest (signed-out) mode is enabled only on
+     index.html, per the earlier presence/guest-chat decision — the
+     visitor's guest_id is generated and persisted by chat.js, not
+     this file.
      ========================================================= -->
-<div id="chat-widget-root" class="chat-widget" data-chat-widget>
+<div id="chat-widget" class="chat-widget" data-chat-widget>
+
   <button
-    id="chat-widget-button"
-    class="chat-widget-button"
+    id="chat-launcher"
+    class="chat-launcher"
     type="button"
     aria-haspopup="dialog"
     aria-expanded="false"
-    aria-controls="chat-widget-panel"
-    aria-label="Open support chat"
+    aria-controls="chat-panel"
+    aria-label="Open chat support"
     data-chat-toggle
   >
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="chat-widget-icon chat-widget-icon-open">
-      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4h-1A2.5 2.5 0 0 1 2 13.5v-8A2.5 2.5 0 0 1 4.5 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="chat-widget-icon chat-widget-icon-close">
-      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-    </svg>
-    <span class="chat-widget-badge" data-chat-unread-badge hidden>0</span>
+    <svg class="chat-launcher-icon chat-launcher-icon--open" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8A2.5 2.5 0 0 1 17.5 16H10l-4.8 3.6a.6.6 0 0 1-.96-.48V16h-.74A2.5 2.5 0 0 1 1 13.5v-8A2.5 2.5 0 0 1 3.5 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg class="chat-launcher-icon chat-launcher-icon--close" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span class="chat-launcher-badge" data-chat-unread-badge hidden>0</span>
   </button>
 
-  <div
-    id="chat-widget-panel"
-    class="chat-widget-panel"
+  <section
+    id="chat-panel"
+    class="chat-panel"
     role="dialog"
     aria-modal="false"
-    aria-label="Support chat"
+    aria-label="Meridian support chat"
     aria-hidden="true"
     hidden
   >
-    <header class="chat-widget-header">
-      <div class="chat-widget-header-info">
-        <span class="chat-widget-status-dot" aria-hidden="true"></span>
+    <header class="chat-panel-head">
+      <div class="chat-agent">
+        <span class="chat-agent-avatar">M</span>
         <div>
-          <p class="chat-widget-title">Meridian Support</p>
-          <p class="chat-widget-subtitle">Live agent &middot; available 24/7</p>
+          <strong>Meridian Support</strong>
+          <span class="chat-status"><span class="chat-status-dot"></span>Live agent &middot; available 24/7</span>
         </div>
       </div>
-      <button class="chat-widget-close" type="button" aria-label="Close chat" data-chat-close>
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+
+      <div class="chat-menu-wrap">
+        <button class="chat-icon-btn" id="chat-menu-toggle" aria-haspopup="true" aria-expanded="false" aria-controls="chat-menu" aria-label="Chat options">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="4.2" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="15.8" r="1.5" fill="currentColor"/></svg>
+        </button>
+
+        <div class="chat-menu" id="chat-menu" role="menu" aria-hidden="true">
+          <button type="button" class="chat-menu-item" id="chat-sound-toggle" role="menuitemcheckbox" aria-checked="true">
+            <span class="chat-menu-item-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 8v4h3l4.5 3.5v-11L6 7.5H3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M13.2 6.8a4 4 0 0 1 0 6.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="chat-menu-item-text">
+              <span>Play message sounds</span>
+              <small>Chime when a reply arrives</small>
+            </span>
+            <span class="chat-menu-item-state" data-state="on">On</span>
+          </button>
+
+          <button type="button" class="chat-menu-item" id="chat-download-transcript" role="menuitem">
+            <span class="chat-menu-item-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v9M6.5 8.5 10 12l3.5-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v1.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="chat-menu-item-text">
+              <span>Download transcript</span>
+              <small>Save this conversation as .txt</small>
+            </span>
+          </button>
+
+          <button type="button" class="chat-menu-item" id="chat-accessibility-toggle" role="menuitem" aria-haspopup="true" aria-expanded="false">
+            <span class="chat-menu-item-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="4.3" r="1.4" fill="currentColor"/><path d="M3.5 7.2c4.3 1.3 8.7 1.3 13 0M10 8.6v3l2.3 5M10 11.6l-2.3 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="chat-menu-item-text">
+              <span>Accessibility</span>
+              <small>Text size &amp; contrast</small>
+            </span>
+            <svg class="chat-menu-item-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <div class="chat-submenu" id="chat-accessibility-submenu" aria-hidden="true">
+            <label class="chat-submenu-row">
+              <span>Larger text</span>
+              <span class="chat-switch"><input type="checkbox" id="chat-large-text"><span class="chat-switch-track"></span></span>
+            </label>
+            <label class="chat-submenu-row">
+              <span>High contrast</span>
+              <span class="chat-switch"><input type="checkbox" id="chat-high-contrast"><span class="chat-switch-track"></span></span>
+            </label>
+            <label class="chat-submenu-row">
+              <span>Reduce motion</span>
+              <span class="chat-switch"><input type="checkbox" id="chat-reduce-motion"><span class="chat-switch-track"></span></span>
+            </label>
+          </div>
+
+          <button type="button" class="chat-menu-item" id="chat-privacy-toggle" role="menuitem" aria-haspopup="true" aria-expanded="false">
+            <span class="chat-menu-item-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 4-2.7 6.9-6 8-3.3-1.1-6-4-6-8V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.4 10 9.2 11.8 12.8 8.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="chat-menu-item-text">
+              <span>Privacy &amp; GDPR</span>
+              <small>Manage your chat data</small>
+            </span>
+            <svg class="chat-menu-item-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <div class="chat-submenu" id="chat-privacy-submenu" aria-hidden="true">
+            <p class="chat-submenu-note">This chat is encrypted in transit. Transcripts are kept for 90 days to improve support, then deleted, in line with our <a href="#">privacy policy</a>.</p>
+            <!--
+              NOTE for file 4 (supabase/chat.js): these two buttons are
+              wired to real handlers in file 3, but the handlers can't
+              write anything until chat_schema.sql is provided — see
+              the open item flagged in the recap. Until then they should
+              call a stub that renders a system notice rather than
+              silently doing nothing or guessing at table/column names.
+            -->
+            <button type="button" class="chat-submenu-btn" id="chat-request-data">Request a copy of my data</button>
+            <button type="button" class="chat-submenu-btn" id="chat-delete-data">Delete my chat data</button>
+          </div>
+
+          <div class="chat-menu-divider"></div>
+
+          <button type="button" class="chat-menu-item chat-menu-item--danger" id="chat-clear-conversation" role="menuitem">
+            <span class="chat-menu-item-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 6h12M8 6V4.5A1.5 1.5 0 0 1 9.5 3h1A1.5 1.5 0 0 1 12 4.5V6M5.5 6l.6 9.5A2 2 0 0 0 8.1 17.5h3.8a2 2 0 0 0 2-1.9L14.5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="chat-menu-item-text">
+              <span>Clear conversation</span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <button class="chat-icon-btn chat-close-btn" id="chat-close" aria-label="Close chat" data-chat-close>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
       </button>
     </header>
 
-    <div class="chat-widget-messages" data-chat-messages aria-live="polite">
-      <div class="chat-widget-loading" data-chat-loading>Connecting you to support&hellip;</div>
+    <div class="chat-body" id="chat-body" role="log" aria-live="polite" data-chat-messages>
+      <div class="chat-loading" data-chat-loading>Connecting you to support&hellip;</div>
     </div>
 
-    <div class="chat-widget-file-preview" data-chat-file-preview hidden>
-      <div class="chat-widget-file-preview-thumb" data-chat-file-preview-thumb aria-hidden="true"></div>
-      <span class="chat-widget-file-preview-name" data-chat-file-preview-name></span>
-      <button type="button" class="chat-widget-file-remove" data-chat-file-remove aria-label="Remove attachment">
+    <div class="chat-file-preview" data-chat-file-preview hidden>
+      <div class="chat-file-preview-thumb" data-chat-file-preview-thumb aria-hidden="true"></div>
+      <span class="chat-file-preview-name" data-chat-file-preview-name></span>
+      <button type="button" class="chat-file-remove" data-chat-file-remove aria-label="Remove attachment">
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
     </div>
 
-    <form class="chat-widget-input-row" data-chat-form>
+    <form class="chat-input-row" id="chat-input-row" data-chat-form>
       <input
         type="file"
-        id="chat-widget-file-input"
+        id="chat-file-input"
         data-chat-file-input
         accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,.doc,.docx"
         hidden
       />
-      <button
-        type="button"
-        class="chat-widget-attach"
-        data-chat-attach
-        aria-label="Attach a picture or document"
-      >
+      <button type="button" class="chat-icon-btn chat-attach-btn" data-chat-attach aria-label="Attach a picture or document">
         <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M13.5 6.5 8 12a2.5 2.5 0 1 1-3.5-3.5L10 3a4 4 0 1 1 5.66 5.66L9.5 15" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
+      <label for="chat-input" class="sr-only">Type a message</label>
       <textarea
-        class="chat-widget-input"
+        id="chat-input"
+        class="chat-input"
         data-chat-input
-        placeholder="Type a message&hellip;"
         rows="1"
         maxlength="2000"
-        aria-label="Message"
+        placeholder="Type your message..."
       ></textarea>
-      <button class="chat-widget-send" type="submit" aria-label="Send message" data-chat-send disabled>
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 10L17 3l-5 14-2.5-6L2.5 10Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+      <button type="submit" class="chat-send-btn" aria-label="Send message" data-chat-send disabled>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M17.5 2.5 9 11M17.5 2.5 12 17.5l-3-6.5-6.5-3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
       </button>
     </form>
-  </div>
+  </section>
 </div>
