@@ -46,29 +46,11 @@
 
         <div class="admin-chat-list-body" data-thread-list-body>
           <ul class="admin-chat-thread-list" data-thread-list hidden>
-            <!-- Populated by admin-chat.js. Reference shape of a
-                 single thread item, kept here as a comment only so
-                 admin-chat.js and admin-chat.css agree on structure —
-                 the real items are rendered, never left in the DOM
-                 statically:
-
-            <li class="admin-chat-thread-item" data-thread-item data-thread-id="">
-              <button type="button" class="admin-chat-thread-btn">
-                <span class="avatar-initial avatar-initial--sm" data-thread-avatar>·</span>
-                <span class="admin-chat-thread-presence" data-thread-presence data-state="offline"></span>
-                <span class="admin-chat-thread-info">
-                  <span class="admin-chat-thread-row">
-                    <span class="admin-chat-thread-name" data-thread-name>Visitor</span>
-                    <span class="tag admin-chat-thread-visitor-tag" data-thread-visitor-tag hidden>Visitor</span>
-                    <span class="admin-chat-thread-time" data-thread-time></span>
-                  </span>
-                  <span class="admin-chat-thread-preview" data-thread-preview></span>
-                </span>
-                <span class="admin-nav-badge" data-thread-unread hidden>0</span>
-              </button>
-            </li>
-
-            -->
+            <!-- Rendered by admin-chat.js. Not left static — see the
+                 note in admin-chat.js's threadItemHtml(); the shape
+                 here differs slightly from earlier drafts (avatar
+                 and presence dot now share one wrapper element) so
+                 the CSS positioning actually works. -->
           </ul>
 
           <div class="admin-chat-state admin-chat-state--loading" data-thread-list-loading>
@@ -109,6 +91,16 @@
         <div class="admin-chat-conversation-active" data-conversation-active hidden>
 
           <header class="admin-chat-conversation-head">
+            <!-- Mobile-only: returns to the thread list. Hidden on
+                 desktop via admin-chat.css (only shown ≤720px,
+                 where the two panes swap instead of sitting
+                 side-by-side). admin-chat.js's wireBackToList()
+                 removes .is-conversation-open from .admin-chat-shell
+                 on click. -->
+            <button type="button" class="admin-chat-back-btn" data-conversation-back aria-label="Back to conversations">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M12.5 4.5 6 10l6.5 5.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+
             <div class="admin-chat-conversation-who">
               <span class="avatar-initial" data-conversation-avatar>·</span>
               <div>
