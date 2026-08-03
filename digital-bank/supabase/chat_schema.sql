@@ -7,11 +7,30 @@
 -- (pages/admin/admin-support.html) — this schema has no bot/AI
 -- concept, just 'user' / 'admin' / 'system' senders.
 --
--- Run this after schema.sql. If admin_schema.sql's roles table
--- and its role-check helper (e.g. is_admin()) are already in
--- place, add the admin-side RLS policies noted at the bottom
--- once you can see that file's exact function name/signature —
--- everything below only covers the customer-facing widget.
+-- GUEST / VISITOR CHAT
+-- ---------------------
+-- Signed-out visitors on index.html get a Supabase Anonymous
+-- Auth session (supabase.auth.signInAnonymously(), called from
+-- chat-widget.js) rather than a hand-rolled guest_id column.
+-- That means an anonymous visitor still has a real auth.uid(),
+-- so chat_threads.user_id stays NOT NULL and every RLS policy
+-- below is identical for registered customers and anonymous
+-- visitors — no separate "guest" code path, no client-supplied
+-- identity to trust.
+--
+-- The admin panel tells the two apart by whether a user_profiles
+-- row exists for chat_threads.user_id: registered customers have
+-- one (created at full signup), anonymous visitors don't. No
+-- profile row -> render as "Visitor" in admin-support.js.
+--
+-- REQUIRES: Anonymous Sign-ins enabled in the Supabase dashboard
+-- (Authentication -> Providers -> Anonymous Sign-ins). This
+-- schema does not (and cannot) turn that on for you.
+--
+-- Run this after schema.sql. This file already fills in the
+-- admin-side RLS policies using public.is_admin(), which
+-- admin_schema.sql defines (referenced directly in
+-- assets/js/admin/admin-layout.js's comments).
 -- =============================================================
 
 create table if not exists chat_threads (
@@ -19,12 +38,14 @@ create table if not exists chat_threads (
   user_id            uuid not null references auth.users(id) on delete cascade,
   status             text not null default 'open' check (status in ('open', 'closed')),
   assigned_admin_id  uuid references auth.users(id),
+  last_seen_at       timestamptz not null default now(),
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
 
-create index if not exists idx_chat_threads_user_id on chat_threads(user_id);
-create index if not exists idx_chat_threads_status   on chat_threads(status);
+create index if not exists idx_chat_threads_user_id     on chat_threads(user_id);
+create index if not exists idx_chat_threads_status      on chat_threads(status);
+create index if not exists idx_chat_threads_last_seen   on chat_threads(last_seen_at desc);
 
 create table if not exists chat_messages (
   id          uuid primary key default gen_random_uuid(),
@@ -42,7 +63,9 @@ create index if not exists idx_chat_messages_created_at on chat_messages(created
 -- -----------------------------------------------------------
 -- Welcome message — fires the instant a thread is created, so
 -- the customer never sees an empty panel and always learns that
--- a live agent is on call 24/7 and can join at any moment.
+-- a live agent is on call 24/7 and can join at any moment. Fires
+-- identically for registered customers and anonymous visitors —
+-- both are just rows in auth.users as far as this trigger cares.
 -- -----------------------------------------------------------
 create or replace function chat_thread_welcome_message()
 returns trigger as $$
@@ -64,12 +87,23 @@ create trigger trg_chat_thread_welcome
   for each row execute function chat_thread_welcome_message();
 
 -- -----------------------------------------------------------
--- updated_at bookkeeping on the thread whenever a message lands
+-- updated_at / last_seen_at bookkeeping.
+--
+-- updated_at always bumps (used for "most recently active thread"
+-- sorting in the admin inbox, admin replies included).
+--
+-- last_seen_at ONLY bumps when the message came from the
+-- customer/visitor themselves (sender_type = 'user') — it's a
+-- presence signal for "is this visitor still here", so an admin
+-- typing a reply must not make the visitor look freshly active.
 -- -----------------------------------------------------------
 create or replace function touch_chat_thread()
 returns trigger as $$
 begin
-  update chat_threads set updated_at = now() where id = new.thread_id;
+  update chat_threads
+  set updated_at   = now(),
+      last_seen_at = case when new.sender_type = 'user' then now() else last_seen_at end
+  where id = new.thread_id;
   return new;
 end;
 $$ language plpgsql security definer;
@@ -80,7 +114,31 @@ create trigger trg_touch_chat_thread
   for each row execute function touch_chat_thread();
 
 -- -----------------------------------------------------------
--- Row Level Security — customer side
+-- Heartbeat — called periodically by chat-widget.js while the
+-- chat panel is open, so a visitor who is present but not
+-- actively sending messages still shows as "Online now" in the
+-- admin inbox rather than going stale. Exposed as a SECURITY
+-- DEFINER function (rather than a broad UPDATE policy on
+-- chat_threads for regular users) so a customer/visitor can only
+-- ever bump their own last_seen_at — never touch status or
+-- assigned_admin_id, which stay admin-only via the policy below.
+-- -----------------------------------------------------------
+create or replace function chat_heartbeat(p_thread_id uuid)
+returns void as $$
+begin
+  update chat_threads
+  set last_seen_at = now()
+  where id = p_thread_id
+    and user_id = auth.uid();
+end;
+$$ language plpgsql security definer;
+
+grant execute on function chat_heartbeat(uuid) to authenticated;
+
+-- -----------------------------------------------------------
+-- Row Level Security — customer / visitor side
+-- (identical for registered customers and anonymous visitors —
+-- both simply have a Supabase auth.uid())
 -- -----------------------------------------------------------
 alter table chat_threads  enable row level security;
 alter table chat_messages enable row level security;
@@ -133,26 +191,42 @@ create policy "Users can mark admin messages read in their own threads"
   );
 
 -- -----------------------------------------------------------
--- TODO — admin side (add once admin_schema.sql's role-check
--- helper is available to reference here):
---
---   create policy "Admins can view all chat threads"
---     on chat_threads for select using ( <is_admin() check> );
---
---   create policy "Admins can update any chat thread"
---     on chat_threads for update using ( <is_admin() check> );
---
---   create policy "Admins can view all chat messages"
---     on chat_messages for select using ( <is_admin() check> );
---
---   create policy "Admins can send messages as admin"
---     on chat_messages for insert with check (
---       sender_type = 'admin' and sender_id = auth.uid()
---       and <is_admin() check>
---     );
+-- Row Level Security — admin side
+-- Uses public.is_admin(), defined in admin_schema.sql (see the
+-- reference to it in assets/js/admin/admin-layout.js's comments).
+-- If your actual function name/signature differs from
+-- public.is_admin() with no arguments, these five policies are
+-- the ones to adjust — everything else in this file is unaffected.
 -- -----------------------------------------------------------
+create policy "Admins can view all chat threads"
+  on chat_threads for select
+  using (public.is_admin());
 
--- Realtime — needed for admin replies to push to the widget
--- without polling. Skip if your project already has this table
--- added to the publication.
+create policy "Admins can update any chat thread"
+  on chat_threads for update
+  using (public.is_admin())
+  with check (public.is_admin());
+
+create policy "Admins can view all chat messages"
+  on chat_messages for select
+  using (public.is_admin());
+
+create policy "Admins can send messages as admin"
+  on chat_messages for insert
+  with check (
+    sender_type = 'admin'
+    and sender_id = auth.uid()
+    and public.is_admin()
+  );
+
+create policy "Admins can mark user messages read"
+  on chat_messages for update
+  using (public.is_admin())
+  with check (public.is_admin());
+
+-- Realtime — needed for admin replies to push to the widget, and
+-- for new visitor messages to push to the admin inbox, without
+-- polling. Skip if your project already has this table added to
+-- the publication.
 alter publication supabase_realtime add table chat_messages;
+alter publication supabase_realtime add table chat_threads;
