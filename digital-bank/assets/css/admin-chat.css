@@ -3,7 +3,7 @@
    assets/css/admin-chat.css
 
    SCOPE: pages/admin/admin-chat.html only. Reuses tokens and
-   .btn.status-pill. tag/.empty-state/.skeleton/.avatar-initial*
+   .btn*/.status-pill*/.tag/.empty-state/.skeleton/.avatar-initial*
    primitives from style.css/components.css/admin.css — this file
    only styles markup unique to the live-chat two-pane layout.
 
@@ -16,13 +16,30 @@
    admin-support.css to match at some point — its rules using the
    undefined names are likely resolving to nothing.
 
-   NOTE ON MESSAGE CLASSES: admin-chat.js doesn't exist yet, so the
-   .admin-chat-msg* classes below are a proposed contract, not a
-   confirmed one — admin-chat.js needs to render exactly these
-   class names (or this file needs updating to match whatever it
-   actually renders).
+   NOTE ON MESSAGE CLASSES: admin-chat.js needs to render exactly
+   these class names (.admin-chat-msg / --admin / --system) — see
+   messageHtml() in admin-chat.js, which does.
+
+   FIX LOG
+   -------
+   - Section 0 added: .admin-chat-state--loading, .admin-chat-
+     thread-list, .admin-chat-conversation-empty, .admin-chat-
+     conversation-active (plus .empty-state in components.css) all
+     set `display: flex` with no [hidden] guard. Because [hidden]
+     (browser default, specificity 0,1,0) and a plain class rule
+     (also 0,1,0) tie on specificity, and author stylesheets load
+     after the UA stylesheet, the `display: flex` rules always won
+     — admin-chat.js's `el.hidden = true/false` toggling was
+     visually inert. Symptoms: the loading skeleton never went
+     away, "Select a conversation" stayed visible after picking a
+     thread, and the active conversation pane (including the reply
+     composer) was fighting the empty state for the same flex
+     space instead of getting the full pane to itself. The single
+     `[hidden] { display: none !important; }` rule below restores
+     the attribute's real behavior for every element on this page.
 
    Contents:
+     0. Hidden-attribute fix
      1. Two-pane shell
      2. Thread list pane (head, tabs, search, list, states)
      3. Thread list items
@@ -31,6 +48,13 @@
      6. Reply composer
      7. Responsive breakpoints
    ============================================================= */
+
+/* -------------------------------------------------------------
+   0. Hidden-attribute fix — see FIX LOG above.
+   ------------------------------------------------------------- */
+[hidden] {
+  display: none !important;
+}
 
 /* -------------------------------------------------------------
    1. Two-pane shell
@@ -435,6 +459,20 @@
   margin-bottom: 0.25rem;
 }
 
+/* Attachment bubble contents (image thumbnail or file chip) reuse
+   .chat-attachment / .chat-attachment-image / .chat-attachment-file
+   / .chat-attachment-file-icon / .chat-attachment-file-name from
+   components.css — same visual language as the customer-facing
+   chat widget, no need to redeclare them here. See renderAttachmentHtml()
+   in admin-chat.js. */
+.admin-chat-msg .chat-attachment {
+  margin-top: 0.3rem;
+}
+
+.admin-chat-msg--admin .chat-attachment-file {
+  background: rgba(246, 245, 240, 0.14);
+}
+
 /* -------------------------------------------------------------
    6. Reply composer
    ------------------------------------------------------------- */
@@ -470,6 +508,11 @@
 .chat-icon-btn svg {
   width: 17px;
   height: 17px;
+}
+
+.chat-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .admin-chat-conversation-input textarea {
