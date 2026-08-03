@@ -540,7 +540,7 @@
   max-width: 88%;
 }
 
-.chat-msg--bot {
+.chat-msg--admin {
   align-self: flex-start;
 }
 
@@ -586,7 +586,7 @@
   margin-bottom: 0.3rem;
 }
 
-.chat-msg--bot .chat-bubble p {
+.chat-msg--admin .chat-bubble p {
   color: var(--slate-dark);
 }
 
@@ -601,69 +601,6 @@
   color: rgba(10, 22, 40, 0.55);
 }
 
-.chat-quick-replies {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding-left: 2.1rem;
-}
-
-.chat-quick-reply {
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.45rem 0.85rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--ink);
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.chat-quick-reply:hover {
-  background: var(--brass);
-  border-color: var(--brass);
-}
-
-.chat-typing {
-  display: none;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 1.1rem 0.6rem;
-  background: var(--ivory);
-  flex-shrink: 0;
-}
-
-.chat-typing.is-visible {
-  display: flex;
-}
-
-.chat-typing-dots {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0.5rem 0.75rem;
-}
-
-.chat-typing-dots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--slate);
-  opacity: 0.5;
-  animation: chat-typing-bounce 1.2s ease-in-out infinite;
-}
-
-.chat-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
-.chat-typing-dots span:nth-child(3) { animation-delay: 0.3s; }
-
-@keyframes chat-typing-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-  30% { transform: translateY(-4px); opacity: 1; }
-}
 
 .chat-input-row {
   display: flex;
@@ -726,6 +663,179 @@
   padding: 0.5rem 1rem 0.85rem;
   background: var(--paper);
   flex-shrink: 0;
+}
+
+
+
+/* System notices (welcome message, GDPR acknowledgments, connection
+   errors) — sender_type 'system' from chat_messages, plus client-side
+   notices like file-too-large. Centered, no avatar, no user/admin
+   bubble coloring. */
+.chat-msg--system {
+  align-self: center;
+  max-width: 92%;
+}
+
+.chat-bubble--system {
+  background: rgba(10, 22, 40, 0.05);
+  border: none;
+  box-shadow: none;
+  text-align: center;
+}
+
+.chat-bubble--system p {
+  color: var(--slate);
+  font-size: 0.8rem;
+  margin-bottom: 0;
+}
+
+/* Client-side notices rendered directly as a bare div (connection
+   errors, attachment validation) rather than a full sender bubble —
+   see renderSystemNotice() in chat-widget.js. */
+.chat-msg--notice {
+  align-self: center;
+  max-width: 92%;
+  font-size: 0.8rem;
+  color: var(--slate);
+  text-align: center;
+  background: rgba(10, 22, 40, 0.05);
+  border-radius: 10px;
+  padding: 0.5rem 0.85rem;
+}
+
+.chat-loading {
+  margin: auto;
+  font-size: 0.83rem;
+  color: var(--slate);
+  text-align: center;
+}
+
+/* Icon buttons on a LIGHT background (input row) — .chat-icon-btn on
+   its own assumes the dark ink header (color: var(--ivory) on a dark
+   bg), which would render invisible here. Same box, inverted colors. */
+.chat-attach-btn {
+  border-color: var(--line);
+  color: var(--slate);
+}
+
+.chat-attach-btn:hover {
+  background: var(--ivory);
+  border-color: var(--brass);
+  color: var(--brass-dark);
+}
+
+.chat-send-btn:disabled {
+  background: var(--line);
+  color: var(--slate);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Attachment bubble contents (image thumbnail or file chip),
+   rendered inside .chat-bubble by renderAttachment() */
+.chat-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.chat-attachment-image {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  border-radius: 10px;
+  cursor: pointer;
+  object-fit: cover;
+  background: rgba(10, 22, 40, 0.06);
+  min-width: 60px;
+  min-height: 60px;
+}
+
+.chat-attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  background: rgba(10, 22, 40, 0.05);
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.chat-msg--user .chat-attachment-file {
+  background: rgba(10, 22, 40, 0.1);
+}
+
+.chat-attachment-file-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.chat-attachment-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* File-preview chip shown above the input row before sending —
+   matches .chat-file-preview / .chat-file-preview-thumb / etc.
+   data-attribute hooks in chat-widget.html */
+.chat-file-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 1rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ivory);
+  font-size: 0.78rem;
+  color: var(--slate-dark);
+}
+
+.chat-file-preview[hidden] {
+  display: none;
+}
+
+.chat-file-preview-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(10, 22, 40, 0.08);
+  flex-shrink: 0;
+}
+
+.chat-file-preview-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-file-remove {
+  border: none;
+  background: transparent;
+  color: var(--slate);
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chat-file-remove:hover {
+  background: rgba(10, 22, 40, 0.08);
 }
 
 /* -------------------------------------------------------------
