@@ -1,0 +1,534 @@
+/* =============================================================
+   MERIDIAN — Admin panel
+   assets/css/admin-chat.css
+
+   SCOPE: pages/admin/admin-chat.html only. Reuses tokens and
+   .btn*/.status-pill*/.tag/.empty-state/.skeleton/.avatar-initial*
+   primitives from style.css/components.css/admin.css — this file
+   only styles markup unique to the live-chat two-pane layout.
+
+   NOTE ON TOKENS: unlike admin-support.css (which references
+   --admin-surface/--admin-border/--admin-accent-soft/--admin-text-
+   faint/--admin-text-muted — none of which are actually defined in
+   admin.css's token list), this file uses only the tokens that
+   really exist: --paper, --ivory, --line, --line-dark, --ink,
+   --slate, --slate-dark, --brass, --radius-sm/md/lg. Worth fixing
+   admin-support.css to match at some point — its rules using the
+   undefined names are likely resolving to nothing.
+
+   NOTE ON MESSAGE CLASSES: admin-chat.js doesn't exist yet, so the
+   .admin-chat-msg* classes below are a proposed contract, not a
+   confirmed one — admin-chat.js needs to render exactly these
+   class names (or this file needs updating to match whatever it
+   actually renders).
+
+   Contents:
+     1. Two-pane shell
+     2. Thread list pane (head, tabs, search, list, states)
+     3. Thread list items
+     4. Conversation pane (empty state, head, presence)
+     5. Conversation message log
+     6. Reply composer
+     7. Responsive breakpoints
+   ============================================================= */
+
+/* -------------------------------------------------------------
+   1. Two-pane shell
+   ------------------------------------------------------------- */
+.admin-chat-shell {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  height: calc(100vh - var(--admin-topbar-h) - 4rem);
+  min-height: 480px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------
+   2. Thread list pane
+   ------------------------------------------------------------- */
+.admin-chat-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: var(--ivory);
+}
+
+.admin-chat-list-head {
+  flex-shrink: 0;
+  padding: 1.1rem 1.1rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.admin-chat-list-title {
+  font-size: 1.05rem;
+}
+
+.admin-chat-tabs {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.admin-chat-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--slate);
+  padding: 0.4rem 0.7rem;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.admin-chat-tab:hover {
+  background: rgba(10, 22, 40, 0.05);
+  color: var(--ink);
+}
+
+.admin-chat-tab.is-active {
+  background: var(--ink);
+  color: var(--ivory);
+}
+
+.admin-chat-tab .admin-nav-badge {
+  background: rgba(246, 245, 240, 0.18);
+  color: inherit;
+  height: 17px;
+  min-width: 17px;
+  font-size: 0.65rem;
+}
+
+.admin-chat-search {
+  position: relative;
+}
+
+.admin-chat-search svg {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--slate);
+  pointer-events: none;
+}
+
+.admin-chat-search input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.8rem 0.55rem 2.15rem;
+  font-size: 0.85rem;
+  color: var(--slate-dark);
+}
+
+.admin-chat-search input:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(181, 138, 68, 0.18);
+}
+
+.admin-chat-list-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.admin-chat-thread-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-chat-state {
+  padding: 2.5rem 1.25rem;
+  text-align: center;
+}
+
+.admin-chat-state--loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  text-align: initial;
+}
+
+.admin-chat-thread-skeleton {
+  height: 56px;
+  border-radius: var(--radius-sm);
+}
+
+.admin-chat-state--error p {
+  margin-bottom: 0.5rem;
+}
+
+/* -------------------------------------------------------------
+   3. Thread list items
+   ------------------------------------------------------------- */
+.admin-chat-thread-item {
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-chat-thread-item:last-child {
+  border-bottom: none;
+}
+
+.admin-chat-thread-btn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.85rem 1.1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+
+.admin-chat-thread-btn:hover {
+  background: rgba(10, 22, 40, 0.04);
+}
+
+.admin-chat-thread-item.is-active .admin-chat-thread-btn {
+  background: rgba(181, 138, 68, 0.1);
+}
+
+.admin-chat-thread-btn > .avatar-initial {
+  position: relative;
+}
+
+.admin-chat-thread-presence {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--ivory);
+  background: var(--slate);
+  bottom: -1px;
+  right: -1px;
+}
+
+.admin-chat-thread-presence[data-state="online"] {
+  background: var(--green);
+}
+
+.admin-chat-thread-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.admin-chat-thread-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.admin-chat-thread-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.admin-chat-thread-visitor-tag {
+  flex-shrink: 0;
+}
+
+.admin-chat-thread-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--slate);
+}
+
+.admin-chat-thread-preview {
+  font-size: 0.82rem;
+  color: var(--slate);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-chat-thread-btn > .admin-nav-badge {
+  background: var(--brass);
+  color: var(--ivory);
+  margin-left: 0;
+}
+
+/* -------------------------------------------------------------
+   4. Conversation pane
+   ------------------------------------------------------------- */
+.admin-chat-conversation {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--paper);
+}
+
+.admin-chat-conversation-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.3rem;
+  padding: 2rem;
+}
+
+.admin-chat-conversation-active {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.admin-chat-conversation-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-chat-conversation-who {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.admin-chat-conversation-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.admin-chat-conversation-presence {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--slate);
+  margin-top: 0.1rem;
+}
+
+.admin-chat-presence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--slate);
+  flex-shrink: 0;
+}
+
+.admin-chat-conversation-presence[data-state="online"] .admin-chat-presence-dot {
+  background: var(--green);
+}
+
+.admin-chat-conversation-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------
+   5. Conversation message log
+   ------------------------------------------------------------- */
+.admin-chat-conversation-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.admin-chat-msg {
+  max-width: 72%;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md);
+  font-size: 0.87rem;
+  line-height: 1.45;
+  background: var(--ivory);
+  color: var(--slate-dark);
+  align-self: flex-start;
+}
+
+.admin-chat-msg--admin {
+  align-self: flex-end;
+  background: var(--ink);
+  color: var(--ivory);
+}
+
+.admin-chat-msg--system {
+  align-self: center;
+  max-width: 88%;
+  background: none;
+  border: 1px dashed var(--line);
+  color: var(--slate);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.admin-chat-msg-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.7rem;
+  opacity: 0.65;
+  margin-bottom: 0.25rem;
+}
+
+/* -------------------------------------------------------------
+   6. Reply composer
+   ------------------------------------------------------------- */
+.admin-chat-conversation-input {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 0.85rem 1.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.chat-icon-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--slate);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.chat-icon-btn:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+
+.chat-icon-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.admin-chat-conversation-input textarea {
+  flex: 1;
+  resize: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.85rem;
+  font: inherit;
+  font-size: 0.87rem;
+  color: var(--slate-dark);
+  max-height: 120px;
+}
+
+.admin-chat-conversation-input textarea:focus {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px rgba(181, 138, 68, 0.18);
+}
+
+.chat-send-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ink);
+  color: var(--ivory);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.chat-send-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.chat-send-btn:hover:not(:disabled) {
+  background: var(--ink-3);
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------
+   7. Responsive breakpoints
+   ------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .admin-chat-shell {
+    height: calc(100vh - var(--admin-topbar-h) - 3rem);
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-chat-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: calc(100vh - var(--admin-topbar-h) - 2.5rem);
+  }
+
+  /* Single-column: show the thread list OR the conversation, not
+     both stacked full-height — the active thread's pane takes
+     over. admin-chat.js should toggle a class on .admin-chat-shell
+     (e.g. .is-conversation-open) when a thread is selected; until
+     that's wired up both panes simply stack, which is usable but
+     not ideal on a phone. */
+  .admin-chat-list {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    max-height: 45vh;
+  }
+
+  .admin-chat-msg {
+    max-width: 85%;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-chat-shell {
+    border-radius: var(--radius-md);
+  }
+
+  .admin-chat-conversation-head {
+    padding: 0.85rem 1rem;
+  }
+
+  .admin-chat-conversation-actions .btn {
+    display: none;
+  }
+}
