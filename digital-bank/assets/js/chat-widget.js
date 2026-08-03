@@ -490,16 +490,18 @@ function renderSystemNotice(text) {
   scrollToBottom();
 }
 
+
 function updateUnreadBadge(count) {
   const badge = document.querySelector('[data-chat-unread-badge]');
   if (!badge) return;
   if (count > 0) {
     badge.textContent = count > 9 ? '9+' : String(count);
-    badge.hidden = false;
+    badge.classList.remove('is-hidden');
   } else {
-    badge.hidden = true;
+    badge.classList.add('is-hidden');
   }
 }
+
 
 function scrollToBottom() {
   const messagesEl = document.querySelector('[data-chat-messages]');
