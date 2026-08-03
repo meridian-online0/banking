@@ -207,8 +207,17 @@
   background: rgba(181, 138, 68, 0.1);
 }
 
-.admin-chat-thread-btn > .avatar-initial {
+/* Wraps the avatar + presence dot as ONE grid cell (column 1 of
+   .admin-chat-thread-btn's 3-column grid). The HTML comment in
+   admin-chat.html shows avatar and presence as siblings, but that
+   markup is explicitly reference-only ("the real items are
+   rendered, never left in the DOM statically") — admin-chat.js
+   renders this wrapper instead, since the dot needs a positioned
+   parent to sit on the avatar's corner, and a 4th top-level child
+   would break the 3-column grid. */
+.admin-chat-thread-avatar-wrap {
   position: relative;
+  flex-shrink: 0;
 }
 
 .admin-chat-thread-presence {
