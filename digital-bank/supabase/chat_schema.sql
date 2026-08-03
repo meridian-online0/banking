@@ -230,3 +230,29 @@ create policy "Admins can mark user messages read"
 -- the publication.
 alter publication supabase_realtime add table chat_messages;
 alter publication supabase_realtime add table chat_threads;
+
+
+
+-- -----------------------------------------------------------
+-- Lets a signed-in user (or anonymous visitor) close their own
+-- thread — used by "Clear conversation" in the chat widget. Same
+-- reasoning as chat_heartbeat(): SECURITY DEFINER + an explicit
+-- user_id = auth.uid() check, rather than a broad UPDATE policy
+-- on chat_threads that a customer could otherwise use to touch
+-- assigned_admin_id or someone else's thread.
+-- -----------------------------------------------------------
+create or replace function chat_close_thread(p_thread_id uuid)
+returns void as $$
+begin
+  update chat_threads
+  set status = 'closed'
+  where id = p_thread_id
+    and user_id = auth.uid();
+end;
+$$ language plpgsql security definer;
+
+grant execute on function chat_close_thread(uuid) to authenticated;
+
+
+
+
