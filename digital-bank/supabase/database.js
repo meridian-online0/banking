@@ -637,6 +637,20 @@ export async function removeFromWatchlist(watchlistId) {
 }
 
 /* -----------------------------------------------------------
+   Permissions (read-only, customer side)
+   -----------------------------------------------------------
+   user_permissions has a SELECT policy for auth.uid() = user_id
+   (009_admin_policy_engine.sql / 012_extend_customer_permissions.sql)
+   alongside the admin-only one — same owner-scoped read pattern as
+   everything else in this file. Deliberately NOT imported from
+   admin.js — that file is for pages/admin/*.js only.
+   ----------------------------------------------------------- */
+export async function getMyPermissions(userId) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
+  return wrap(supabase.from('user_permissions').select('*').eq('user_id', uid).maybeSingle());
+}
+/* -----------------------------------------------------------
    Investments — buy / sell
    -----------------------------------------------------------
    DEMO-ONLY FEE MODEL, same shape as createTransfer()'s (well —
