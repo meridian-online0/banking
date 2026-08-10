@@ -18,6 +18,7 @@
 
 import { supabase } from '../supabase/config.js';
 import { updateUserPassword, onAuthStateChange } from '../supabase/auth.js';
+import { ROUTES } from '../supabase/config.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
 
