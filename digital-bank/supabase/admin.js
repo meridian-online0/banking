@@ -889,11 +889,15 @@ export async function getCustomerPermissions(userId) {
   return wrap(supabase.from('user_permissions').select('*').eq('user_id', userId).maybeSingle());
 }
 
+
 export async function saveCustomerPermissions(userId, permissions, reason) {
+  const ctx = await getClientContext();
   return wrap(supabase.rpc('admin_save_customer_permissions', {
     p_user_id: userId,
     p_permissions: permissions,
     p_reason: reason ?? null,
+    p_ip_address: ctx.ip,
+    p_browser: ctx.browser,
   }));
 }
 
