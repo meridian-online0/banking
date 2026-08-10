@@ -340,14 +340,23 @@ function initCustomerSearch() {
   const results = $('#customer-search-results');
   if (!input) return;
 
-  const runSearch = debounce(async () => {
+
+
+   const runSearch = debounce(async () => {
     const query = input.value.trim();
     if (query.length < 2) { results.hidden = true; results.innerHTML = ''; return; }
 
+    results.innerHTML = '<li class="admin-search-empty">Searching…</li>';
+    results.hidden = false;
+
     const { data, error } = await searchCustomers(query);
-    if (error || !data.length) {
+
+    if (error) {
+      results.innerHTML = `<li class="admin-search-empty admin-search-error">${error}</li>`;
+      return;
+    }
+    if (!data.length) {
       results.innerHTML = '<li class="admin-search-empty">No matching customers.</li>';
-      results.hidden = false;
       return;
     }
 
@@ -361,7 +370,6 @@ function initCustomerSearch() {
         <span class="status-pill">${c.account_status || 'Active'}</span>
       </li>
     `).join('');
-    results.hidden = false;
 
     $$('li[data-customer-id]', results).forEach((li) => {
       li.addEventListener('click', () => {
@@ -459,21 +467,52 @@ async function loadCustomerPanel(customer) {
   syncCustomerStatus(customer.id);
 }
 
+/**
+ * Restriction chips can't show a true on/off state — see admin.js's
+ * own "STILL OPEN" note: admin_restriction_action() only writes an
+ * audit-trail row, there's no enforceable column anywhere for these
+ * actions to read back from yet. What we CAN show honestly is when
+ * each action was last applied, from the same restriction_history
+ * rows already fetched for the table below.
+ */
+function updateChipHistoryIndicators(rows) {
+  const latestByAction = {};
+  (rows || []).forEach((row) => {
+    const existing = latestByAction[row.action];
+    if (!existing || new Date(row.performed_at) > new Date(existing.performed_at)) {
+      latestByAction[row.action] = row;
+    }
+  });
+  $$('.admin-action-chip').forEach((chip) => {
+    const latest = latestByAction[chip.dataset.action];
+    if (!latest) {
+      delete chip.dataset.lastApplied;
+      chip.title = '';
+      return;
+    }
+    chip.dataset.lastApplied = latest.performed_at;
+    const who = latest.admin ? `${latest.admin.first_name} ${latest.admin.last_name}` : 'an admin';
+    chip.title = `Last applied ${new Date(latest.performed_at).toLocaleString('en-US')} by ${who}`;
+  });
+}
+
 function renderRestrictionHistory(rows) {
   const body = $('#customer-restriction-history tbody');
   if (!rows?.length) {
     body.innerHTML = '<tr><td colspan="4" class="statement-table-empty">No restriction history for this customer yet.</td></tr>';
-    return;
+  } else {
+    body.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${new Date(row.performed_at).toLocaleString('en-US')}</td>
+        <td>${row.action.replace(/_/g, ' ')}</td>
+        <td>${row.admin ? `${row.admin.first_name} ${row.admin.last_name}` : '—'}</td>
+        <td>${row.reason || '—'}</td>
+      </tr>
+    `).join('');
   }
-  body.innerHTML = rows.map((row) => `
-    <tr>
-      <td>${new Date(row.performed_at).toLocaleString('en-US')}</td>
-      <td>${row.action.replace(/_/g, ' ')}</td>
-      <td>${row.admin ? `${row.admin.first_name} ${row.admin.last_name}` : '—'}</td>
-      <td>${row.reason || '—'}</td>
-    </tr>
-  `).join('');
+  updateChipHistoryIndicators(rows);
 }
+
 
 function initAccountStatusSave() {
   $('#save-account-status-btn').addEventListener('click', async () => {
@@ -646,6 +685,7 @@ async function loadCustomerFromQueryParam() {
     created_at: profile.created_at,
   });
 }
+
 
 /* -----------------------------------------------------------
    Init
