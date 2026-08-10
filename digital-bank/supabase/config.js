@@ -47,4 +47,5 @@ export const ROUTES = {
   register: 'register.html',
   dashboard: 'dashboard.html',
   home: '../index.html',
+  resetPassword: 'reset-password.html',
 };
