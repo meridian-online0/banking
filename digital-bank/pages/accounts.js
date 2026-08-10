@@ -16,6 +16,34 @@
      5. "Add currency account" modal -> createAccount()
      6. "Account details" modal with copy-to-clipboard
      7. A small toast helper reused by both modals
+
+   CHANGE LOG (this revision)
+   ---------------------------
+   - Account cards always showed a hardcoded "Active" status pill
+     and always rendered a working "Send" link, regardless of the
+     account's real account_status or the customer's real
+     user_permissions row — so a frozen account or a customer with
+     can_transfer = false still saw a normal, clickable Send button
+     on this page. Added getMyPermissions() (new export in
+     database.js, reading user_permissions via its confirmed
+     auth.uid() = user_id SELECT policy) and fetch it once in
+     init(). accountCardHtml() now shows the account's real
+     account_status (matching the 'frozen' check admin-users.js
+     already uses) and disables Send when the account is frozen OR
+     myPermissions.can_transfer is explicitly false.
+   - "Add currency account" (both the header button and the empty
+     add-tile) is now disabled when myPermissions.can_open_account
+     is explicitly false.
+   - myPermissions defaults to null and every check treats
+     undefined/null as "allowed" (=== false, not falsy) — a
+     customer with no user_permissions row yet is not accidentally
+     locked out of anything.
+   - NOTE: this only affects what's shown/clickable on THIS page.
+     Someone navigating straight to transfer.html would still reach
+     the transfer form — that enforcement belongs inside
+     process_transfer() itself (SQL not yet available) plus a
+     matching check in transfer.js (not yet provided). Flagging,
+     not fixing here.
    ============================================================= */
 
 import { requireAuth, signOutUser } from '../supabase/auth.js';
@@ -224,6 +252,18 @@ function accountDetailRows(account) {
   return rows;
 }
 
+/**
+ * account_status pill + Send action now reflect real state instead
+ * of being hardcoded:
+ *   - "frozen" check matches the same account.account_status ===
+ *     'frozen' comparison admin-users.js already uses for its own
+ *     Freeze/Unfreeze button — same field, same value, just read
+ *     here instead of written.
+ *   - Send is disabled if the account is frozen OR
+ *     myPermissions.can_transfer is explicitly false (=== false,
+ *     not falsy — a missing/null permissions row means "allowed",
+ *     not "denied").
+ */
 function accountCardHtml(account) {
   const meta = currencyMeta(account.currency);
   const type = account.account_type || 'personal';
@@ -232,6 +272,10 @@ function accountCardHtml(account) {
     : account.is_primary
       ? 'Personal · Primary'
       : 'Personal';
+
+  const isFrozen = account.account_status === 'frozen';
+  const statusLabel = isFrozen ? 'Frozen' : (account.account_status || 'Active');
+  const canSend = myPermissions?.can_transfer !== false && !isFrozen;
 
   const rows = accountDetailRows(account)
     .map(([label, value]) => `
@@ -254,7 +298,7 @@ function accountCardHtml(account) {
           <strong>${account.currency} account</strong>
           <span>${subtitle}</span>
         </div>
-        <span class="status-pill status-pill--verified">Active</span>
+        <span class="status-pill ${isFrozen ? 'status-pill--danger' : 'status-pill--verified'}">${statusLabel}</span>
       </div>
 
       <div class="account-detail-balance">
@@ -265,7 +309,9 @@ function accountCardHtml(account) {
       <dl class="tx-detail-list">${rows}</dl>
 
       <div class="account-detail-actions">
-        <a href="transfer.html?from=${account.id}" class="btn btn-ghost btn-sm">Send</a>
+        ${canSend
+          ? `<a href="transfer.html?from=${account.id}" class="btn btn-ghost btn-sm">Send</a>`
+          : `<span class="btn btn-ghost btn-sm" aria-disabled="true" style="opacity:.5; pointer-events:none;" title="${isFrozen ? 'This account is frozen.' : 'Transfers are disabled on this account.'}">Send</span>`}
         <button type="button" class="btn btn-ghost btn-sm" data-view-details="${account.id}">Account details</button>
         <a href="transactions.html?account=${account.id}" class="btn btn-ghost btn-sm">Statement</a>
       </div>
@@ -513,11 +559,33 @@ function initAddAccountModal() {
 }
 
 /* -----------------------------------------------------------
+   Permissions — disables "Add currency account" (both the header
+   button and the empty-grid add-tile) when
+   myPermissions.can_open_account is explicitly false. Left alone
+   (not disabled) when myPermissions is null/undefined or the flag
+   is true/missing.
+   ----------------------------------------------------------- */
+function applyAccountOpeningPermission() {
+  if (myPermissions?.can_open_account !== false) return;
+
+  const openBtn = $('#open-add-account');
+  const addTile = $('#add-account-tile');
+  [openBtn, addTile].forEach((el) => {
+    if (!el) return;
+    el.disabled = true;
+    el.setAttribute('aria-disabled', 'true');
+    el.style.opacity = '.5';
+    el.style.pointerEvents = 'none';
+    el.title = 'Opening new accounts is currently disabled on your account.';
+  });
+}
+
+/* -----------------------------------------------------------
    Init
    ----------------------------------------------------------- */
 (async function init() {
   const user = await requireAuth();
-  if (!user) return; // requireAuth() already redirected to login.html
+  if (!user) return; // requireAuth() already redirected to login.html (or blocked a suspended/closed account)
 
   // Reveal content now that a real session is confirmed — see
   // assets/js/auth-guard.js for the fast pre-check that hid it.
@@ -531,6 +599,10 @@ function initAddAccountModal() {
     initMobileNav();
     initLogout();
   });
+
+  const { data: permissions } = await getMyPermissions(user.id);
+  myPermissions = permissions;
+  applyAccountOpeningPermission();
 
   initTabFilter();
   initCopyDelegation();
