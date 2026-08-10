@@ -359,3 +359,32 @@ async function logAuditAction(userId, action) {
   });
   if (error) console.error('[Meridian] Failed to write audit log:', error.message);
 }
+
+
+/**
+ * Only 'suspended' and 'closed' block login outright — these are
+ * the only two of admin_set_account_status()'s allow-listed values
+ * (009_admin_policy_engine.sql) that plausibly mean "this person
+ * should not be using the app at all." 'restricted' is deliberately
+ * NOT blocked here — enforced instead via user_permissions' can_*
+ * flags at the page level. 'Pending'/'rejected' are KYC states, not
+ * lockouts. Flagging: this is a design choice, not confirmed
+ * against a user_profiles CHECK constraint I haven't seen — revisit
+ * if that constraint says otherwise.
+ */
+const LOGIN_BLOCKED_STATUSES = new Set(['suspended', 'closed']);
+
+async function getBlockedStatusMessage(userId) {
+  const { data: profile, error } = await supabase
+    .from('user_profiles')
+    .select('account_status')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error || !profile) return null; // fail open on a lookup error — don't lock someone out over a network blip
+  if (!LOGIN_BLOCKED_STATUSES.has(profile.account_status)) return null;
+
+  return profile.account_status === 'closed'
+    ? 'This account has been closed. Contact support if you believe this is a mistake.'
+    : 'This account has been suspended. Contact support for help.';
+}
