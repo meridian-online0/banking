@@ -410,6 +410,14 @@
   background: var(--paper);
 }
 
+
+/* ADD THE NEW RULE HERE — right after .admin-customer-panel's
+   closing brace, before .admin-customer-summary starts */
+.admin-empty-panel[hidden],
+.admin-customer-panel[hidden] {
+  display: none !important;
+}
+
 .admin-empty-panel .empty-state-icon svg {
   width: 32px;
   height: 32px;
@@ -587,6 +595,24 @@
   background: var(--red-bg);
   border-color: var(--red);
   color: var(--red);
+}
+
+/* Honest "last applied" indicator — these chips have no true
+   on/off state to read back (admin_restriction_action() only
+   writes an audit row), so this marks a chip that has actual
+   history, with the real timestamp in its title tooltip. */
+.admin-action-chip[data-last-applied] {
+  position: relative;
+}
+.admin-action-chip[data-last-applied]::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brass);
 }
 
 /* -----------------------------------------------------------
