@@ -127,7 +127,7 @@ function initResetForm() {
     showAlert(alertBox, 'Your password has been reset. Redirecting to login\u2026', 'success');
     form.reset();
     await supabase.auth.signOut(); // don't leave the recovery session active
-    setTimeout(() => { window.location.href = 'login.html'; }, 1500);
+    setTimeout(() => { window.location.href = ROUTES.login; }, 1500);
   });
 }
 
