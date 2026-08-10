@@ -8,7 +8,7 @@
      4. Dead-end links (forgot password, verification methods)
    ============================================================= */
 
-import { signInUser, redirectIfAuthenticated } from '../supabase/auth.js';
+import { signInUser, redirectIfAuthenticated, requestPasswordReset } from '../supabase/auth.js';
 import { ROUTES } from '../supabase/config.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
@@ -107,10 +107,38 @@ function initDeadEndLinks() {
   const forgotLink = $('.auth-forgot-link');
   const methodButtons = document.querySelectorAll('.auth-method-btn');
 
-  if (forgotLink) {
-    forgotLink.addEventListener('click', (event) => {
+
+   if (forgotLink) {
+    forgotLink.addEventListener('click', async (event) => {
       event.preventDefault();
-      showAlert(alertBox, "Password reset isn't available yet. Contact support for help accessing your account.", 'error');
+
+      const emailField = $('#login-email');
+      const email = emailField?.value.trim();
+
+      if (!email) {
+        showAlert(alertBox, 'Enter your email address above first, then click "Forgot password?" again.', 'error');
+        emailField?.focus();
+        return;
+      }
+      if (!emailField.checkValidity()) {
+        showAlert(alertBox, 'That doesn\u2019t look like a valid email address.', 'error');
+        emailField.focus();
+        return;
+      }
+
+      forgotLink.classList.add('is-loading');
+      const { error } = await requestPasswordReset(email);
+      forgotLink.classList.remove('is-loading');
+
+      // Deliberately the same message whether or not the email
+      // exists in the system — confirming/denying an email's
+      // existence here would let someone enumerate registered
+      // accounts by trying addresses one at a time.
+      showAlert(
+        alertBox,
+        `If an account exists for ${email}, we've sent a link to reset your password.`,
+        'success'
+      );
     });
   }
 
