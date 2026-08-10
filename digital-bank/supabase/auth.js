@@ -19,6 +19,34 @@
    that were written against that name, rather than duplicating the
    logic. If you find a page with its own inline version of this
    check, replace it with an import from here (or from page-guard.js).
+
+   CHANGE LOG (this revision)
+   ---------------------------
+   - requireAuth() previously only checked "is there a session" —
+     it never looked at user_profiles.account_status, so a
+     suspended or closed customer could still log in and use the
+     app normally. Added getBlockedStatusMessage() + the
+     LOGIN_BLOCKED_STATUSES set and wired it into requireAuth():
+     a session belonging to a 'suspended' or 'closed' account is
+     now signed out immediately and redirected to login.html with
+     a ?blocked= message, instead of being let through.
+       - Only 'suspended' and 'closed' block login outright — these
+         are two of the values admin_set_account_status() actually
+         allow-lists (009_admin_policy_engine.sql). 'restricted' is
+         deliberately NOT blocked here — that's meant to be enforced
+         at the page/feature level via user_permissions' can_* flags
+         instead of a full lockout. 'Pending' / 'rejected' are KYC
+         states, not lockouts, so they're left alone too.
+       - This is a design choice, not something confirmed against a
+         user_profiles CHECK constraint (that migration hasn't been
+         provided yet) — revisit LOGIN_BLOCKED_STATUSES if that
+         constraint turns out to define a different set of values.
+       - On a lookup error (network blip, etc.) this fails OPEN —
+         it does not block login — so a transient DB error can't
+         accidentally lock a legitimate customer out.
+       - login.html / login.js are NOT updated here (not provided)
+         — they need to read ?blocked= from the URL and display it,
+         otherwise this redirect happens silently.
    ============================================================= */
 
 import { supabase, ROUTES } from './config.js';
@@ -95,6 +123,35 @@ function revealPage() {
 
   const loader = document.querySelector('.auth-loader');
   if (loader) loader.setAttribute('hidden', '');
+}
+
+/**
+ * Statuses that mean "do not let this person into the app at all" —
+ * see the CHANGE LOG note at the top of this file for why only
+ * these two are included here, and not 'restricted'.
+ */
+const LOGIN_BLOCKED_STATUSES = new Set(['suspended', 'closed']);
+
+/**
+ * Looks up the given user's account_status and returns a friendly
+ * message if it's one of LOGIN_BLOCKED_STATUSES, or null if the
+ * user is fine to proceed (including on a lookup error — this
+ * fails OPEN, it never blocks login just because the status check
+ * itself failed).
+ */
+async function getBlockedStatusMessage(userId) {
+  const { data: profile, error } = await supabase
+    .from('user_profiles')
+    .select('account_status')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error || !profile) return null;
+  if (!LOGIN_BLOCKED_STATUSES.has(profile.account_status)) return null;
+
+  return profile.account_status === 'closed'
+    ? 'This account has been closed. Contact support if you believe this is a mistake.'
+    : 'This account has been suspended. Contact support for help.';
 }
 
 /* -----------------------------------------------------------
@@ -233,6 +290,11 @@ export function onAuthStateChange(callback) {
  * Redirects to login.html if there's no active session, preserving
  * the current path as ?next= so login.html can send the visitor
  * back after signing in.
+ *
+ * ALSO checks the user's account_status once a session is confirmed
+ * (see getBlockedStatusMessage() above) — a 'suspended' or 'closed'
+ * account is signed out on the spot and sent to login.html with a
+ * ?blocked= message instead of being allowed to use the app.
  */
 export async function requireAuth() {
   const { data: session } = await getCurrentSession();
@@ -247,6 +309,15 @@ export async function requireAuth() {
     window.location.href = `${ROUTES.login}?next=${next}`;
     return null;
   }
+
+  const blockedMessage = await getBlockedStatusMessage(user.id);
+  if (blockedMessage) {
+    await closeOpenLoginSession(user.id);
+    await supabase.auth.signOut();
+    window.location.href = `${ROUTES.login}?blocked=${encodeURIComponent(blockedMessage)}`;
+    return null;
+  }
+
   revealPage();
   return user;
 }
@@ -358,33 +429,4 @@ async function logAuditAction(userId, action) {
     device: ctx.device,
   });
   if (error) console.error('[Meridian] Failed to write audit log:', error.message);
-}
-
-
-/**
- * Only 'suspended' and 'closed' block login outright — these are
- * the only two of admin_set_account_status()'s allow-listed values
- * (009_admin_policy_engine.sql) that plausibly mean "this person
- * should not be using the app at all." 'restricted' is deliberately
- * NOT blocked here — enforced instead via user_permissions' can_*
- * flags at the page level. 'Pending'/'rejected' are KYC states, not
- * lockouts. Flagging: this is a design choice, not confirmed
- * against a user_profiles CHECK constraint I haven't seen — revisit
- * if that constraint says otherwise.
- */
-const LOGIN_BLOCKED_STATUSES = new Set(['suspended', 'closed']);
-
-async function getBlockedStatusMessage(userId) {
-  const { data: profile, error } = await supabase
-    .from('user_profiles')
-    .select('account_status')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (error || !profile) return null; // fail open on a lookup error — don't lock someone out over a network blip
-  if (!LOGIN_BLOCKED_STATUSES.has(profile.account_status)) return null;
-
-  return profile.account_status === 'closed'
-    ? 'This account has been closed. Contact support if you believe this is a mistake.'
-    : 'This account has been suspended. Contact support for help.';
 }
