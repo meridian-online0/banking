@@ -24,6 +24,7 @@ import {
   getUnreadNotificationCount,
   getMyAccounts,
   createAccount,
+  getMyPermissions,
 } from '../supabase/database.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
@@ -53,6 +54,7 @@ let allAccounts = [];
 let activeFilter = 'all';
 let selectedNewCurrency = null;
 let selectedNewType = 'personal';
+let myPermissions = null;
 
 /* -----------------------------------------------------------
    Toasts
