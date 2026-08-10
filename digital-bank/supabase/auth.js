@@ -339,7 +339,7 @@ export async function redirectIfAuthenticated() {
 
 export async function requestPasswordReset(email) {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/pages/login.html`,
+    redirectTo: `${window.location.origin}/pages/reset-password.html`,
   });
   return { data: !error, error: error ? friendlyAuthError(error) : null };
 }
