@@ -22,6 +22,36 @@
 
    CHANGE LOG (this revision)
    ---------------------------
+   - Force logout / "Clear device list" (admin-policy.html) previously
+     had no real client-side enforcement: user_profiles.force_logout_at
+     was being set server-side, but nothing checked it, so an admin
+     force-logging-out a customer had no visible effect until their
+     token happened to expire naturally.
+   - A first attempt at enforcing this compared
+     user_profiles.force_logout_at against the most recent
+     login_sessions.login_time row — this caused a redirect LOOP:
+     those are two independently-written timestamps from two
+     separate requests with no guaranteed ordering relative to each
+     other, so a freshly logged-in user could still be judged
+     "force logged out" and get bounced right back to login.
+   - Fixed by comparing force_logout_at against the CURRENT SESSION
+     TOKEN's own `iat` (issued-at) claim instead — decoded client-side
+     via decodeJwtPayload() (unverified, fine for this UX check only;
+     every real write is still gated server-side by is_admin()/RLS).
+     A token's iat is fixed the instant that exact token was minted
+     and never changes, so there's nothing left to race.
+   - signInUser() now also clears force_logout_at back to NULL on a
+     successful password sign-in — a fresh login is itself proof the
+     force-logout has been "served", so the flag resets automatically
+     without needing an admin to undo it manually.
+   - requestPasswordReset() / signUpUser()'s emailRedirectTo previously
+     used window.location.origin alone, which only returns
+     protocol+domain and silently drops any subpath the site is
+     deployed under (this project lives under /banking/digital-bank/,
+     not the domain root) — every emailed link 404'd. Added
+     getSiteRoot(), which derives the full deployed root from the
+     current page's own path (everything before "/pages/"), and both
+     redirect URLs now use it instead of window.location.origin alone.
    - requireAuth() previously only checked "is there a session" —
      it never looked at user_profiles.account_status, so a
      suspended or closed customer could still log in and use the
@@ -44,9 +74,6 @@
        - On a lookup error (network blip, etc.) this fails OPEN —
          it does not block login — so a transient DB error can't
          accidentally lock a legitimate customer out.
-       - login.html / login.js are NOT updated here (not provided)
-         — they need to read ?blocked= from the URL and display it,
-         otherwise this redirect happens silently.
    ============================================================= */
 
 import { supabase, ROUTES } from './config.js';
@@ -98,19 +125,6 @@ function friendlyAuthError(error) {
   return message;
 }
 
-
-
-
-
-
-function getSiteRoot() {
-  const path = window.location.pathname; // e.g. /banking/digital-bank/pages/login.html
-  const marker = '/pages/';
-  const idx = path.indexOf(marker);
-  const basePath = idx !== -1 ? path.slice(0, idx) : '';
-  return `${window.location.origin}${basePath}`;
-}
-
 /**
  * Reveals a page that was hidden while auth was being confirmed —
  * see assets/js/auth-guard.js for the fast pre-check that hides it
@@ -136,6 +150,42 @@ function revealPage() {
 
   const loader = document.querySelector('.auth-loader');
   if (loader) loader.setAttribute('hidden', '');
+}
+
+/**
+ * window.location.origin only ever gives protocol + domain
+ * (e.g. "https://meridian-online0.github.io") — it drops any
+ * subpath the site is actually deployed under (this project is
+ * served from /banking/digital-bank/, not the domain root). Every
+ * redirectTo/emailRedirectTo below needs the FULL site root, not
+ * just the origin, or Supabase's emailed links 404.
+ *
+ * Derived from the current page's own path rather than hardcoded,
+ * so it keeps working if the deployed subpath ever changes: every
+ * page in this app lives under /pages/, so whatever comes before
+ * that segment in the current URL IS the site root.
+ */
+function getSiteRoot() {
+  const path = window.location.pathname; // e.g. /banking/digital-bank/pages/login.html
+  const marker = '/pages/';
+  const idx = path.indexOf(marker);
+  const basePath = idx !== -1 ? path.slice(0, idx) : '';
+  return `${window.location.origin}${basePath}`;
+}
+
+/**
+ * Decodes a JWT's payload without verifying the signature — safe
+ * here because we're only reading our OWN token's iat claim for a
+ * client-side UX check, not trusting it for anything security-
+ * critical (RLS + is_admin() still gate every real write server-side).
+ */
+function decodeJwtPayload(token) {
+  try {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(base64));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -167,36 +217,32 @@ async function getBlockedStatusMessage(userId) {
     : 'This account has been suspended. Contact support for help.';
 }
 
-
 /**
- * Checks whether an admin has force-logged-out this user more
- * recently than their current session began. Compares
- * user_profiles.force_logout_at against the most recent
- * login_sessions row (already written by logLoginSession() on
- * every sign-in) rather than decoding the JWT's issued-at claim —
- * reuses data this file already maintains.
+ * Checks whether an admin force-logged this user out more recently
+ * than the CURRENT SESSION TOKEN was issued — using the JWT's own
+ * `iat` claim, not a second table's timestamp. This is what avoids
+ * a redirect loop: login_sessions.login_time and force_logout_at
+ * are two independently-written rows with no guaranteed ordering
+ * relative to each other. A token's iat is fixed at the moment
+ * that exact token was minted and never changes, so there's
+ * nothing left to race.
  */
-// async function isForceLoggedOut(userId) {
-//   const { data: profile, error: profileError } = await supabase
-//     .from('user_profiles')
-//     .select('force_logout_at')
-//     .eq('id', userId)
-//     .maybeSingle();
+async function isForceLoggedOut(userId, session) {
+  const payload = session?.access_token ? decodeJwtPayload(session.access_token) : null;
+  if (!payload?.iat) return false;
 
-//   if (profileError || !profile?.force_logout_at) return false;
+  const { data: profile, error } = await supabase
+    .from('user_profiles')
+    .select('force_logout_at')
+    .eq('id', userId)
+    .maybeSingle();
 
-//   const { data: latestSession, error: sessionError } = await supabase
-//     .from('login_sessions')
-//     .select('login_time')
-//     .eq('user_id', userId)
-//     .order('login_time', { ascending: false })
-//     .limit(1)
-//     .maybeSingle();
+  if (error || !profile?.force_logout_at) return false;
 
-//   if (sessionError || !latestSession) return false;
+  const tokenIssuedAt = payload.iat * 1000; // JWT iat is seconds, not ms
+  return tokenIssuedAt < new Date(profile.force_logout_at).getTime();
+}
 
-//   return new Date(latestSession.login_time) < new Date(profile.force_logout_at);
-// }
 /* -----------------------------------------------------------
    Registration
    ----------------------------------------------------------- */
@@ -216,7 +262,7 @@ export async function signUpUser({ firstName, lastName, email, password, phone }
     password,
     options: {
       data: { first_name: firstName, last_name: lastName },
-      emailRedirectTo: `${window.location.origin}/pages/login.html`,
+      emailRedirectTo: `${getSiteRoot()}/pages/${ROUTES.login}`,
     },
   });
 
@@ -270,11 +316,10 @@ export async function signInUser(email, password) {
   if (data.user) {
     await logLoginSession(data.user.id);
     await logAuditAction(data.user.id, 'User logged in');
-    // A successful password sign-in is itself proof the force-logout
-    // has been served — clear it here so requireAuth() never has to
-    // compare two independently-generated timestamps (login_time vs
-    // force_logout_at) across separate requests, which is what was
-    // causing the redirect loop.
+    // A successful password sign-in is itself proof any earlier
+    // force-logout has been "served" — clear it here so the next
+    // requireAuth() check on this fresh session never has a reason
+    // to bounce the user straight back to login.
     await supabase.from('user_profiles').update({ force_logout_at: null }).eq('id', data.user.id);
   }
 
@@ -344,6 +389,12 @@ export function onAuthStateChange(callback) {
  * (see getBlockedStatusMessage() above) — a 'suspended' or 'closed'
  * account is signed out on the spot and sent to login.html with a
  * ?blocked= message instead of being allowed to use the app.
+ *
+ * ALSO checks whether an admin has force-logged this user out more
+ * recently than the current session token was issued (see
+ * isForceLoggedOut() above) — if so, the session is closed and the
+ * visitor is sent to login.html with a ?blocked= message, same as
+ * the account_status case.
  */
 export async function requireAuth() {
   const { data: session } = await getCurrentSession();
@@ -359,11 +410,19 @@ export async function requireAuth() {
     return null;
   }
 
-const blockedMessage = await getBlockedStatusMessage(user.id);
+  const blockedMessage = await getBlockedStatusMessage(user.id);
   if (blockedMessage) {
     await closeOpenLoginSession(user.id);
     await supabase.auth.signOut();
     window.location.href = `${ROUTES.login}?blocked=${encodeURIComponent(blockedMessage)}`;
+    return null;
+  }
+
+  const forcedOut = await isForceLoggedOut(user.id, session);
+  if (forcedOut) {
+    await closeOpenLoginSession(user.id);
+    await supabase.auth.signOut();
+    window.location.href = `${ROUTES.login}?blocked=${encodeURIComponent('You have been signed out by an administrator. Please log in again.')}`;
     return null;
   }
 
