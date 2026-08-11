@@ -136,7 +136,7 @@ import {
   searchCustomers, getCustomerPermissions, saveCustomerPermissions,
   getCustomerLimitOverrides, saveCustomerLimitOverrides,
   updateAccountStatus, performRestrictionAction, getCustomerRestrictionHistory,
-  getUserDetail,
+  getUserDetail, freezeCustomerAccounts, unfreezeCustomerAccounts,
 } from '../../supabase/admin.js';
 import { debounce, getInitials } from '../../assets/js/utils.js';
 
@@ -168,6 +168,10 @@ const PERMISSION_KEY_MAP = {
   statement_downloads: 'can_download_statement',
   profile_updates: 'can_update_profile',
   beneficiary_creation: 'can_add_beneficiary',
+  card_use: 'can_use_card',
+  withdrawals: 'can_withdraw',
+  deposits: 'can_deposit',
+  notifications: 'can_receive_notifications',
 };
 
 /**
@@ -625,6 +629,23 @@ function initRestrictionActions() {
   $('.modal-cancel', modal).addEventListener('click', closeModal);
   modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
+// Chips whose action IS a real account_status change — routed
+  // through updateAccountStatus() instead of the generic
+  // performRestrictionAction() RPC.
+  const STATUS_BACKED_ACTIONS = {
+    close_account: 'Closed',
+    suspend_customer: 'Suspended',
+  };
+
+  // Chips that act on ALL of a customer's accounts at once —
+  // routed through the dedicated customer-level RPCs instead of
+  // the generic one, since freeze/unfreeze need an account loop
+  // performRestrictionAction() doesn't do.
+  const ACCOUNT_FREEZE_ACTIONS = {
+    freeze_customer: freezeCustomerAccounts,
+    unfreeze_customer: unfreezeCustomerAccounts,
+  };
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!pendingRestriction || !selectedCustomer) return;
@@ -633,18 +654,34 @@ function initRestrictionActions() {
     const submitBtn = $('#restriction-confirm-submit');
     setButtonLoading(submitBtn, true);
 
-    const { error } = await performRestrictionAction(pendingRestriction.action, selectedCustomer.id, reason);
+    const customerId = selectedCustomer.id;
+    const { action } = pendingRestriction;
+
+    let result;
+    if (STATUS_BACKED_ACTIONS[action]) {
+      result = await updateAccountStatus(customerId, STATUS_BACKED_ACTIONS[action], reason);
+    } else if (ACCOUNT_FREEZE_ACTIONS[action]) {
+      result = await ACCOUNT_FREEZE_ACTIONS[action](customerId, reason);
+    } else {
+      result = await performRestrictionAction(action, customerId, reason);
+    }
 
     setButtonLoading(submitBtn, false);
 
-    if (error) { errorEl.textContent = error; return; }
+    if (result.error) { errorEl.textContent = result.error; return; }
 
     showToast(`${pendingRestriction.label} applied.`);
     closeModal();
 
-    const customerId = selectedCustomer.id;
-    const { data: history } = await getCustomerRestrictionHistory(customerId);
+    // Several actions now change user_permissions server-side —
+    // re-fetch and reapply so the toggle grid reflects it without
+    // needing a manual re-search.
+    const [{ data: history }, { data: permissions }] = await Promise.all([
+      getCustomerRestrictionHistory(customerId),
+      getCustomerPermissions(customerId),
+    ]);
     renderRestrictionHistory(history);
+    applyPermissionsToToggles(permissions);
     await syncCustomerStatus(customerId);
   });
 }
