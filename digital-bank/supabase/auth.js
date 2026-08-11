@@ -98,6 +98,19 @@ function friendlyAuthError(error) {
   return message;
 }
 
+
+
+
+
+
+function getSiteRoot() {
+  const path = window.location.pathname; // e.g. /banking/digital-bank/pages/login.html
+  const marker = '/pages/';
+  const idx = path.indexOf(marker);
+  const basePath = idx !== -1 ? path.slice(0, idx) : '';
+  return `${window.location.origin}${basePath}`;
+}
+
 /**
  * Reveals a page that was hidden while auth was being confirmed —
  * see assets/js/auth-guard.js for the fast pre-check that hides it
@@ -339,7 +352,7 @@ export async function redirectIfAuthenticated() {
 
 export async function requestPasswordReset(email) {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/pages/${ROUTES.resetPassword}`,
+    redirectTo: `${getSiteRoot()}/pages/${ROUTES.resetPassword}`,
   });
   return { data: !error, error: error ? friendlyAuthError(error) : null };
 }
