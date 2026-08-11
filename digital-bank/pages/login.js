@@ -102,6 +102,15 @@ function initLoginForm() {
   });
 }
 
+
+function initBlockedMessage() {
+  const params = new URLSearchParams(window.location.search);
+  const blocked = params.get('blocked');
+  if (!blocked) return;
+  showAlert($('.auth-form-alert'), blocked, 'error');
+}
+
+
 function initDeadEndLinks() {
   const alertBox = $('.auth-form-alert');
   const forgotLink = $('.auth-forgot-link');
@@ -155,3 +164,4 @@ redirectIfAuthenticated();
 initPasswordToggle();
 initLoginForm();
 initDeadEndLinks();
+initBlockedMessage();
