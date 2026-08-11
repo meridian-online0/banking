@@ -484,6 +484,14 @@ export async function unfreezeAccount(accountId, reason) {
   return wrap(supabase.rpc('admin_unfreeze_account', { p_account_id: accountId, p_reason: reason }));
 }
 
+
+export async function freezeCustomerAccounts(userId, reason) {
+  return wrap(supabase.rpc('admin_freeze_customer_accounts', { p_user_id: userId, p_reason: reason }));
+}
+
+export async function unfreezeCustomerAccounts(userId, reason) {
+  return wrap(supabase.rpc('admin_unfreeze_customer_accounts', { p_user_id: userId, p_reason: reason }));
+}
 /**
  * Customer-level status (active/restricted/suspended/closed) —
  * distinct from freezeAccount()/unfreezeAccount() above, which
