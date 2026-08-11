@@ -176,27 +176,27 @@ async function getBlockedStatusMessage(userId) {
  * every sign-in) rather than decoding the JWT's issued-at claim —
  * reuses data this file already maintains.
  */
-async function isForceLoggedOut(userId) {
-  const { data: profile, error: profileError } = await supabase
-    .from('user_profiles')
-    .select('force_logout_at')
-    .eq('id', userId)
-    .maybeSingle();
+// async function isForceLoggedOut(userId) {
+//   const { data: profile, error: profileError } = await supabase
+//     .from('user_profiles')
+//     .select('force_logout_at')
+//     .eq('id', userId)
+//     .maybeSingle();
 
-  if (profileError || !profile?.force_logout_at) return false;
+//   if (profileError || !profile?.force_logout_at) return false;
 
-  const { data: latestSession, error: sessionError } = await supabase
-    .from('login_sessions')
-    .select('login_time')
-    .eq('user_id', userId)
-    .order('login_time', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+//   const { data: latestSession, error: sessionError } = await supabase
+//     .from('login_sessions')
+//     .select('login_time')
+//     .eq('user_id', userId)
+//     .order('login_time', { ascending: false })
+//     .limit(1)
+//     .maybeSingle();
 
-  if (sessionError || !latestSession) return false;
+//   if (sessionError || !latestSession) return false;
 
-  return new Date(latestSession.login_time) < new Date(profile.force_logout_at);
-}
+//   return new Date(latestSession.login_time) < new Date(profile.force_logout_at);
+// }
 /* -----------------------------------------------------------
    Registration
    ----------------------------------------------------------- */
@@ -270,6 +270,12 @@ export async function signInUser(email, password) {
   if (data.user) {
     await logLoginSession(data.user.id);
     await logAuditAction(data.user.id, 'User logged in');
+    // A successful password sign-in is itself proof the force-logout
+    // has been served — clear it here so requireAuth() never has to
+    // compare two independently-generated timestamps (login_time vs
+    // force_logout_at) across separate requests, which is what was
+    // causing the redirect loop.
+    await supabase.from('user_profiles').update({ force_logout_at: null }).eq('id', data.user.id);
   }
 
   return { data, error: null };
@@ -358,14 +364,6 @@ const blockedMessage = await getBlockedStatusMessage(user.id);
     await closeOpenLoginSession(user.id);
     await supabase.auth.signOut();
     window.location.href = `${ROUTES.login}?blocked=${encodeURIComponent(blockedMessage)}`;
-    return null;
-  }
-
-  const forcedOut = await isForceLoggedOut(user.id);
-  if (forcedOut) {
-    await closeOpenLoginSession(user.id);
-    await supabase.auth.signOut();
-    window.location.href = `${ROUTES.login}?blocked=${encodeURIComponent('You have been signed out by an administrator. Please log in again.')}`;
     return null;
   }
 
