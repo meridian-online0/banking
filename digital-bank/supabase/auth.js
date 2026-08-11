@@ -167,6 +167,36 @@ async function getBlockedStatusMessage(userId) {
     : 'This account has been suspended. Contact support for help.';
 }
 
+
+/**
+ * Checks whether an admin has force-logged-out this user more
+ * recently than their current session began. Compares
+ * user_profiles.force_logout_at against the most recent
+ * login_sessions row (already written by logLoginSession() on
+ * every sign-in) rather than decoding the JWT's issued-at claim —
+ * reuses data this file already maintains.
+ */
+async function isForceLoggedOut(userId) {
+  const { data: profile, error: profileError } = await supabase
+    .from('user_profiles')
+    .select('force_logout_at')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileError || !profile?.force_logout_at) return false;
+
+  const { data: latestSession, error: sessionError } = await supabase
+    .from('login_sessions')
+    .select('login_time')
+    .eq('user_id', userId)
+    .order('login_time', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (sessionError || !latestSession) return false;
+
+  return new Date(latestSession.login_time) < new Date(profile.force_logout_at);
+}
 /* -----------------------------------------------------------
    Registration
    ----------------------------------------------------------- */
@@ -323,11 +353,19 @@ export async function requireAuth() {
     return null;
   }
 
-  const blockedMessage = await getBlockedStatusMessage(user.id);
+const blockedMessage = await getBlockedStatusMessage(user.id);
   if (blockedMessage) {
     await closeOpenLoginSession(user.id);
     await supabase.auth.signOut();
     window.location.href = `${ROUTES.login}?blocked=${encodeURIComponent(blockedMessage)}`;
+    return null;
+  }
+
+  const forcedOut = await isForceLoggedOut(user.id);
+  if (forcedOut) {
+    await closeOpenLoginSession(user.id);
+    await supabase.auth.signOut();
+    window.location.href = `${ROUTES.login}?blocked=${encodeURIComponent('You have been signed out by an administrator. Please log in again.')}`;
     return null;
   }
 
