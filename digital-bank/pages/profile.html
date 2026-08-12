@@ -55,39 +55,12 @@
       <!-- =========================================================
            SIDEBAR NAVIGATION
 
-           NEW — "Account & Security" group added below Notifications
-           per the Profile Settings & Account Management spec: two
-           new tabs, Login Settings and Account Limits. These follow
-           the exact same data-tab / data-panel / #hash contract
+           NEW — "Account & Security" group added below Notifications:
+           two new tabs, Login Settings and Account Limits. These
+           follow the exact same data-tab / data-panel / #hash contract
            initSectionNav() in profile.js already implements for the
            existing tabs — no changes to that function are needed for
            the tabs themselves to switch correctly.
-
-           .profile-nav-group-label is a new, not-yet-styled class —
-           it currently renders as plain inline text (inherits
-           .profile-nav's font). Needs a small addition to
-           profile.css (uppercase, smaller, muted, padded) before
-           this looks intentional rather than like an unstyled bug.
-           Flagging here rather than guessing at spacing tokens.
-
-           STILL TO COME (not in this pass — markup only):
-             - profile.js: wire up everything below with IDs ending
-               in -btn/-form/-toggle/-modal (session preference save,
-               Face ID enable/disable, linked-ID re-auth + reveal,
-               document upload, tier/account-number population).
-             - profile.css: tier badge colors per data-tier, the
-               linked-ID auth modal (currently borrows nothing —
-               no modal styles exist anywhere in profile.css today),
-               upload dropzone, document status pills, nav group
-               label.
-             - SQL: tier column + linked ID document tables/policies,
-               a WebAuthn/biometric credentials table if Face ID is
-               implemented as real device biometrics rather than a
-               stored preference flag, and a login_session_preference
-               column (or table) on user_profiles for the "Keep me
-               logged in" radio group, enforced server-side per the
-               spec's security requirements — this UI alone is not
-               a security boundary.
            ========================================================= -->
       <nav class="profile-nav" aria-label="Profile sections">
         <a href="#overview" class="profile-nav-link is-active" data-tab="overview">
@@ -396,8 +369,10 @@
 
         <!-- =========================================================
              NEW — LOGIN SETTINGS  (Account & Security > Login Settings)
-             Markup only in this pass. Every input/button below has an
-             id profile.js can bind to; nothing is wired up yet.
+             1. Change password  2. Forgot password
+             3. Auto logout settings (password-free / 60-min / always)
+             4. Login with Face ID
+             Every input/button below has an id profile.js binds to.
              ========================================================= -->
         <section class="profile-panel" id="login-settings" data-panel="login-settings">
           <div class="profile-panel-head">
@@ -405,12 +380,7 @@
             <p>Control your password, recovery options, and how long you stay signed in.</p>
           </div>
 
-          <!-- ---- Change password (Login Settings' own copy — distinct
-               IDs from the Security tab's password form above, so both
-               can exist in the DOM without collisions. Long-term this
-               probably replaces the Security tab's copy rather than
-               duplicating it; leaving that consolidation decision for
-               the next pass rather than guessing at it here.) ---- -->
+          <!-- ---- 1. Change password ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
               <h3>Change password</h3>
@@ -437,8 +407,8 @@
                   <input type="password" id="login-new-password-confirm" name="new_password_confirm" autocomplete="new-password">
                 </div>
               </div>
-              <!-- Password requirements — spec asks these be visible before
-                   submission, not just implied by minlength. -->
+              <!-- Password requirements — shown before submission, plus a
+                   strength meter profile.js injects next to the new-password field. -->
               <ul class="field-hint" id="login-password-requirements">
                 <li>At least 10 characters</li>
                 <li>A mix of upper and lower case letters</li>
@@ -451,7 +421,7 @@
             </form>
           </div>
 
-          <!-- ---- Forgot password ---- -->
+          <!-- ---- 2. Forgot password ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
               <h3>Forgot password</h3>
@@ -463,10 +433,10 @@
             <p class="field-hint" id="login-forgot-password-status" aria-live="polite"></p>
           </div>
 
-          <!-- ---- Login session settings (Auto logout / password-free login) ---- -->
+          <!-- ---- 3. Auto logout settings ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
-              <h3>Login session settings</h3>
+              <h3>Auto logout settings</h3>
             </div>
             <p class="profile-card-desc">Choose how long you stay signed in before we ask for your password again.</p>
 
@@ -501,7 +471,7 @@
             </form>
           </div>
 
-          <!-- ---- Login with Face ID ---- -->
+          <!-- ---- 4. Login with Face ID ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
               <h3>Login with Face ID</h3>
@@ -517,9 +487,10 @@
 
         <!-- =========================================================
              NEW — ACCOUNT LIMITS  (Account & Security > Account Limits)
-             Markup only in this pass. Values shown are placeholders —
-             profile.js needs a getAccountTierInfo()-style call (not
-             yet written) to populate account number, name, and tier.
+             1. Account info + tier badge
+             2. Linked ID (re-auth → 3 detail boxes)
+             3. Accepted documents (reference list)
+             4. Upload documents
              ========================================================= -->
         <section class="profile-panel" id="account-limits" data-panel="account-limits">
           <div class="profile-panel-head">
@@ -527,7 +498,7 @@
             <p>Your account tier, verification status, and linked identification.</p>
           </div>
 
-          <!-- ---- Account information + tier badge ---- -->
+          <!-- ---- 1. Account information + tier badge ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
               <h3>Account information</h3>
@@ -548,7 +519,7 @@
             </dl>
           </div>
 
-          <!-- ---- Linked ID ---- -->
+          <!-- ---- 2. Linked ID ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
               <h3>Linked ID</h3>
@@ -618,7 +589,7 @@
             </div>
           </div>
 
-          <!-- ---- Accepted identification documents (static reference) ---- -->
+          <!-- ---- 3. Accepted identification documents (static reference) ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
               <h3>Accepted documents</h3>
@@ -648,7 +619,7 @@
             </div>
           </div>
 
-          <!-- ---- Upload documents ---- -->
+          <!-- ---- 4. Upload documents ---- -->
           <div class="profile-card">
             <div class="profile-card-head">
               <h3>Upload documents</h3>
@@ -739,10 +710,10 @@
 <!-- =========================================================
      NEW — Linked ID re-authentication modal
      Shared, single instance — view-linked-id-btn opens it;
-     linked-id-verify-form posts the password to (not yet
-     written) a verifyCurrentPassword()-backed handler, same
-     pattern transfer.js's step-4 confirm-send password check
-     already uses. On success: hide this modal, un-hide
+     linked-id-verify-form posts the password to a
+     verifyCurrentPassword()-backed handler, same pattern
+     transfer.js's step-4 confirm-send password check already
+     uses. On success: hide this modal, un-hide
      #linked-id-details, and populate the three cards.
      ========================================================= -->
 <div class="modal-overlay" id="linked-id-auth-modal" hidden>
