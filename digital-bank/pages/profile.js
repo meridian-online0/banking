@@ -1193,7 +1193,7 @@ function buildRejectedTierBlock(tier, meta, doc, tier1UsedType) {
         <h4>${meta.title}</h4>
         <p>${escapeHtml(docTypeLabel(meta.category, doc.document_type))}</p>
       </div>
-      <span class="status-pill status-pill--pending">${label}</span>
+      <span class="status-pill status-pill--rejected">${label}</span>
     </div>
     <p class="profile-card-desc">${escapeHtml(doc.rejection_reason) || 'This submission needs another look — please resubmit.'}</p>
   `;
