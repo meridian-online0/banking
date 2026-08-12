@@ -31,6 +31,22 @@
    NOTE: the Personal info form is view-only by design — every
    field is disabled in the markup and there is no save handler
    for it here.
+
+   CHANGE LOG (this revision)
+   ---------------------------
+   revealLinkedIds() now explicitly filters to documents where
+   status === 'verified' AND slot is set, rather than trusting
+   slot alone. database.js's getMyIdentityDocuments() returns EVERY
+   submission the user has ever made — pending and rejected
+   included — by design (its own header comment: "Every document
+   ... has ever submitted, newest first"), so a pending or rejected
+   upload must never render inside a Linked ID 1/2/3 card. The
+   database schema's identity_documents_slot_requires_verified
+   constraint means slot alone would probably be safe today, but
+   checking status explicitly here doesn't depend on that constraint
+   never changing, and it's the same "only successful, with details"
+   rule the accompanying migration patch (017) exists to make
+   meaningful in the first place.
    ============================================================= */
 
 import {
@@ -567,10 +583,6 @@ function initPasswordForm(formSelector, { requirementsListSelector } = {}) {
 
   const requirementsList = requirementsListSelector ? $(requirementsListSelector) : null;
 
-  // NOTE: toggling .is-met here needs a small profile.css addition —
-  // e.g. `#login-password-requirements li.is-met { color: var(--green); }`
-  // — it isn't styled yet, same flag pattern this project already uses
-  // for .profile-nav-group-label before its own CSS landed.
   function updateRequirements(password) {
     if (!requirementsList) return;
     const checks = [
@@ -1014,6 +1026,15 @@ function renderLinkedIdCard(slot, doc) {
   }
 }
 
+/**
+ * getMyIdentityDocuments() returns EVERY submission the user has
+ * ever made, any status — that's the right shape for a future
+ * "submission history" view, but wrong for the Linked ID cards,
+ * which must only ever show what an admin has actually verified
+ * AND assigned a slot to. That filter lives here, explicitly, so
+ * a 'pending' or 'rejected' document can never render as if it
+ * were confirmed.
+ */
 async function revealLinkedIds() {
   const details = $('#linked-id-details');
   const { data: docs, error } = await getMyIdentityDocuments(currentUser.id);
@@ -1021,8 +1042,12 @@ async function revealLinkedIds() {
     showToast(error, 'error');
     return;
   }
+
   const bySlot = { 1: null, 2: null, 3: null };
-  (docs || []).forEach((doc) => { if (doc.slot) bySlot[doc.slot] = doc; });
+  (docs || []).forEach((doc) => {
+    if (doc.status === 'verified' && doc.slot) bySlot[doc.slot] = doc;
+  });
+
   [1, 2, 3].forEach((slot) => renderLinkedIdCard(slot, bySlot[slot]));
   if (details) details.hidden = false;
 }
