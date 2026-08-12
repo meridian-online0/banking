@@ -22,11 +22,10 @@
      11. Notification preference switches
      12. Danger zone actions (data export / close account) — stubs
      13. Toast helper for save feedback
-     14. NEW — Login settings: forgot password, login session
-         preference, Face ID / device biometrics
-     15. NEW — Account limits: tier badge + account info, Linked ID
-         re-auth + reveal, accepted documents (static), document
-         upload
+     14. Login settings: forgot password, login session preference,
+         Face ID / device biometrics
+     15. Account limits: tier badge + account info, and the
+         sequential identity-verification stepper (Tier 1 → 2 → 3)
 
    NOTE: the Personal info form is view-only by design — every
    field is disabled in the markup and there is no save handler
@@ -34,19 +33,31 @@
 
    CHANGE LOG (this revision)
    ---------------------------
-   revealLinkedIds() now explicitly filters to documents where
-   status === 'verified' AND slot is set, rather than trusting
-   slot alone. database.js's getMyIdentityDocuments() returns EVERY
-   submission the user has ever made — pending and rejected
-   included — by design (its own header comment: "Every document
-   ... has ever submitted, newest first"), so a pending or rejected
-   upload must never render inside a Linked ID 1/2/3 card. The
-   database schema's identity_documents_slot_requires_verified
-   constraint means slot alone would probably be safe today, but
-   checking status explicitly here doesn't depend on that constraint
-   never changing, and it's the same "only successful, with details"
-   rule the accompanying migration patch (017) exists to make
-   meaningful in the first place.
+   Replaced the old "3 Linked ID cards shown at once + one static
+   upload form" Account limits UI with a sequential, Opay-style
+   verification stepper:
+     - Only the CURRENT tier is ever actionable. Tier 2 doesn't even
+       render an upload form until Tier 1 has been admin-verified;
+       Tier 3 doesn't until Tier 2 has.
+     - Each tier's body (locked / upload form / pending / rejected /
+       verified) is computed fresh from getMyIdentityDocumentHistory()
+       — a new read that, unlike getMyIdentityDocuments(), returns
+       EVERY submission regardless of status, which this needs to
+       show "pending review" and "rejected — resubmit" states at all.
+     - Tier 1's document list is NIN / driver's license / int'l
+       passport / voter's card. Tier 2 shows the same list minus
+       whichever type Tier 1 actually used. Tier 3's is the
+       proof-of-address list (utility bills, bank statement,
+       tenancy agreement, etc).
+     - Verified-tier detail fields (full name, ID number, DOB,
+       gender) still sit behind the same password re-auth as
+       before — the modal is now shared across all three tiers
+       (#verify-identity-modal) rather than one-off per Linked ID
+       card, and records which tier it's currently unlocking.
+     - Those detail fields are admin-supplied at verification time
+       (see 017_identity_document_review_details.sql), not typed by
+       the customer — the upload form only ever collects document
+       type + file, matching what submitIdentityDocument() accepts.
    ============================================================= */
 
 import {
@@ -63,7 +74,7 @@ import {
   getMyAccounts,
   getCardsForAccount,
   getUnreadNotificationCount,
-  getMyIdentityDocuments,
+  getMyIdentityDocumentHistory,
   submitIdentityDocument,
   getMyWebauthnCredentials,
   registerWebauthnCredential,
@@ -118,6 +129,20 @@ function setButtonLoading(button, isLoading) {
   if (!button) return;
   button.classList.toggle('is-loading', isLoading);
   button.disabled = isLoading;
+}
+
+/* -----------------------------------------------------------
+   Simple HTML-escaping for anything interpolated into innerHTML
+   that ultimately traces back to a document's own submitted
+   values (file names, admin-entered full names, etc.)
+   ----------------------------------------------------------- */
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 /* -----------------------------------------------------------
@@ -289,8 +314,6 @@ function initSectionNav() {
     });
   });
 
-  // Exposed so "Add document" (Linked ID empty state) can jump the
-  // user to the Upload documents card without duplicating this logic.
   window.__profileActivateTab = activate;
 
   const initialTab = window.location.hash.replace('#', '');
@@ -545,11 +568,7 @@ function initAvatarUpload() {
 
 /* -----------------------------------------------------------
    Password change — shared by the Security tab's form AND the
-   Login settings tab's form. Both now re-verify the current
-   password via verifyCurrentPassword() before rotating it —
-   updateUserPassword() (supabase.auth.updateUser) doesn't itself
-   check the old password, so without this, anyone with an open
-   session could change the password without knowing it.
+   Login settings tab's form.
    ----------------------------------------------------------- */
 function passwordStrength(password) {
   let score = 0;
@@ -649,7 +668,11 @@ function initPasswordForm(formSelector, { requirementsListSelector } = {}) {
 /* -----------------------------------------------------------
    Password visibility toggle — generic, covers every
    .password-toggle on the page (Security tab, Login settings
-   tab, and the Linked ID modal) with no per-form wiring needed.
+   tab, and the verify-identity modal) with no per-form wiring
+   needed. Delegated to a live NodeList re-scan happens naturally
+   here since dynamically-added .password-toggle elements (there
+   are none in the stepper today, but future-proofing costs
+   nothing) would just need this called again after render.
    ----------------------------------------------------------- */
 function initPasswordToggle() {
   $$('.password-toggle').forEach((btn) => {
@@ -777,10 +800,9 @@ function initDangerZone() {
 }
 
 /* =============================================================
-   NEW — Login settings
+   Login settings
    ============================================================= */
 
-/* ---- Forgot password ---- */
 function initForgotPassword() {
   const btn = $('#login-forgot-password-btn');
   const status = $('#login-forgot-password-status');
@@ -806,7 +828,6 @@ function initForgotPassword() {
   });
 }
 
-/* ---- Login session preference ---- */
 function populateLoginSessionPreference(profile) {
   const value = profile?.login_session_preference || 'always';
   const input = $(`input[name="login_session_preference"][value="${value}"]`);
@@ -842,7 +863,6 @@ function initLoginSessionPreference() {
   });
 }
 
-/* ---- Face ID / device biometrics ---- */
 function populateFaceId(hasCredential) {
   const pill = $('#faceid-status-pill');
   const btn = $('#faceid-toggle-btn');
@@ -884,12 +904,6 @@ async function enableFaceId() {
 
     if (!credential) return false;
 
-    // Demo-only: stores the raw credential id and an opaque encoding of
-    // the attestation response so "Face ID: Enabled" is a real, persisted
-    // state. This does NOT implement the server-side signature/challenge
-    // verification a production WebAuthn login would need — see migration
-    // 016's "STILL OPEN" item 1. Nothing yet can verify a future assertion
-    // against what's stored here.
     const toBase64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
     const { error } = await registerWebauthnCredential({
       credentialId: toBase64(credential.rawId),
@@ -946,7 +960,7 @@ function initFaceId() {
 }
 
 /* =============================================================
-   NEW — Account limits
+   Account limits
    ============================================================= */
 
 /* ---- Account information + tier badge ---- */
@@ -976,150 +990,287 @@ function populateAccountLimits(profile) {
   }
 }
 
-/* ---- Linked ID re-auth modal + reveal ---- */
-function openLinkedIdModal() {
-  const modal = $('#linked-id-auth-modal');
-  if (!modal) return;
-  modal.hidden = false;
-  requestAnimationFrame(() => modal.classList.add('is-open'));
-  const input = $('#linked-id-password');
-  if (input) { input.value = ''; input.focus(); }
-  const err = $('#linked-id-modal-error');
-  if (err) err.textContent = '';
-}
+/* -----------------------------------------------------------
+   Verification stepper — Tier 1 → 2 → 3
+   -----------------------------------------------------------
+   Document type lists per tier. Tier 2 renders the same identity
+   list as Tier 1 but with whichever type Tier 1 actually used
+   filtered out (per the requested "removed the document first
+   submitted in tier 1" behavior).
+   ----------------------------------------------------------- */
+const TIER_DOC_TYPES = {
+  identity: [
+    { value: 'nin', label: 'National Identification Number (NIN)' },
+    { value: 'drivers_license', label: "Driver's license" },
+    { value: 'international_passport', label: 'International passport' },
+    { value: 'voters_card', label: "Voter's card" },
+  ],
+  proof_of_address: [
+    { value: 'electricity_bill', label: 'Electricity bill' },
+    { value: 'bank_statement', label: 'Bank statement' },
+    { value: 'waste_bill', label: 'Waste bill' },
+    { value: 'water_bill', label: 'Water bill' },
+    { value: 'house_rent_receipt', label: 'House rent receipt' },
+    { value: 'tenancy_agreement', label: 'Tenancy agreement' },
+  ],
+};
 
-function closeLinkedIdModal() {
-  const modal = $('#linked-id-auth-modal');
-  if (!modal) return;
-  modal.classList.remove('is-open');
-  setTimeout(() => { modal.hidden = true; }, 200);
-}
+const TIER_META = {
+  1: { category: 'identity', title: 'Tier 1 verification', blurb: 'Verify your identity with one government-issued ID.' },
+  2: { category: 'identity', title: 'Tier 2 verification', blurb: 'Verify with a second, different form of ID.' },
+  3: { category: 'proof_of_address', title: 'Tier 3 verification', blurb: 'Confirm your address to unlock the highest limits.' },
+};
 
-function renderLinkedIdCard(slot, doc) {
-  const card = $(`#linked-id-card-${slot}`);
-  if (!card) return;
-  const statusPill = $('[data-linked-id-status]', card);
-  const emptyState = $('.linked-id-empty', card);
-  const fields = $('.linked-id-fields', card);
+// The full document history for the signed-in user, newest first —
+// re-fetched after every submission so the stepper always reflects
+// the latest admin decision.
+let identityDocsCache = [];
 
-  if (!doc) {
-    if (statusPill) { statusPill.textContent = 'Empty'; statusPill.className = 'status-pill status-pill--neutral'; }
-    if (emptyState) emptyState.hidden = false;
-    if (fields) fields.hidden = true;
-    return;
-  }
+// Which tier's verified details are currently unmasked in the UI,
+// and which tier the shared re-auth modal is unlocking right now.
+const revealedTiers = new Set();
+let pendingRevealTier = null;
 
-  if (statusPill) { statusPill.textContent = 'Verified'; statusPill.className = 'status-pill status-pill--verified'; }
-  if (emptyState) emptyState.hidden = true;
-  if (fields) {
-    fields.hidden = false;
-    const maskId = (value) => (value ? `${'*'.repeat(Math.max(0, value.length - 4))}${value.slice(-4)}` : '—');
-    const setField = (name, value) => {
-      const el = $(`[data-field="${name}"]`, fields);
-      if (el) el.textContent = value || '—';
-    };
-    setField('id_type', (doc.id_type || doc.document_type || '').toUpperCase());
-    setField('full_name', doc.full_name);
-    setField('id_number', maskId(doc.id_number));
-    setField('date_of_birth', doc.date_of_birth ? new Date(doc.date_of_birth).toLocaleDateString('en-GB') : null);
-    setField('gender', doc.gender);
-  }
+function docTypeLabel(category, value) {
+  const match = (TIER_DOC_TYPES[category] || []).find((t) => t.value === value);
+  return match ? match.label : value;
 }
 
 /**
- * getMyIdentityDocuments() returns EVERY submission the user has
- * ever made, any status — that's the right shape for a future
- * "submission history" view, but wrong for the Linked ID cards,
- * which must only ever show what an admin has actually verified
- * AND assigned a slot to. That filter lives here, explicitly, so
- * a 'pending' or 'rejected' document can never render as if it
- * were confirmed.
+ * Works out where each tier stands from the raw document history.
+ * Slot is only ever assigned to VERIFIED identity documents (slot 1
+ * = Tier 1, slot 2 = Tier 2 — see 017_identity_document_review_
+ * details.sql); proof-of-address documents never take a slot, so
+ * Tier 3's "verified" state is just "a verified proof_of_address row
+ * exists" with no slot check.
+ *
+ * A pending/rejected identity submission with no slot yet is
+ * attributed to whichever identity tier is currently open — Tier 1
+ * if it isn't verified yet, otherwise Tier 2 — which holds because
+ * the stepper itself never lets a customer start Tier 2 before
+ * Tier 1 is verified, so only one identity tier can have an
+ * in-flight submission at a time.
  */
-async function revealLinkedIds() {
-  const details = $('#linked-id-details');
-  const { data: docs, error } = await getMyIdentityDocuments(currentUser.id);
-  if (error) {
-    showToast(error, 'error');
-    return;
+function classifyIdentityDocs(docs) {
+  const identityDocs = (docs || [])
+    .filter((d) => d.document_category === 'identity')
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const addressDocs = (docs || [])
+    .filter((d) => d.document_category === 'proof_of_address')
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const tier1Verified = identityDocs.find((d) => d.status === 'verified' && d.slot === 1) || null;
+  const tier2Verified = identityDocs.find((d) => d.status === 'verified' && d.slot === 2) || null;
+  const tier3Verified = addressDocs.find((d) => d.status === 'verified') || null;
+
+  const latestIdentityOpen = identityDocs.find((d) => d.status !== 'verified') || null;
+  const latestAddressOpen = addressDocs.find((d) => d.status !== 'verified') || null;
+
+  return {
+    1: { verified: tier1Verified, open: !tier1Verified ? latestIdentityOpen : null },
+    2: { verified: tier2Verified, open: (tier1Verified && !tier2Verified) ? latestIdentityOpen : null },
+    3: { verified: tier3Verified, open: (tier2Verified && !tier3Verified) ? latestAddressOpen : null },
+  };
+}
+
+function maskId(value) {
+  if (!value) return '—';
+  return `${'*'.repeat(Math.max(0, value.length - 4))}${value.slice(-4)}`;
+}
+
+function verifiedDetailsMarkup(category, doc) {
+  if (category === 'proof_of_address') {
+    return `
+      <dl class="account-info-grid">
+        <div><dt>Document</dt><dd>${escapeHtml(docTypeLabel(category, doc.document_type))}</dd></div>
+      </dl>
+    `;
+  }
+  return `
+    <dl class="account-info-grid">
+      <div><dt>ID type</dt><dd>${escapeHtml((doc.id_type || doc.document_type || '').toUpperCase())}</dd></div>
+      <div><dt>Full name</dt><dd>${escapeHtml(doc.full_name) || '—'}</dd></div>
+      <div><dt>ID number</dt><dd>${escapeHtml(maskId(doc.id_number))}</dd></div>
+      <div><dt>Date of birth</dt><dd>${doc.date_of_birth ? new Date(doc.date_of_birth).toLocaleDateString('en-GB') : '—'}</dd></div>
+      <div><dt>Gender</dt><dd>${escapeHtml(doc.gender) || '—'}</dd></div>
+    </dl>
+  `;
+}
+
+/* ---- Block builders — one per tier state ---- */
+
+function buildLockedTierBlock(tier, meta) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="verification-tier-head">
+      <span class="verification-tier-number">${tier}</span>
+      <div>
+        <h4>${meta.title}</h4>
+        <p>Complete Tier ${tier - 1} first to unlock this step.</p>
+      </div>
+      <span class="status-pill status-pill--neutral">Locked</span>
+    </div>
+  `;
+  return wrap;
+}
+
+function buildVerifiedTierBlock(tier, meta, doc) {
+  const wrap = document.createElement('div');
+  const nextTier = tier + 1;
+  const isRevealed = revealedTiers.has(tier);
+  const verifiedDate = doc.reviewed_at
+    ? new Date(doc.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+
+  wrap.innerHTML = `
+    <div class="verification-tier-head">
+      <span class="verification-tier-number">${tier}</span>
+      <div>
+        <h4>${meta.title}</h4>
+        <p>${escapeHtml(docTypeLabel(meta.category, doc.document_type))}${verifiedDate ? ` · Verified ${verifiedDate}` : ''}</p>
+      </div>
+      <span class="status-pill status-pill--verified">Verified</span>
+    </div>
+    <div class="verification-tier-details">
+      ${isRevealed ? verifiedDetailsMarkup(meta.category, doc) : ''}
+      <button type="button" class="link-arrow-sm" data-reveal-btn>${isRevealed ? 'Hide details' : 'View details'}</button>
+    </div>
+  `;
+
+  $('[data-reveal-btn]', wrap).addEventListener('click', () => {
+    if (revealedTiers.has(tier)) {
+      revealedTiers.delete(tier);
+      renderVerificationStepper(identityDocsCache);
+      return;
+    }
+    pendingRevealTier = tier;
+    openVerifyIdentityModal();
+  });
+
+  if (nextTier <= 3) {
+    const upgradeBtn = document.createElement('button');
+    upgradeBtn.type = 'button';
+    upgradeBtn.className = 'btn btn-primary verification-upgrade-btn';
+    upgradeBtn.textContent = `Upgrade to Tier ${nextTier}`;
+    upgradeBtn.addEventListener('click', () => {
+      $(`#verification-tier-${nextTier}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    wrap.appendChild(upgradeBtn);
+  } else {
+    const doneNote = document.createElement('p');
+    doneNote.className = 'field-hint';
+    doneNote.textContent = 'You\u2019ve completed every verification tier.';
+    wrap.appendChild(doneNote);
   }
 
-  const bySlot = { 1: null, 2: null, 3: null };
-  (docs || []).forEach((doc) => {
-    if (doc.status === 'verified' && doc.slot) bySlot[doc.slot] = doc;
-  });
-
-  [1, 2, 3].forEach((slot) => renderLinkedIdCard(slot, bySlot[slot]));
-  if (details) details.hidden = false;
+  return wrap;
 }
 
-function initLinkedIdModal() {
-  const viewBtn = $('#view-linked-id-btn');
-  const modal = $('#linked-id-auth-modal');
-  const closeBtn = $('#linked-id-modal-close');
-  const cancelBtn = $('#linked-id-modal-cancel');
-  const form = $('#linked-id-verify-form');
-  if (!viewBtn || !modal || !form) return;
-
-  viewBtn.addEventListener('click', openLinkedIdModal);
-  closeBtn?.addEventListener('click', closeLinkedIdModal);
-  cancelBtn?.addEventListener('click', closeLinkedIdModal);
-  modal.addEventListener('click', (event) => {
-    if (event.target === modal) closeLinkedIdModal();
-  });
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const passwordInput = $('#linked-id-password');
-    const password = passwordInput?.value || '';
-    const errEl = $('#linked-id-modal-error');
-    const submitBtn = $('#linked-id-modal-submit');
-
-    if (!password) {
-      if (errEl) errEl.textContent = 'Enter your password.';
-      return;
-    }
-
-    setButtonLoading(submitBtn, true);
-    const { error } = await verifyCurrentPassword(password);
-    setButtonLoading(submitBtn, false);
-
-    if (error) {
-      if (errEl) errEl.textContent = 'Incorrect password. Try again.';
-      return;
-    }
-
-    closeLinkedIdModal();
-    await revealLinkedIds();
-  });
+function buildPendingTierBlock(tier, meta, doc) {
+  const wrap = document.createElement('div');
+  const submitted = new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  wrap.innerHTML = `
+    <div class="verification-tier-head">
+      <span class="verification-tier-number">${tier}</span>
+      <div>
+        <h4>${meta.title}</h4>
+        <p>${escapeHtml(docTypeLabel(meta.category, doc.document_type))} submitted ${submitted}</p>
+      </div>
+      <span class="status-pill status-pill--pending">Pending review</span>
+    </div>
+    <p class="profile-card-desc">We're reviewing your document. This will update automatically once it's been checked.</p>
+  `;
+  return wrap;
 }
 
-/* ---- Document upload ---- */
-const IDENTITY_ADDRESS_TYPES = [
-  'electricity_bill', 'bank_statement', 'waste_bill', 'water_bill',
-  'house_rent_receipt', 'tenancy_agreement', 'land_use_charge',
-];
+function buildRejectedTierBlock(tier, meta, doc, tier1UsedType) {
+  const wrap = document.createElement('div');
+  const label = doc.status === 'rejected' ? 'Rejected' : 'Action required';
+  wrap.innerHTML = `
+    <div class="verification-tier-head">
+      <span class="verification-tier-number">${tier}</span>
+      <div>
+        <h4>${meta.title}</h4>
+        <p>${escapeHtml(docTypeLabel(meta.category, doc.document_type))}</p>
+      </div>
+      <span class="status-pill status-pill--pending">${label}</span>
+    </div>
+    <p class="profile-card-desc">${escapeHtml(doc.rejection_reason) || 'This submission needs another look — please resubmit.'}</p>
+  `;
+  wrap.appendChild(buildUploadForm(tier, meta, tier1UsedType, { resubmit: true }));
+  return wrap;
+}
 
-function initDocumentUpload() {
-  const form = $('#document-upload-form');
-  if (!form) return;
+function buildActiveTierBlock(tier, meta, tier1UsedType) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="verification-tier-head">
+      <span class="verification-tier-number">${tier}</span>
+      <div>
+        <h4>${meta.title}</h4>
+        <p>${meta.blurb}</p>
+      </div>
+      <span class="status-pill status-pill--neutral">Not started</span>
+    </div>
+  `;
+  wrap.appendChild(buildUploadForm(tier, meta, tier1UsedType));
+  return wrap;
+}
 
-  const dropzone = $('#document-upload-dropzone');
-  const fileInput = $('#document-upload-input');
-  const typeSelect = $('#document-type-select');
-  const preview = $('#document-upload-preview');
-  const previewName = $('#document-upload-preview-name');
-  const removeBtn = $('#document-upload-remove');
-  const progress = $('#document-upload-progress');
-  const progressBar = $('#document-upload-progress-bar');
-  const errorEl = $('#document-upload-error');
-  const statusPill = $('#document-upload-status');
-  const submitBtn = $('#document-upload-submit-btn');
+/* ---- The upload form itself, shared by "active" and "rejected/resubmit" states ---- */
+function buildUploadForm(tier, meta, tier1UsedType, { resubmit = false } = {}) {
+  const container = document.createElement('div');
+  container.className = 'verification-upload';
+
+  let options = TIER_DOC_TYPES[meta.category];
+  if (tier === 2 && tier1UsedType) {
+    options = options.filter((opt) => opt.value !== tier1UsedType);
+  }
+  const optionsHtml = options.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join('');
+
+  container.innerHTML = `
+    <form class="profile-form verification-upload-form" novalidate>
+      <div class="field">
+        <label>Document type</label>
+        <select name="document_type" required>
+          <option value="">Select a document</option>
+          ${optionsHtml}
+        </select>
+      </div>
+      <div class="document-upload-dropzone" tabindex="0" role="button" aria-label="Upload document">
+        <p>Click or drop a file here — PDF, JPG, or PNG, up to 10MB</p>
+        <input type="file" accept=".pdf,.jpg,.jpeg,.png" hidden>
+      </div>
+      <div class="document-upload-preview" hidden>
+        <span data-preview-name></span>
+        <button type="button" class="link-arrow-sm" data-remove-file>Remove</button>
+      </div>
+      <div class="document-upload-progress" hidden><div class="document-upload-progress-bar" style="width:0%"></div></div>
+      <div class="admin-field-error" data-upload-error></div>
+      <div class="profile-form-actions">
+        <button type="submit" class="btn btn-primary">${resubmit ? 'Resubmit document' : 'Submit for verification'}</button>
+      </div>
+    </form>
+  `;
+
+  wireUploadForm(container, meta.category);
+  return container;
+}
+
+function wireUploadForm(scope, documentCategory) {
+  const form = $('.verification-upload-form', scope);
+  const dropzone = $('.document-upload-dropzone', scope);
+  const fileInput = $('input[type="file"]', scope);
+  const typeSelect = $('select[name="document_type"]', scope);
+  const preview = $('.document-upload-preview', scope);
+  const previewName = $('[data-preview-name]', scope);
+  const removeBtn = $('[data-remove-file]', scope);
+  const progress = $('.document-upload-progress', scope);
+  const progressBar = $('.document-upload-progress-bar', scope);
+  const errorEl = $('[data-upload-error]', scope);
+  const submitBtn = $('button[type="submit"]', form);
 
   let selectedFile = null;
-
-  function updateSubmitState() {
-    submitBtn.disabled = !(selectedFile && typeSelect.value);
-  }
 
   function setFile(file) {
     selectedFile = file || null;
@@ -1130,7 +1281,6 @@ function initDocumentUpload() {
     } else if (preview) {
       preview.hidden = true;
     }
-    updateSubmitState();
   }
 
   dropzone.addEventListener('click', () => fileInput.click());
@@ -1159,22 +1309,26 @@ function initDocumentUpload() {
     fileInput.value = '';
     setFile(null);
   });
-  typeSelect.addEventListener('change', updateSubmitState);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!selectedFile || !typeSelect.value) return;
 
-    const documentCategory = IDENTITY_ADDRESS_TYPES.includes(typeSelect.value) ? 'proof_of_address' : 'identity';
+    if (!typeSelect.value) {
+      if (errorEl) errorEl.textContent = 'Choose a document type.';
+      return;
+    }
+    if (!selectedFile) {
+      if (errorEl) errorEl.textContent = 'Choose a file to upload.';
+      return;
+    }
 
     if (errorEl) errorEl.textContent = '';
     setButtonLoading(submitBtn, true);
     if (progress) progress.hidden = false;
     if (progressBar) progressBar.style.width = '15%';
 
-    // supabase-js's storage upload doesn't expose a real progress
-    // callback — this is a visual approximation, not measured bytes,
-    // same "demo-friendly" honesty this file already uses elsewhere.
+    // supabase-js's storage upload doesn't expose real upload
+    // progress — this is a visual approximation, not measured bytes.
     const tick = setInterval(() => {
       if (!progressBar) return;
       const current = parseFloat(progressBar.style.width) || 0;
@@ -1198,32 +1352,130 @@ function initDocumentUpload() {
     }
 
     if (progressBar) progressBar.style.width = '100%';
-    setTimeout(() => {
-      if (progress) progress.hidden = true;
-      if (progressBar) progressBar.style.width = '0%';
-    }, 500);
-
     setButtonLoading(submitBtn, false);
-    if (statusPill) {
-      statusPill.hidden = false;
-      statusPill.textContent = 'Pending verification';
-      statusPill.className = 'status-pill status-pill--pending';
-    }
-
-    form.reset();
-    setFile(null);
     showToast('Document submitted for verification.');
+
+    await reloadVerificationStepper();
   });
 }
 
-function initAddDocumentButtons() {
-  $$('[data-add-document-for]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const typeSelect = $('#document-type-select');
-      if (typeSelect) typeSelect.value = '';
-      $('#document-upload-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      typeSelect?.focus();
-    });
+/* ---- Top-level render: one tier container at a time ---- */
+function renderTier(tier, status, tier1UsedType) {
+  const container = $(`#verification-tier-${tier}`);
+  if (!container) return;
+
+  const meta = TIER_META[tier];
+  const state = status[tier];
+  const prevVerified = tier === 1 ? true : Boolean(status[tier - 1].verified);
+
+  container.innerHTML = '';
+  container.classList.remove('is-locked', 'is-verified', 'is-pending', 'is-rejected', 'is-active');
+
+  if (!prevVerified) {
+    container.classList.add('is-locked');
+    container.appendChild(buildLockedTierBlock(tier, meta));
+    return;
+  }
+
+  if (state.verified) {
+    container.classList.add('is-verified');
+    container.appendChild(buildVerifiedTierBlock(tier, meta, state.verified));
+    return;
+  }
+
+  if (state.open && state.open.status === 'pending') {
+    container.classList.add('is-pending');
+    container.appendChild(buildPendingTierBlock(tier, meta, state.open));
+    return;
+  }
+
+  if (state.open && (state.open.status === 'rejected' || state.open.status === 'action_required')) {
+    container.classList.add('is-rejected');
+    container.appendChild(buildRejectedTierBlock(tier, meta, state.open, tier1UsedType));
+    return;
+  }
+
+  container.classList.add('is-active');
+  container.appendChild(buildActiveTierBlock(tier, meta, tier1UsedType));
+}
+
+function renderVerificationStepper(docs) {
+  identityDocsCache = docs || [];
+  const status = classifyIdentityDocs(identityDocsCache);
+  const tier1UsedType = status[1].verified?.document_type || status[1].open?.document_type || null;
+
+  [1, 2, 3].forEach((tier) => renderTier(tier, status, tier1UsedType));
+}
+
+async function reloadVerificationStepper() {
+  const { data: docs, error } = await getMyIdentityDocumentHistory(currentUser.id);
+  if (error) {
+    showToast(error, 'error');
+    return;
+  }
+  renderVerificationStepper(docs || []);
+}
+
+/* ---- Shared re-auth modal (unlocks a verified tier's details) ---- */
+function openVerifyIdentityModal() {
+  const modal = $('#verify-identity-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add('is-open'));
+  const input = $('#verify-identity-password');
+  if (input) { input.value = ''; input.focus(); }
+  const err = $('#verify-identity-modal-error');
+  if (err) err.textContent = '';
+}
+
+function closeVerifyIdentityModal() {
+  const modal = $('#verify-identity-modal');
+  if (!modal) return;
+  modal.classList.remove('is-open');
+  setTimeout(() => { modal.hidden = true; }, 200);
+  pendingRevealTier = null;
+}
+
+function initVerifyIdentityModal() {
+  const modal = $('#verify-identity-modal');
+  const closeBtn = $('#verify-identity-modal-close');
+  const cancelBtn = $('#verify-identity-modal-cancel');
+  const form = $('#verify-identity-form');
+  if (!modal || !form) return;
+
+  closeBtn?.addEventListener('click', closeVerifyIdentityModal);
+  cancelBtn?.addEventListener('click', closeVerifyIdentityModal);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeVerifyIdentityModal();
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const passwordInput = $('#verify-identity-password');
+    const password = passwordInput?.value || '';
+    const errEl = $('#verify-identity-modal-error');
+    const submitBtn = $('#verify-identity-modal-submit');
+
+    if (!password) {
+      if (errEl) errEl.textContent = 'Enter your password.';
+      return;
+    }
+
+    setButtonLoading(submitBtn, true);
+    const { error } = await verifyCurrentPassword(password);
+    setButtonLoading(submitBtn, false);
+
+    if (error) {
+      if (errEl) errEl.textContent = 'Incorrect password. Try again.';
+      return;
+    }
+
+    const tier = pendingRevealTier;
+    closeVerifyIdentityModal();
+    if (tier) {
+      revealedTiers.add(tier);
+      renderVerificationStepper(identityDocsCache);
+    }
   });
 }
 
@@ -1257,9 +1509,7 @@ function initAddDocumentButtons() {
   initFaceId();
 
   // Account limits
-  initLinkedIdModal();
-  initDocumentUpload();
-  initAddDocumentButtons();
+  initVerifyIdentityModal();
 
   const { data: profile, error } = await getMyProfile(user.id);
   if (error || !profile) {
@@ -1283,4 +1533,5 @@ function initAddDocumentButtons() {
   await populateOverviewSummary(user, profile, accounts || []);
   await populateRecentActivity(user.id);
   await populateSessions(user.id);
+  await reloadVerificationStepper();
 })();
