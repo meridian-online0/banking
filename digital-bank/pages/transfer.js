@@ -14,6 +14,12 @@
         profile card, or a not-found state with manual fallback
         fields. Saved beneficiaries + a "recent" strip live in a
         collapsed secondary section.
+        NOTE: the lookup (and therefore the verified/not-found
+        cards) only fires once the typed identifier reaches
+        ACCOUNT_NUMBER_MIN_LENGTH characters — see
+        handleIdentifierInput(). Below that length nothing renders,
+        so the "not found" card can't flash up mid-keystroke or on
+        a still-empty field.
      4. Details step: from-account picker, live currency conversion
         via getExchangeRate(), transfer type, purpose, optional
         scheduling.
@@ -23,67 +29,22 @@
         (no OTP delivery exists yet — swap this out once it does,
         see the TODO by handleConfirmSend()). Locks after repeated
         failures.
-     7. Send: addBeneficiary() (if the recipient is new/newly-
-        verified and the user opted to save them) + createTransfer(),
-        then a full receipt on the success step.
+     7. Send: addBeneficiary() (if the recipient is new and the user
+        opted to save them) + createTransfer(), then the success step.
+        createTransfer() is now given BOTH a receiverAccountId (only
+        when the caller legitimately already has one — not used on
+        this page) AND a receiverIdentifier (the raw account
+        number/IBAN we have on hand, whatever its source) — the
+        process_transfer RPC resolves a real Meridian account from
+        that identifier itself, server-side, so a transfer to another
+        Meridian user now actually gets credited instead of sitting
+        on "Processing" forever. See getRecipientIdentifierForTransfer().
 
-   CHANGE LOG (this revision)
-   ---------------------------
-   - BUG: "no part to save beneficiary". The save-beneficiary
-     checkbox only ever existed inside #recipient-manual-fields —
-     the "not found, enter details manually" path. A recipient that
-     auto-verified successfully (source: 'internal', i.e. a real
-     Meridian account found by findRecipient()) showed the "Recipient
-     found" card instead, which had NO save option anywhere — that
-     whole block, checkbox included, stays hidden for a verified
-     match. So a successfully-verified recipient could never be
-     saved as a beneficiary. Added a second checkbox
-     (#save-verified-beneficiary-checkbox) to the verified-recipient
-     card, shown only for 'internal' matches (not for recipients
-     that are already saved beneficiaries, source: 'beneficiary' —
-     saving those again would be redundant). showVerifiedCard() now
-     takes an `offerSave` flag to control this. handleConfirmSend()
-     now saves via either checkbox.
-   - BUG: ledger's "You send" / "They receive" showed 0 (or stale
-     numbers) on first paint. recalcConversion() — the only function
-     that computes the converted receive-amount and the fee numbers
-     the ledger reads — was previously wired to run ONLY on user
-     input events or when goToStep(2) fired. It was never called
-     once during init(), so the ledger (visible on step 1, before
-     any input) rendered with #transfer-receive-amount still at its
-     HTML default (0.00) and the fee-cache spans empty. init() now
-     awaits one recalcConversion() call before the first render.
-   - NEW: full transfer receipt on the success step (step 5),
-     replacing the old plain summary — reference, date/time, from,
-     to, recipient bank, exchange rate, fee, total debited, purpose,
-     note, balance after. Added ensureReceiptStyles() (a
-     self-contained, JS-injected stylesheet — this file has no
-     visibility into transfer.css, so styling the new receipt markup
-     doesn't depend on guessing what's already there) and a
-     "Download receipt" button that triggers window.print() scoped
-     to just the receipt via an injected @media print rule — every
-     modern browser's print dialog offers "Save as PDF", so this
-     needs no new library or file-generation dependency.
-   - lastComputedRate: recalcConversion() now stores the exchange
-     rate it just fetched in module state, so handleConfirmSend()
-     can put an accurate rate on the receipt without a second
-     network round-trip or fragile parsing of rendered text.
-
-   STILL OPEN — NOT FIXED HERE (flagging, not guessing)
-   ---------------------------
-   - USD→NGN (and any cross-currency) transfer reportedly credits
-     the SAME numeric figure instead of a converted one.
-     createTransfer() -> process_transfer() is only ever given
-     p_amount/p_currency in the SENDER's currency — the converted
-     receive-amount computed in recalcConversion() is for display
-     only and is never sent to the database. Whether process_transfer()
-     does its own server-side conversion (bug would be there) or
-     just credits the same number with no conversion (bug would be
-     exactly this) can't be determined without seeing that
-     function's actual SQL. Not fixing this by guessing new RPC
-     parameters — a signature mismatch here would break every
-     transfer, the same class of failure as the overload error
-     already hit on admin_save_customer_permissions().
+     NEW: a single "Ledger" panel (#ledger) is now the one source of
+     truth for recipient + amounts + fees, visible and updating live
+     from step 1 through the success screen, instead of a separate
+     floating preview + a separate fee panel + a separate review page
+     all repeating the same numbers.
    ============================================================= */
 
 import { signOutUser } from '../supabase/auth.js';
@@ -111,6 +72,15 @@ const TOTAL_STEPS = 5;
 const MAX_AUTH_ATTEMPTS = 5;
 const AUTH_LOCKOUT_MS = 60000;
 
+// Minimum characters (after stripping whitespace) typed into the
+// recipient identifier field before we attempt a lookup at all.
+// Below this, we show neither a spinner nor a verified/not-found
+// card — just a plain empty field. Meridian's own account numbers
+// run 8–10 digits (GBP accounts are 8; USD/others are 10) and IBANs
+// are much longer, so 10 avoids false "not found" flashes on a
+// half-typed number while still letting IBAN-length input through.
+// If you need to support 8-digit GBP account lookups too, lower
+// this to 8 — it'll just mean the lookup fires a little earlier.
 const ACCOUNT_NUMBER_MIN_LENGTH = 10;
 
 const HERO_COPY = {
@@ -148,6 +118,28 @@ function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/**
+ * Toggles visibility of a card/panel two ways at once: the `hidden`
+ * IDL/attribute, AND an inline `display` override.
+ *
+ * Why both: if transfer.html/css gives these cards their own class
+ * with a `display` rule (e.g. `.send-recipient-card { display: flex }`
+ * for the flex layout), that author rule can out-specificity the
+ * browser's built-in `[hidden] { display: none }` UA style — so
+ * setting `el.hidden = true` updates the attribute but the element
+ * stays visually visible. An inline style always wins, so this
+ * can't silently no-op the same way. Also null-safe: if an id
+ * doesn't match what's actually in transfer.html, this logs a
+ * warning instead of throwing and killing the rest of the handler
+ * (a thrown error here would otherwise stop every line after it,
+ * which is one way a "still showing" bug can persist indefinitely).
+ *
+ * IMPORTANT: every visibility toggle in this file goes through this
+ * function — never assign `.hidden` directly. Two spots used to do
+ * that (the "Send on" scheduled-date field, and the "recent
+ * recipients" wrapper); both were silently not hiding for exactly
+ * the reason explained above, which is why this rule is now absolute.
+ */
 function setCardHidden(elId, isHidden) {
   const el = document.getElementById(elId);
   if (!el) {
@@ -165,12 +157,11 @@ let accounts = [];
 let beneficiaries = [];
 let currentStep = 1;
 let selectedFromAccountId = null;
-let selectedBeneficiary = null;
-let verifiedRecipient = null;
+let selectedBeneficiary = null; // chosen from the saved-beneficiaries list
+let verifiedRecipient = null; // { source: 'beneficiary', beneficiary } | { source: 'internal', display_name, bank_name, currency }
 let identifierLookupTimer = null;
 let authFailedAttempts = 0;
 let authLockedUntil = 0;
-let lastComputedRate = 1;
 
 /* -----------------------------------------------------------
    Toasts
@@ -426,6 +417,8 @@ function renderBeneficiaryList(filterText = '') {
     card.addEventListener('click', () => {
       const id = card.dataset.beneficiaryId;
       selectedBeneficiary = beneficiaries.find((b) => String(b.id) === id) || null;
+      // A saved beneficiary takes priority over anything typed into the
+      // identifier field — clear that path so the two sources can't disagree.
       resetNewRecipientUi();
       $('#recipient-identifier').value = '';
       $$('.beneficiary-card', container).forEach((c) => c.classList.toggle('is-selected', c === card));
@@ -437,7 +430,9 @@ function renderBeneficiaryList(filterText = '') {
 }
 
 /* -----------------------------------------------------------
-   Recent recipients
+   Recent recipients — client-side convenience only (not synced
+   to Supabase; just remembers the last few beneficiary ids this
+   browser sent to, for a one-tap "recent" strip).
    ----------------------------------------------------------- */
 function getRecentIds() {
   try {
@@ -503,14 +498,12 @@ function renderRecentStrip() {
 /* -----------------------------------------------------------
    New recipient — account-number auto-verification
    ----------------------------------------------------------- */
-function showVerifiedCard({ name, bank, account, country, initial, offerSave }) {
+function showVerifiedCard({ name, bank, account, country, initial }) {
   $('#recipient-verified-name').textContent = name || '—';
   $('#recipient-verified-bank').textContent = bank || '—';
   $('#recipient-verified-account').textContent = account ? maskAccount(account) : '—';
   $('#recipient-verified-country').textContent = country || '—';
   $('#recipient-verified-avatar').textContent = initial || '?';
-  const saveWrap = $('#recipient-verified-save-wrap');
-  if (saveWrap) saveWrap.style.display = offerSave ? '' : 'none';
   setCardHidden('recipient-verified-card', false);
   setCardHidden('recipient-not-found-card', true);
   setCardHidden('recipient-manual-fields', true);
@@ -529,6 +522,7 @@ function handleIdentifierInput(event) {
   const value = event.target.value;
   clearTimeout(identifierLookupTimer);
   resetNewRecipientUi();
+  // Typing a new identifier overrides a previously chosen saved beneficiary.
   selectedBeneficiary = null;
   renderBeneficiaryList($('#beneficiary-search')?.value || '');
   updateStep1ContinueState();
@@ -537,6 +531,11 @@ function handleIdentifierInput(event) {
   const trimmed = value.trim();
   if (!trimmed) return;
 
+  // Don't attempt a lookup (and therefore don't show a spinner or a
+  // verified/not-found card) until the identifier is long enough to
+  // plausibly be a real account number — otherwise every partial
+  // number briefly flashes "not found" before the person finishes
+  // typing, which reads as a false error rather than helpful feedback.
   if (trimmed.replace(/\s+/g, '').length < ACCOUNT_NUMBER_MIN_LENGTH) return;
 
   const statusEl = $('#recipient-lookup-status');
@@ -554,7 +553,6 @@ function handleIdentifierInput(event) {
         account: b.account_number,
         country: b.country,
         initial: beneficiaryInitial(b),
-        offerSave: false,
       });
       statusEl.innerHTML = '';
     } else if (data?.source === 'internal') {
@@ -565,7 +563,6 @@ function handleIdentifierInput(event) {
         account: null,
         country: null,
         initial: (data.display_name || '?').charAt(0).toUpperCase(),
-        offerSave: true,
       });
       statusEl.innerHTML = '';
     } else {
@@ -593,6 +590,10 @@ function updateStep1ContinueState() {
   $('#step1-continue').disabled = !valid;
 }
 
+/** A single normalized view of "who are we sending to", regardless
+ *  of which of the three recipient paths (saved / internal-verified
+ *  / manual) produced it. Read by the ledger, details, review,
+ *  verify, and send steps. */
 function getRecipientSummary() {
   if (selectedBeneficiary) {
     return {
@@ -608,7 +609,6 @@ function getRecipientSummary() {
     return { name: b.beneficiary_name, meta: beneficiarySubtitle(b), currency: null, beneficiaryId: b.id, isNew: false };
   }
   if (verifiedRecipient?.source === 'internal') {
-    const identifier = $('#recipient-identifier')?.value.trim() || '';
     return {
       name: verifiedRecipient.display_name,
       meta: `${verifiedRecipient.bank_name} · ${verifiedRecipient.currency}`,
@@ -616,14 +616,6 @@ function getRecipientSummary() {
       beneficiaryId: null,
       isNew: false,
       isInternal: true,
-      manual: {
-        beneficiaryName: verifiedRecipient.display_name,
-        bankName: verifiedRecipient.bank_name,
-        accountNumber: identifier,
-        swiftCode: '',
-        country: '',
-        currency: verifiedRecipient.currency,
-      },
     };
   }
   const nameVal = $('#new-beneficiary-name')?.value.trim();
@@ -647,6 +639,16 @@ function getRecipientSummary() {
   };
 }
 
+/**
+ * The raw account number/IBAN text to send along with the transfer,
+ * regardless of which of the three recipient paths produced it.
+ * process_transfer() resolves this against real Meridian accounts
+ * server-side — if it matches, that account gets credited and the
+ * transfer completes; if not, it's treated as a genuine external
+ * recipient (exactly as before). This is what makes sending to
+ * another Meridian user's account actually arrive, instead of the
+ * old behavior where receiverAccountId was always null here.
+ */
 function getRecipientIdentifierForTransfer() {
   if (selectedBeneficiary?.account_number) return selectedBeneficiary.account_number;
   if (verifiedRecipient?.source === 'beneficiary') return verifiedRecipient.beneficiary?.account_number || null;
@@ -699,6 +701,15 @@ function renderFromAccountStrip() {
 
 /* -----------------------------------------------------------
    Live conversion + fee breakdown
+   -----------------------------------------------------------
+   DEMO-ONLY FEE MODEL: there's no fee-schedule table in the
+   current schema, so this is a simple percentage-with-a-floor
+   shape (mirroring how real transfer pricing tends to look)
+   rather than a fabricated "real" number. Swap this for a lookup
+   against a proper fee schedule (keyed by currency pair + speed)
+   once one exists. The computed values are cached in a few hidden
+   spans (#fee-*-value) so the ledger can read the same numbers
+   without recomputing them.
    ----------------------------------------------------------- */
 function computeFee(amount, speed) {
   const amt = Math.max(0, Number(amount) || 0);
@@ -742,7 +753,6 @@ async function recalcConversion() {
 
   const { data: rateData } = await getExchangeRate(fromCurrency, toCurrency);
   const rate = Number(rateData?.exchange_rate ?? 1);
-  lastComputedRate = rate;
   const isFallback = fromCurrency !== toCurrency && rate === 1;
   const receiveAmount = sendAmount * rate;
 
@@ -838,115 +848,6 @@ async function populateReview() {
 }
 
 /* -----------------------------------------------------------
-   Receipt (step 5)
-   ----------------------------------------------------------- */
-let receiptStylesInjected = false;
-function ensureReceiptStyles() {
-  if (receiptStylesInjected) return;
-  receiptStylesInjected = true;
-  const style = document.createElement('style');
-  style.textContent = `
-    .transfer-receipt {
-      background: #fff;
-      border: 1px solid #e4e1da;
-      border-radius: 16px;
-      padding: 28px;
-      max-width: 480px;
-      margin: 24px auto;
-      text-align: left;
-      box-shadow: 0 2px 10px rgba(10,22,40,0.06);
-      font-family: inherit;
-    }
-    .transfer-receipt-head {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-    .transfer-receipt-head .brand-mark { width: 32px; height: 32px; flex-shrink: 0; }
-    .transfer-receipt-head-text { flex: 1; display: flex; flex-direction: column; }
-    .transfer-receipt-head-text strong { font-size: 1.05rem; color: #0A1628; }
-    .transfer-receipt-head-text span { font-size: 0.8rem; color: #6b7280; }
-    .transfer-receipt-status {
-      font-size: 0.75rem;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: #ecfdf5;
-      color: #047857;
-      white-space: nowrap;
-    }
-    .transfer-receipt-hero {
-      text-align: center;
-      padding: 8px 0 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .transfer-receipt-hero-label { font-size: 0.8rem; color: #6b7280; }
-    .transfer-receipt-hero-amount { font-size: 2rem; color: #0A1628; font-weight: 600; }
-    .transfer-receipt-hero-sub { font-size: 0.9rem; color: #6b7280; }
-    .transfer-receipt-divider {
-      border-top: 1px dashed #d9d5cc;
-      margin: 16px 0;
-    }
-    .transfer-receipt-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px 16px;
-      margin: 0;
-    }
-    .transfer-receipt-grid div { display: flex; flex-direction: column; gap: 2px; }
-    .transfer-receipt-grid dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: #9ca3af; }
-    .transfer-receipt-grid dd { margin: 0; font-size: 0.9rem; color: #0A1628; font-weight: 500; word-break: break-word; }
-    .transfer-receipt-foot { text-align: center; font-size: 0.78rem; color: #9ca3af; margin: 4px 0 0; }
-
-    @media print {
-      body * { visibility: hidden; }
-      #receipt-printable, #receipt-printable * { visibility: visible; }
-      #receipt-printable {
-        position: absolute;
-        top: 0;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 100%;
-        max-width: 480px;
-        margin: 24px auto;
-        box-shadow: none;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function renderReceipt({ tx, fromAccount, recipient, sendAmount, fee, toCurrency, receiveAmount, rate, purpose, reference }) {
-  ensureReceiptStyles();
-
-  const statusBadge = $('#receipt-status-badge');
-  if (statusBadge) {
-    statusBadge.textContent = tx.status;
-    const isCompleted = tx.status === 'Completed';
-    statusBadge.style.background = isCompleted ? '#ecfdf5' : '#fffbeb';
-    statusBadge.style.color = isCompleted ? '#047857' : '#b45309';
-  }
-
-  $('#receipt-amount-sent').textContent = `${currencySymbol(fromAccount.currency)}${formatAmount(sendAmount)}`;
-  $('#receipt-amount-received-line').textContent = `${recipient.name || 'Recipient'} receives ${currencySymbol(toCurrency)}${formatAmount(receiveAmount)}`;
-
-  $('#receipt-date').textContent = new Date().toLocaleString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-  });
-  $('#receipt-from').textContent = `${fromAccount.currency} account · ${maskAccount(fromAccount.account_number || fromAccount.iban || '')}`;
-  $('#receipt-to').textContent = recipient.name || '—';
-  $('#receipt-recipient-bank').textContent = recipient.meta || '—';
-  $('#receipt-rate').textContent = `1 ${fromAccount.currency} = ${rate.toFixed(4)} ${toCurrency}`;
-  $('#receipt-fee').textContent = `${currencySymbol(fromAccount.currency)}${formatAmount(fee)}`;
-  $('#receipt-total').textContent = `${currencySymbol(fromAccount.currency)}${formatAmount(sendAmount + fee)}`;
-  $('#receipt-purpose').textContent = purpose || '—';
-  $('#receipt-note').textContent = reference || '—';
-}
-
-/* -----------------------------------------------------------
    Confirm & send
    ----------------------------------------------------------- */
 async function handleConfirmSend() {
@@ -969,6 +870,10 @@ async function handleConfirmSend() {
   btn.disabled = true;
   btn.querySelector('.auth-submit-label').textContent = 'Verifying…';
 
+  // TEMPORARY AUTH STEP: no OTP/2FA delivery exists yet (that lands
+  // with the admin dashboard), so we re-check the signed-in user's
+  // password as the confirmation step instead. Swap this call for a
+  // real code-verification endpoint once that's ready.
   const { data: verified, error: verifyError } = await verifyCurrentPassword(pwInput.value);
 
   if (!verified) {
@@ -1016,10 +921,7 @@ async function handleConfirmSend() {
 
   let beneficiaryRecordId = recipient.beneficiaryId;
 
-  const shouldSaveManual = recipient.isNew && $('#save-beneficiary-checkbox')?.checked && recipient.manual?.beneficiaryName;
-  const shouldSaveVerified = recipient.isInternal && $('#save-verified-beneficiary-checkbox')?.checked && recipient.manual?.beneficiaryName;
-
-  if (shouldSaveManual || shouldSaveVerified) {
+  if (recipient.isNew && $('#save-beneficiary-checkbox').checked && recipient.manual?.beneficiaryName) {
     const { data: newBeneficiary, error: benError } = await addBeneficiary(recipient.manual);
     if (benError) {
       showToast(`Couldn't save this recipient: ${benError}`, 'error');
@@ -1029,6 +931,14 @@ async function handleConfirmSend() {
     }
   }
 
+  // receiverAccountId stays null here on purpose — this page never has
+  // a real account id for the recipient (find_account_holder() only
+  // ever returns a name/bank/currency, by design). Instead we pass
+  // receiverIdentifier: the account number/IBAN we have on hand,
+  // whatever its source. process_transfer() resolves a real Meridian
+  // account from that identifier itself, server-side — if it matches,
+  // that account actually gets credited; if not, this behaves exactly
+  // like a genuine external wire (debit-only, status 'Processing').
   const { data: tx, error } = await createTransfer({
     senderAccountId: fromAccount.id,
     receiverAccountId: null,
@@ -1056,8 +966,6 @@ async function handleConfirmSend() {
 
   const speedLabel = speed === 'instant' ? 'minutes' : 'a few hours';
   const remainingBalance = Number(fromAccount.available_balance ?? fromAccount.balance ?? 0) - (sendAmount + fee);
-  const toCurrency = $('#transfer-receive-currency').value;
-  const receiveAmount = Number($('#transfer-receive-amount').value) || 0;
 
   $('#success-reference').textContent = tx.transaction_reference;
   $('#success-status').textContent = tx.status;
@@ -1065,19 +973,6 @@ async function handleConfirmSend() {
   $('#success-message').textContent = tx.status === 'Completed'
     ? `${currencySymbol(fromAccount.currency)}${formatAmount(sendAmount)} has been sent to ${recipient.name} and is already available to them.`
     : `${currencySymbol(fromAccount.currency)}${formatAmount(sendAmount)} is on its way to ${recipient.name}. Most transfers arrive within ${speedLabel}.`;
-
-  renderReceipt({
-    tx,
-    fromAccount,
-    recipient,
-    sendAmount,
-    fee,
-    toCurrency,
-    receiveAmount,
-    rate: lastComputedRate,
-    purpose,
-    reference,
-  });
 
   pwInput.value = '';
   goToStep(5);
@@ -1107,7 +1002,8 @@ function resetWizard() {
 }
 
 /* -----------------------------------------------------------
-   Query params
+   Query params — ?from=<accountId> from accounts.html's "Send"
+   button, ?beneficiary=<id> for a future "send again" link
    ----------------------------------------------------------- */
 function applyQueryParams() {
   const params = new URLSearchParams(window.location.search);
@@ -1145,7 +1041,7 @@ function initPasswordToggle() {
    ----------------------------------------------------------- */
 (async function init() {
   const user = await guardPage();
-  if (!user) return;
+  if (!user) return; // guardPage() already redirected to login.html
 
   populateHeader();
   initUserMenu();
@@ -1154,9 +1050,19 @@ function initPasswordToggle() {
   wireSegmented('speed');
   wireSegmented('schedule');
 
+  // Defensive: make sure the verified/not-found recipient cards
+  // start hidden regardless of what transfer.html ships as their
+  // default markup state. Without this, a "not found" card left
+  // visible in the HTML would show up on first load, before the
+  // person has typed anything at all.
   resetNewRecipientUi();
   setCardHidden('schedule-later-field', true);
 
+  // Safety net: every button in this form is type="button" on
+  // purpose (the wizard advances via JS, never a real submit), but
+  // pressing Enter in a lone visible text field can still trigger
+  // native form submission in some browsers. Block it so that
+  // never reloads the page and wipes wizard state.
   $('#transfer-form').addEventListener('submit', (event) => event.preventDefault());
 
   $('#beneficiary-search').addEventListener('input', (e) => renderBeneficiaryList(e.target.value));
@@ -1207,10 +1113,6 @@ function initPasswordToggle() {
       showToast("Couldn't copy — copy it manually instead.", 'error');
     }
   });
-  $('#download-receipt-btn')?.addEventListener('click', () => {
-    ensureReceiptStyles();
-    window.print();
-  });
 
   const [{ data: accs, error: accError }, { data: bens, error: benError }] = await Promise.all([
     getMyAccounts(user.id),
@@ -1226,8 +1128,7 @@ function initPasswordToggle() {
   renderBeneficiaryList('');
   renderRecentStrip();
   updateStep1ContinueState();
-
-  await recalcConversion();
+  updateLedger();
 
   if (!accounts.length) {
     showToast('Open a currency account before you can send money.', 'error');
