@@ -6,12 +6,35 @@
 
    Load order on profile.html:
      1. style.css     (tokens, reset, buttons, .field/.form-row-*)
-     2. components.css (if present on your build — shared app widgets)
+     2. components.css (shared app widgets — toasts, status pills,
+                         switches; this file no longer redefines
+                         those, see note in section 13/16 below)
      3. profile.css    (this file)
 
    This file assumes the design tokens defined in style.css's
    :root block (--ink, --brass, --ivory, --font-display, etc.) are
    already loaded. It does not redefine them.
+
+   CHANGE LOG (this revision)
+   ---------------------------
+   Added styling for the new "Account & Security" sidebar group
+   (Login settings / Account limits panels) added to profile.html:
+   the nav group label, tier badge, account-info grid, linked-ID
+   cards, session-preference radio cards, the document upload
+   dropzone, and a shared modal (.modal-overlay/.modal-panel/etc.)
+   for the linked-ID re-authentication flow.
+
+   FLAG: .modal-overlay / .modal-panel / .modal-close /
+   .modal-body-text / .modal-actions / .admin-field-error appear
+   in admin-policy.html but this file has never seen
+   admin.css/admin-policy.css, so it has no visibility into
+   whether those classes are already styled there and, if so,
+   whether this definition matches. Defining them here, scoped to
+   what profile.html actually needs, so the linked-ID modal
+   renders correctly regardless — but if admin.css turns out to
+   define the same class names differently, you'll want to
+   reconcile the two (ideally by moving one shared definition into
+   components.css) rather than run both indefinitely.
 
    Contents:
      1.  App shell base
@@ -32,8 +55,15 @@
      16. Preference list / switch toggle
      17. Danger zone
      18. Toast (save feedback)
-     19. Skeleton / loading states
-     20. Responsive breakpoints
+     19. Nav group label (Account & Security)
+     20. Tier badge
+     21. Account info grid (Account limits)
+     22. Linked ID cards
+     23. Session preference options (Login settings)
+     24. Document upload (Account limits)
+     25. Shared modal (Linked ID re-auth)
+     26. Skeleton / loading states
+     27. Responsive breakpoints
    ============================================================= */
 
 /* -------------------------------------------------------------
@@ -611,7 +641,8 @@
   margin-bottom: 0.4rem;
 }
 
-.profile-card-head h3 {
+.profile-card-head h3,
+.profile-card-head h4 {
   font-size: 1.05rem;
 }
 
@@ -636,6 +667,7 @@
 
 .profile-form-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 0.75rem;
   margin-top: 0.5rem;
@@ -709,6 +741,16 @@
 
 /* -------------------------------------------------------------
    13. Status pills
+   -----------------------------------------------------------
+   NOTE: .status-pill / --verified / --neutral / --pending /
+   --blocked are also defined in components.css (the canonical
+   owner per that file's own header). Kept here unchanged from
+   the previous revision of this file rather than removed, to
+   avoid a behavior change outside the scope of this pass — but
+   this is duplicate styling now that components.css is loaded
+   on every page that loads this file. Worth deleting from here
+   in a follow-up cleanup pass, matching what components.css
+   already did for its own dashboard.css duplication.
    ------------------------------------------------------------- */
 .status-pill {
   display: inline-flex;
@@ -871,6 +913,9 @@
 
 /* -------------------------------------------------------------
    16. Preference list / switch toggle
+   -----------------------------------------------------------
+   NOTE: .switch / .switch-track are also defined in
+   components.css — same duplication note as section 13 above.
    ------------------------------------------------------------- */
 .preference-list {
   display: flex;
@@ -974,6 +1019,15 @@
 
 /* -------------------------------------------------------------
    18. Toast (save feedback)
+   -----------------------------------------------------------
+   profile.html now uses the canonical .toast-stack / .toast /
+   .toast--success / .toast--error / .is-visible primitives owned
+   by components.css (see that file's "6. Toast notifications"
+   section) — same fix admin-policy.js's own header comment
+   describes making on the admin side. The .profile-toast* rules
+   below are kept ONLY in case profile.js hasn't been updated yet
+   to build the canonical markup; once it has, this whole section
+   can be deleted.
    ------------------------------------------------------------- */
 .profile-toast-region {
   position: fixed;
@@ -1034,7 +1088,411 @@
 }
 
 /* -------------------------------------------------------------
-   19. Skeleton / loading states
+   19. Nav group label (Account & Security)
+   -----------------------------------------------------------
+   Plain section divider above the Login settings / Account
+   limits links in .profile-nav. Not a link, not focusable —
+   purely a label, so it's kept visually quiet (small, uppercase,
+   muted) rather than competing with the actual nav links.
+   ------------------------------------------------------------- */
+.profile-nav-group-label {
+  padding: 0.9rem 0.85rem 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--slate);
+}
+
+/* -------------------------------------------------------------
+   20. Tier badge (Account limits > Account information)
+   -----------------------------------------------------------
+   Colored by data-tier on the badge element itself
+   (data-tier="1" | "2" | "3"), same attribute-driven pattern
+   admin-policy.js's renderCustomerStatusBadge() already uses for
+   its own status badge — keeps the color logic out of JS.
+   ------------------------------------------------------------- */
+.tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.tier-badge[data-tier="1"] {
+  background: rgba(91, 107, 124, 0.12);
+  color: var(--slate-dark);
+  border-color: var(--line);
+}
+
+.tier-badge[data-tier="2"] {
+  background: rgba(181, 138, 68, 0.16);
+  color: var(--brass-dark);
+  border-color: rgba(181, 138, 68, 0.3);
+}
+
+.tier-badge[data-tier="3"] {
+  background: linear-gradient(135deg, var(--ink) 0%, var(--ink-3) 100%);
+  color: var(--brass-light);
+  border-color: var(--ink);
+}
+
+/* -------------------------------------------------------------
+   21. Account info grid (Account limits > Account information)
+   ------------------------------------------------------------- */
+.account-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.account-info-grid dt {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--slate);
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+
+.account-info-grid dd {
+  font-size: 0.95rem;
+  color: var(--ink);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+/* -------------------------------------------------------------
+   22. Linked ID cards
+   ------------------------------------------------------------- */
+.linked-id-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.linked-id-card {
+  background: var(--ivory);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+}
+
+.linked-id-card .profile-card-head {
+  margin-bottom: 0.9rem;
+}
+
+.linked-id-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  text-align: left;
+}
+
+.linked-id-empty p {
+  font-size: 0.85rem;
+  color: var(--slate);
+}
+
+.linked-id-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.linked-id-fields div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.linked-id-fields dt {
+  font-size: 0.78rem;
+  color: var(--slate);
+  flex-shrink: 0;
+}
+
+.linked-id-fields dd {
+  font-size: 0.85rem;
+  color: var(--ink);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* -------------------------------------------------------------
+   23. Session preference options (Login settings)
+   ------------------------------------------------------------- */
+.session-preference-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.session-preference-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.session-preference-option:hover {
+  border-color: var(--brass);
+}
+
+.session-preference-option input[type="radio"] {
+  margin-top: 0.2rem;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--brass);
+  flex-shrink: 0;
+}
+
+.session-preference-option:has(input:checked) {
+  border-color: var(--brass);
+  background: rgba(181, 138, 68, 0.06);
+}
+
+.session-preference-option strong {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--ink);
+  margin-bottom: 0.2rem;
+}
+
+.session-preference-option .field-hint {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--slate);
+}
+
+/* -------------------------------------------------------------
+   24. Document upload (Account limits > Upload documents)
+   ------------------------------------------------------------- */
+.accepted-docs-group {
+  margin-bottom: 1.25rem;
+}
+
+.accepted-docs-group:last-child {
+  margin-bottom: 0;
+}
+
+.accepted-docs-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem 1rem;
+}
+
+.accepted-docs-list li {
+  font-size: 0.87rem;
+  color: var(--slate-dark);
+  padding-left: 1.1rem;
+  position: relative;
+}
+
+.accepted-docs-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brass);
+}
+
+.document-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding: 2rem 1.25rem;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius-md);
+  background: var(--ivory);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.document-dropzone:hover,
+.document-dropzone.is-dragover {
+  border-color: var(--brass);
+  background: rgba(181, 138, 68, 0.05);
+}
+
+.document-dropzone svg {
+  width: 26px;
+  height: 26px;
+  color: var(--brass-dark);
+}
+
+.document-dropzone p {
+  font-size: 0.87rem;
+  color: var(--slate);
+}
+
+.document-dropzone-browse {
+  color: var(--brass-dark);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.document-upload-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--ivory);
+}
+
+.document-upload-preview-name {
+  font-size: 0.85rem;
+  color: var(--ink);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-upload-progress {
+  margin-top: 0.85rem;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.document-upload-progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--brass);
+  transition: width 0.2s ease;
+}
+
+/* -------------------------------------------------------------
+   25. Shared modal (Linked ID re-auth)
+   -----------------------------------------------------------
+   See FLAG in this file's header — these class names also appear
+   in admin-policy.html without a definition this file has ever
+   seen. Scoped here just enough to render profile.html's
+   #linked-id-auth-modal correctly.
+   ------------------------------------------------------------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(10, 22, 40, 0.55);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.modal-overlay[hidden] {
+  display: none;
+}
+
+.modal-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: var(--paper);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 2rem;
+  transform: translateY(10px) scale(0.98);
+  transition: transform 0.2s ease;
+}
+
+.modal-overlay.is-open .modal-panel {
+  transform: translateY(0) scale(1);
+}
+
+.modal-panel h2 {
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+  padding-right: 1.5rem;
+}
+
+.modal-body-text {
+  font-size: 0.88rem;
+  color: var(--slate);
+  margin-bottom: 1.25rem;
+}
+
+.modal-close {
+  position: absolute;
+  top: 1.1rem;
+  right: 1.1rem;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--slate);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  background: var(--ivory);
+  color: var(--ink);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.admin-field-error {
+  min-height: 1.1em;
+  font-size: 0.82rem;
+  color: var(--red);
+}
+
+/* -------------------------------------------------------------
+   26. Skeleton / loading states
    ------------------------------------------------------------- */
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 0.55; }
@@ -1083,10 +1541,14 @@
 }
 
 /* -------------------------------------------------------------
-   20. Responsive breakpoints
+   27. Responsive breakpoints
    ------------------------------------------------------------- */
 @media (max-width: 1080px) {
   .profile-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .linked-id-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -1155,12 +1617,27 @@
     white-space: nowrap;
   }
 
+  .profile-nav-group-label {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    padding-inline: 0.6rem;
+  }
+
   .form-row-2,
   .form-row-3 {
     grid-template-columns: 1fr;
   }
 
   .auth-methods {
+    grid-template-columns: 1fr;
+  }
+
+  .account-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .linked-id-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1213,6 +1690,14 @@
 
   .profile-toast {
     max-width: none;
+  }
+
+  .accepted-docs-list {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-panel {
+    padding: 1.5rem;
   }
 }
 
