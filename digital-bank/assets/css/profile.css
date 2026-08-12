@@ -17,12 +17,28 @@
 
    CHANGE LOG (this revision)
    ---------------------------
-   Added styling for the new "Account & Security" sidebar group
-   (Login settings / Account limits panels) added to profile.html:
-   the nav group label, tier badge, account-info grid, linked-ID
-   cards, session-preference radio cards, the document upload
-   dropzone, and a shared modal (.modal-overlay/.modal-panel/etc.)
-   for the linked-ID re-authentication flow.
+   Replaced the old "3 Linked ID cards shown at once + one static
+   upload dropzone" styling with the sequential Opay-style
+   verification stepper profile.js/profile.html now render:
+     - Section 22 is now the stepper itself — one .verification-tier
+       per tier, state-flagged (is-locked / is-active / is-pending /
+       is-rejected / is-verified) the same way admin-policy.js's own
+       status badge is attribute/class-driven rather than JS-styled.
+     - Section 24 is now the upload form that gets built INSIDE an
+       active or rejected tier, rather than a single static dropzone
+       card that lived outside the tier list. Class names follow
+       what profile.js actually renders (.verification-upload-form,
+       .document-upload-dropzone, etc.) — the old .document-dropzone
+       / .accepted-docs-* rules are gone since nothing renders that
+       markup anymore.
+     - Section 25's modal is unchanged in substance (still the same
+       .modal-overlay/.modal-panel primitives) but its comments/ids
+       now refer to #verify-identity-modal, the single shared
+       instance profile.js opens for any tier's "View details",
+       replacing the old per-Linked-ID-card modal.
+     - Added .status-pill--rejected (red) so a rejected/action-
+       required tier reads differently at a glance from a pending
+       one (amber) — profile.js applies it to that tier's pill.
 
    FLAG: .modal-overlay / .modal-panel / .modal-close /
    .modal-body-text / .modal-actions / .admin-field-error appear
@@ -30,7 +46,7 @@
    admin.css/admin-policy.css, so it has no visibility into
    whether those classes are already styled there and, if so,
    whether this definition matches. Defining them here, scoped to
-   what profile.html actually needs, so the linked-ID modal
+   what profile.html actually needs, so the identity re-auth modal
    renders correctly regardless — but if admin.css turns out to
    define the same class names differently, you'll want to
    reconcile the two (ideally by moving one shared definition into
@@ -58,10 +74,10 @@
      19. Nav group label (Account & Security)
      20. Tier badge
      21. Account info grid (Account limits)
-     22. Linked ID cards
+     22. Verification stepper (Tier 1 → 2 → 3)
      23. Session preference options (Login settings)
-     24. Document upload (Account limits)
-     25. Shared modal (Linked ID re-auth)
+     24. Document upload (verification stepper forms)
+     25. Shared modal (identity re-auth)
      26. Skeleton / loading states
      27. Responsive breakpoints
    ============================================================= */
@@ -751,6 +767,11 @@
    on every page that loads this file. Worth deleting from here
    in a follow-up cleanup pass, matching what components.css
    already did for its own dashboard.css duplication.
+
+   --rejected is NEW this revision (components.css doesn't have
+   it) — the verification stepper uses it for a rejected/action-
+   required tier, distinct from the amber --pending used for
+   "awaiting review" so the two read differently at a glance.
    ------------------------------------------------------------- */
 .status-pill {
   display: inline-flex;
@@ -785,7 +806,8 @@
   color: var(--amber);
 }
 
-.status-pill--blocked {
+.status-pill--blocked,
+.status-pill--rejected {
   background: var(--red-bg);
   color: var(--red);
 }
@@ -1147,6 +1169,9 @@
 
 /* -------------------------------------------------------------
    21. Account info grid (Account limits > Account information)
+   -----------------------------------------------------------
+   Also reused (smaller) inside a verified tier's revealed detail
+   block — see .verification-tier-details dl in section 22.
    ------------------------------------------------------------- */
 .account-info-grid {
   display: grid;
@@ -1173,67 +1198,119 @@
 }
 
 /* -------------------------------------------------------------
-   22. Linked ID cards
+   22. Verification stepper (Tier 1 → 2 → 3)
+   -----------------------------------------------------------
+   profile.js renders exactly ONE of these states into each
+   .verification-tier at a time (is-locked / is-active / is-pending
+   / is-rejected / is-verified), so the styling below is scoped by
+   those state classes rather than by which child elements happen
+   to be present.
    ------------------------------------------------------------- */
-.linked-id-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+.verification-stepper {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  margin-top: 1.5rem;
 }
 
-.linked-id-card {
-  background: var(--ivory);
+.verification-tier {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 1.25rem;
+  background: var(--ivory);
+  padding: 1.5rem;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
-.linked-id-card .profile-card-head {
-  margin-bottom: 0.9rem;
+.verification-tier.is-locked {
+  opacity: 0.6;
 }
 
-.linked-id-empty {
+.verification-tier.is-active {
+  border-color: var(--brass);
+  background: rgba(181, 138, 68, 0.05);
+}
+
+.verification-tier.is-pending {
+  border-color: rgba(196, 149, 60, 0.4);
+}
+
+.verification-tier.is-rejected {
+  border-color: rgba(192, 69, 59, 0.3);
+}
+
+.verification-tier.is-verified {
+  border-color: rgba(60, 140, 100, 0.3);
+  background: var(--paper);
+}
+
+.verification-tier-head {
   display: flex;
-  flex-direction: column;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.75rem 0;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius-sm);
-  padding: 1.25rem;
-  text-align: left;
+  gap: 1rem;
 }
 
-.linked-id-empty p {
+.verification-tier-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.verification-tier-head h4 {
+  font-size: 1rem;
+  margin-bottom: 0.2rem;
+}
+
+.verification-tier-head p {
   font-size: 0.85rem;
   color: var(--slate);
 }
 
-.linked-id-fields {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
-.linked-id-fields div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.linked-id-fields dt {
-  font-size: 0.78rem;
-  color: var(--slate);
+.verification-tier-head .status-pill {
   flex-shrink: 0;
+  margin-top: 0.1rem;
 }
 
-.linked-id-fields dd {
-  font-size: 0.85rem;
+.verification-tier-number {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+  background: rgba(10, 22, 40, 0.06);
+  color: var(--slate-dark);
+}
+
+.verification-tier.is-active .verification-tier-number,
+.verification-tier.is-rejected .verification-tier-number {
+  background: var(--brass);
   color: var(--ink);
-  font-weight: 600;
-  text-align: right;
+}
+
+.verification-tier.is-verified .verification-tier-number {
+  background: var(--green);
+  color: var(--ivory);
+}
+
+.verification-tier-details {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.verification-tier-details .account-info-grid {
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.verification-tier-details .account-info-grid dd {
+  font-size: 0.88rem;
+}
+
+.verification-upgrade-btn {
+  margin-top: 1.25rem;
 }
 
 /* -------------------------------------------------------------
@@ -1288,75 +1365,59 @@
 }
 
 /* -------------------------------------------------------------
-   24. Document upload (Account limits > Upload documents)
+   24. Document upload (verification stepper forms)
+   -----------------------------------------------------------
+   This is the form profile.js builds INSIDE an "active" or
+   "rejected" tier (buildUploadForm() / wireUploadForm()) — there
+   is no longer a standalone upload card outside the stepper, and
+   no static "accepted documents" list (each tier's own
+   <select> already shows exactly what that tier accepts).
    ------------------------------------------------------------- */
-.accepted-docs-group {
-  margin-bottom: 1.25rem;
+.verification-upload {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
 }
 
-.accepted-docs-group:last-child {
-  margin-bottom: 0;
+.verification-tier.is-rejected .verification-upload {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 1rem;
 }
 
-.accepted-docs-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.5rem 1rem;
+.verification-upload-form .field {
+  margin-bottom: 1rem;
 }
 
-.accepted-docs-list li {
-  font-size: 0.87rem;
-  color: var(--slate-dark);
-  padding-left: 1.1rem;
-  position: relative;
-}
-
-.accepted-docs-list li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.55em;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--brass);
-}
-
-.document-dropzone {
+.document-upload-dropzone {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   text-align: center;
-  padding: 2rem 1.25rem;
+  padding: 1.75rem 1.25rem;
   border: 1.5px dashed var(--line);
   border-radius: var(--radius-md);
-  background: var(--ivory);
+  background: var(--paper);
   cursor: pointer;
   transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
-.document-dropzone:hover,
-.document-dropzone.is-dragover {
+.document-upload-dropzone:hover,
+.document-upload-dropzone:focus-visible,
+.document-upload-dropzone.is-dragover {
   border-color: var(--brass);
   background: rgba(181, 138, 68, 0.05);
 }
 
-.document-dropzone svg {
-  width: 26px;
-  height: 26px;
-  color: var(--brass-dark);
+.document-upload-dropzone:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
 }
 
-.document-dropzone p {
+.document-upload-dropzone p {
   font-size: 0.87rem;
   color: var(--slate);
-}
-
-.document-dropzone-browse {
-  color: var(--brass-dark);
-  font-weight: 600;
-  text-decoration: underline;
 }
 
 .document-upload-preview {
@@ -1371,7 +1432,7 @@
   background: var(--ivory);
 }
 
-.document-upload-preview-name {
+.document-upload-preview [data-preview-name] {
   font-size: 0.85rem;
   color: var(--ink);
   font-weight: 600;
@@ -1397,12 +1458,13 @@
 }
 
 /* -------------------------------------------------------------
-   25. Shared modal (Linked ID re-auth)
+   25. Shared modal (identity re-auth)
    -----------------------------------------------------------
    See FLAG in this file's header — these class names also appear
    in admin-policy.html without a definition this file has ever
-   seen. Scoped here just enough to render profile.html's
-   #linked-id-auth-modal correctly.
+   seen. Scoped here just enough to render profile.html's single
+   #verify-identity-modal correctly, regardless of which
+   verification tier opened it.
    ------------------------------------------------------------- */
 .modal-overlay {
   position: fixed;
@@ -1547,10 +1609,6 @@
   .profile-summary-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-
-  .linked-id-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 @media (max-width: 980px) {
@@ -1637,7 +1695,7 @@
     grid-template-columns: 1fr;
   }
 
-  .linked-id-grid {
+  .verification-tier-details .account-info-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1670,6 +1728,18 @@
     padding: 1.25rem;
   }
 
+  .verification-tier {
+    padding: 1.1rem;
+  }
+
+  .verification-tier-head {
+    flex-wrap: wrap;
+  }
+
+  .verification-tier-head .status-pill {
+    margin-left: 2.75rem;
+  }
+
   .app-user-name {
     display: none;
   }
@@ -1690,10 +1760,6 @@
 
   .profile-toast {
     max-width: none;
-  }
-
-  .accepted-docs-list {
-    grid-template-columns: 1fr;
   }
 
   .modal-panel {
