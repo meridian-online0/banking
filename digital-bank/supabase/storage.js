@@ -2,10 +2,11 @@
    MERIDIAN — International Digital Banking
    Storage module: supabase/storage.js
 
-   Wraps Supabase Storage for the two things this app uploads
-   files for: profile photos (profile.html → .profile-avatar-edit)
-   and support-ticket attachments. Same { data, error } contract as
-   auth.js / database.js.
+   Wraps Supabase Storage for the things this app uploads files
+   for: profile photos (profile.html → .profile-avatar-edit),
+   support-ticket attachments, and identity documents (profile.html
+   → Account limits > Upload documents). Same { data, error }
+   contract as auth.js / database.js.
 
    BUCKET SETUP (do this once in the Supabase dashboard, or via SQL):
      - "avatars"               public bucket, 2MB file size limit,
@@ -16,6 +17,14 @@
                                 Read access should be gated by an RLS
                                 policy on storage.objects, not by the
                                 bucket being public.
+     - "identity-documents"    private bucket, 10MB file size limit.
+                                Path convention:
+                                identity-documents/{user_id}/{document_id}/{filename}
+                                Created by migration 016's Part G,
+                                with its own owner-scoped + admin-read
+                                storage.objects RLS policies — same
+                                private-bucket pattern as
+                                support-attachments.
    ============================================================= */
 
 import { supabase } from './config.js';
@@ -143,4 +152,43 @@ export async function getTicketAttachmentUrl(path) {
 
 export async function listTicketAttachments(userId, ticketId) {
   return listFiles(ATTACHMENTS_BUCKET, `${userId}/${ticketId}`);
+}
+
+/* -----------------------------------------------------------
+   Identity documents — used by the Account limits > Upload
+   documents flow (submitIdentityDocument() in database.js)
+   -----------------------------------------------------------
+   Mirrors uploadTicketAttachment()'s shape: this only uploads the
+   file and returns its path — the caller (submitIdentityDocument()
+   in database.js) is responsible for inserting the tracking row
+   into identity_documents, same division of labor as ticket
+   attachments/support_tickets above.
+   ----------------------------------------------------------- */
+
+const IDENTITY_DOCS_BUCKET = 'identity-documents';
+const MAX_IDENTITY_DOC_BYTES = 10 * 1024 * 1024; // matches the bucket's configured limit
+
+/**
+ * Uploads one identity/proof-of-address file for a pending
+ * identity_documents row. documentId should be the same UUID the
+ * caller is about to insert as that row's primary key, so the
+ * storage path and the DB row line up.
+ */
+export async function uploadIdentityDocument(documentId, file, userId) {
+  if (!file) return { data: null, error: 'No file selected.' };
+  if (file.size > MAX_IDENTITY_DOC_BYTES) return { data: null, error: 'That file is too large — the limit is 10MB.' };
+
+  let uid = userId;
+  if (!uid) {
+    const { data: user } = await getCurrentUser();
+    uid = user?.id;
+  }
+  if (!uid) return { data: null, error: 'Not signed in.' };
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+  const path = `${uid}/${documentId}/${safeName}`;
+  const { error } = await uploadFile(IDENTITY_DOCS_BUCKET, path, file);
+  if (error) return { data: null, error };
+
+  return { data: { path }, error: null };
 }
