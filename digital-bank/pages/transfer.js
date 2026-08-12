@@ -752,15 +752,18 @@ async function recalcConversion() {
   $('#fee-available-value').textContent = fromAccount ? `${currencySymbol(fromCurrency)}${formatAmount(available)}` : '—';
   $('#fee-remaining-value').textContent = fromAccount ? `${currencySymbol(fromCurrency)}${formatAmount(Math.max(0, available - total))}` : '—';
 
+// NEW — live-updates on every keystroke (recalcConversion runs on
+  // #transfer-send-amount's input listener), not just on Continue.
+  // See buildAmountNote() for the priority order.
   const noteEl = $('#balance-note');
-  if (fromAccount && total > available) {
-    noteEl.textContent = `Insufficient balance — you have ${currencySymbol(fromCurrency)}${formatAmount(available)} available in this account.`;
-    noteEl.classList.add('balance-note--warning');
-  } else if (fromAccount) {
-    noteEl.textContent = `${currencySymbol(fromCurrency)}${formatAmount(Math.max(0, available - total))} left in this account after sending.`;
-    noteEl.classList.remove('balance-note--warning');
+  const limitsInCurrency = await getLimitsInCurrency(fromCurrency);
+  const note = buildAmountNote({ fromAccount, fromCurrency, sendAmount, total, available }, limitsInCurrency);
+  if (note) {
+    noteEl.textContent = note.message;
+    noteEl.classList.toggle('balance-note--warning', note.type === 'error');
   } else {
     noteEl.textContent = '';
+    noteEl.classList.remove('balance-note--warning');
   }
 
   updateLedger();
@@ -811,8 +814,67 @@ async function getEffectiveTransferLimits() {
   return {
     maxSingleTransfer: pick('max_single_transfer'),
     minTransfer: pick('min_transfer'),
-    dailyTransferLimit: pick('daily_transfer_limit'), // fetched, not yet enforced — see comment above
+    dailyTransferLimit: pick('daily_transfer_limit'),
   };
+}
+
+/**
+ * Converts the USD-denominated limits into `currency` — see the
+ * header note above import block: bank_policies'
+ * transfer_controls fields are all USD, but the amount on this
+ * page is in the from-account's own currency. Uses the same
+ * getExchangeRate() every other conversion in this file goes
+ * through, so it benefits from that function's existing caching.
+ */
+async function getLimitsInCurrency(currency) {
+  if (!effectiveLimits) effectiveLimits = await getEffectiveTransferLimits();
+  if (currency === 'USD') return effectiveLimits;
+
+  const { data: rateData } = await getExchangeRate('USD', currency);
+  const rate = Number(rateData?.exchange_rate ?? 1);
+  const convert = (v) => (v == null ? null : v * rate);
+
+  return {
+    maxSingleTransfer: convert(effectiveLimits.maxSingleTransfer),
+    minTransfer: convert(effectiveLimits.minTransfer),
+    dailyTransferLimit: convert(effectiveLimits.dailyTransferLimit),
+  };
+}
+
+/**
+ * NEW — single source of truth for the #balance-note message,
+ * used by both recalcConversion() (live, on every keystroke) and
+ * validateStep2() (blocking, on Continue) so the two can never
+ * disagree. Priority: insufficient balance > below minimum > above
+ * per-transfer maximum > above daily limit > default "remaining
+ * after send" info line.
+ *
+ * NOTE on the daily check: this only catches a single transfer
+ * that alone exceeds the daily limit — it does NOT sum the
+ * customer's already-sent transfers today, since that needs a
+ * getTransactions()-style aggregation this function doesn't
+ * attempt (see the same caveat on getEffectiveTransferLimits()'s
+ * dailyTransferLimit field from the previous revision).
+ */
+function buildAmountNote(info, limits) {
+  if (!info.fromAccount || info.sendAmount <= 0) return null;
+
+  const sym = currencySymbol(info.fromCurrency);
+
+  if (info.total > info.available) {
+    return { type: 'error', message: `Insufficient balance — you have ${sym}${formatAmount(info.available)} available in this account.` };
+  }
+  if (limits.minTransfer != null && info.sendAmount < limits.minTransfer) {
+    return { type: 'error', message: `The minimum transfer amount is ${sym}${formatAmount(limits.minTransfer)}.` };
+  }
+  if (limits.maxSingleTransfer != null && info.sendAmount > limits.maxSingleTransfer) {
+    return { type: 'error', message: `This exceeds your maximum single transfer limit of ${sym}${formatAmount(limits.maxSingleTransfer)}.` };
+  }
+  if (limits.dailyTransferLimit != null && info.sendAmount > limits.dailyTransferLimit) {
+    return { type: 'error', message: `This exceeds your daily transfer limit of ${sym}${formatAmount(limits.dailyTransferLimit)}.` };
+  }
+
+  return { type: 'info', message: `${sym}${formatAmount(Math.max(0, info.available - info.total))} left in this account after sending.` };
 }
 
 async function validateStep2() {
@@ -826,22 +888,13 @@ async function validateStep2() {
     $('#transfer-send-amount').focus();
     return false;
   }
-  if (info.total > info.available) {
-    showToast("That's more than the available balance on this account.", 'error');
-    return false;
-  }
 
-  // NEW — enforce the resolved (override-or-global) single-transfer limits.
-  if (!effectiveLimits) effectiveLimits = await getEffectiveTransferLimits();
-  const { maxSingleTransfer, minTransfer } = effectiveLimits;
-
-  if (minTransfer != null && info.sendAmount < minTransfer) {
-    showToast(`The minimum transfer amount is ${currencySymbol(info.fromCurrency)}${formatAmount(minTransfer)}.`, 'error');
-    $('#transfer-send-amount').focus();
-    return false;
-  }
-  if (maxSingleTransfer != null && info.sendAmount > maxSingleTransfer) {
-    showToast(`This exceeds your maximum single transfer limit of ${currencySymbol(info.fromCurrency)}${formatAmount(maxSingleTransfer)}.`, 'error');
+  const limits = await getLimitsInCurrency(info.fromCurrency);
+  const note = buildAmountNote(info, limits);
+  if (note?.type === 'error') {
+    // #balance-note (updated live by recalcConversion()) already
+    // shows this message — just block Continue and focus the
+    // field, rather than depend on the toast for it too.
     $('#transfer-send-amount').focus();
     return false;
   }
@@ -1345,14 +1398,16 @@ function initPasswordToggle() {
     }
   });
 
-  const [{ data: accs, error: accError }, { data: bens, error: benError }] = await Promise.all([
+const [{ data: accs, error: accError }, { data: bens, error: benError }, limits] = await Promise.all([
     getMyAccounts(user.id),
     getMyBeneficiaries(user.id),
+    getEffectiveTransferLimits(), // NEW — prefetch so the first keystroke on step 2 is instant
   ]);
   if (accError) showToast("Couldn't load your accounts. Please refresh.", 'error');
   if (benError) showToast("Couldn't load your beneficiaries. Please refresh.", 'error');
   accounts = accs || [];
   beneficiaries = bens || [];
+  effectiveLimits = limits; // NEW
 
   applyQueryParams();
   renderFromAccountStrip();
