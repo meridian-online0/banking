@@ -350,7 +350,6 @@
             <label class="admin-toggle-row" data-permission="deposits"><span>Deposits</span><input type="checkbox" class="admin-switch"></label>
             <label class="admin-toggle-row" data-permission="notifications"><span>Notifications</span><input type="checkbox" class="admin-switch"></label>
           </div>
-          </div>
           <div class="admin-card-foot">
             <span class="admin-field-error" data-group-error></span>
             <button type="button" class="btn btn-primary btn-sm" id="save-permissions-btn">Save permissions</button>
@@ -363,12 +362,14 @@
             <h2>Transfer limit overrides</h2>
             <span class="admin-card-head-note">Leave blank to inherit the global value.</span>
           </div>
+             
           <div class="admin-field-grid">
             <label class="admin-field"><span>Daily transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="daily_transfer_limit_override" min="0" step="0.01" placeholder="Inherit global"></div></label>
             <label class="admin-field"><span>Monthly transfer limit</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="monthly_transfer_limit_override" min="0" step="0.01" placeholder="Inherit global"></div></label>
             <label class="admin-field"><span>Maximum single transfer</span><div class="admin-input-prefix"><em>USD</em><input type="number" name="max_single_transfer_override" min="0" step="0.01" placeholder="Inherit global"></div></label>
             <label class="admin-field"><span>Maximum beneficiaries</span><input type="number" name="max_beneficiaries_override" min="0" step="1" placeholder="Inherit global"></label>
           </div>
+             
           <div class="admin-card-foot">
             <span class="admin-field-error" data-group-error></span>
             <button type="button" class="btn btn-primary btn-sm" id="save-overrides-btn">Save overrides</button>
