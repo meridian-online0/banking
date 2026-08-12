@@ -650,6 +650,38 @@ export async function getMyPermissions(userId) {
   if (!uid) return { data: null, error: 'Not signed in.' };
   return wrap(supabase.from('user_permissions').select('*').eq('user_id', uid).maybeSingle());
 }
+
+
+/* -----------------------------------------------------------
+   Transfer limits (read-only, customer side)
+   -----------------------------------------------------------
+   Same tables admin-policy.js reads via admin.js's
+   getPolicyGroup()/getCustomerLimitOverrides() — but those go
+   through admin-only RPCs/RLS. These read the same two tables
+   directly, scoped to what a customer should legitimately see:
+     - bank_policies: bank-wide defaults, assumed readable to any
+       authenticated user (it's "what everyone inherits", not
+       secret).
+     - user_limit_overrides: assumed to carry an owner-scoped
+       SELECT policy (auth.uid() = user_id), the same shape
+       user_permissions already has per 012_extend_customer_
+       permissions.sql. If that policy doesn't exist yet on this
+       table, add it — this function will just silently return
+       null until then, not error.
+   ----------------------------------------------------------- */
+export async function getTransferPolicy() {
+  return wrap(
+    supabase.from('bank_policies').select('policy_values').eq('policy_group', 'transfer_controls').maybeSingle()
+  );
+}
+
+export async function getMyTransferLimitOverrides(userId) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
+  return wrap(
+    supabase.from('user_limit_overrides').select('override_values').eq('user_id', uid).maybeSingle()
+  );
+}
 /* -----------------------------------------------------------
    Investments — buy / sell
    -----------------------------------------------------------
