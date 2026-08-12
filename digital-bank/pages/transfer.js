@@ -25,11 +25,26 @@
       needed — no changes to transfer.html required. See
       loadJsPDF(), buildReceiptPdf(), handleDownloadReceipt(), and
       ensureDownloadReceiptButton().
+   5. NEW — Transfer limits (max_single_transfer / min_transfer) are
+      now actually enforced against the customer's real
+      bank_policies / user_limit_overrides rows, override-wins-
+      over-global. Previously validateStep2() only checked amount
+      > 0 and available balance — the admin panel's "Transfer limit
+      overrides" card had nothing on the customer side reading it
+      back. See getEffectiveTransferLimits() and the new checks in
+      validateStep2(). NOTE: this is client-side only — see the
+      caveat in this function's own comment block.
 
    STILL OUTSTANDING (not fixable in this file): the receiver in a
    cross-currency transfer is credited the sender-side amount
    as-is — process_transfer() never converts it into the receiver's
    own currency. That's a SQL-side fix in the migration, not here.
+
+   Also still outstanding: daily/weekly/monthly transfer limits
+   (daily_transfer_limit etc.) are read by getEffectiveTransferLimits()
+   but NOT enforced yet — that needs summing the customer's already-
+   sent transfers in the period, which wasn't specified. See that
+   function's comment.
    ============================================================= */
 
 import { signOutUser } from '../supabase/auth.js';
@@ -44,6 +59,8 @@ import {
   findRecipient,
   getExchangeRate,
   createTransfer,
+  getTransferPolicy,          // NEW
+  getMyTransferLimitOverrides, // NEW
 } from '../supabase/database.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
@@ -127,7 +144,8 @@ let verifiedRecipient = null;
 let identifierLookupTimer = null;
 let authFailedAttempts = 0;
 let authLockedUntil = 0;
-let lastTransferReceipt = null; // NEW — populated right before step 5, read by the PDF download
+let lastTransferReceipt = null; // populated right before step 5, read by the PDF download
+let effectiveLimits = null; // NEW — { maxSingleTransfer, minTransfer, dailyTransferLimit }, resolved once per wizard pass
 
 /* -----------------------------------------------------------
    Toasts
@@ -460,12 +478,6 @@ function renderRecentStrip() {
 /* -----------------------------------------------------------
    New recipient — account-number auto-verification
    ----------------------------------------------------------- */
-
-// NEW: creates/shows/hides the "save as beneficiary" row inside the
-// verified-recipient card. Only relevant for internally-matched
-// recipients (source: 'internal') — a saved-beneficiary match is
-// already saved, and the manual-entry path already has its own
-// save checkbox elsewhere in the form.
 function toggleVerifiedSaveOption(show) {
   const card = $('#recipient-verified-card');
   if (!card) return;
@@ -548,16 +560,7 @@ function handleIdentifierInput(event) {
       showVerifiedCard({
         name: data.display_name,
         bank: `${data.bank_name} · ${data.currency} Meridian account`,
-        // FIX: previously hardcoded to null. We don't have a real
-        // account row for internal matches (find_account_holder()
-        // deliberately never returns one), but we DO have the
-        // identifier the person typed — show that, masked.
         account: value,
-        // FIX: previously hardcoded to null. No real country field
-        // comes back from find_account_holder() — this is a
-        // best-effort label from the account's currency, not a
-        // verified country. Swap for the real thing if that RPC is
-        // ever extended to return one.
         country: CURRENCY_COUNTRY_HINT[data.currency] ? `${CURRENCY_COUNTRY_HINT[data.currency]} (est.)` : '—',
         initial: (data.display_name || '?').charAt(0).toUpperCase(),
         isInternal: true,
@@ -759,6 +762,53 @@ async function recalcConversion() {
   return { fromAccount, fromCurrency, toCurrency, sendAmount, fee, rate, receiveAmount, speed, total, available };
 }
 
+/* -----------------------------------------------------------
+   NEW — Transfer limits (override-wins-over-global)
+   -----------------------------------------------------------
+   Mirrors the precedence admin-policy.html documents for the admin
+   side ("Leave blank to inherit the global value"): a value in the
+   customer's own user_limit_overrides row wins; otherwise fall back
+   to the bank-wide bank_policies 'transfer_controls' row. Resolved
+   once per wizard pass and cached in effectiveLimits (cleared by
+   resetWizard()) so re-entering step 2 repeatedly doesn't re-fetch.
+
+   NOT covered here: daily_transfer_limit / weekly_transfer_limit /
+   monthly_transfer_limit are fetched (in case you want them later)
+   but NOT enforced — that needs summing the customer's already-sent
+   transfers within the relevant period, which is a getTransactions()-
+   style aggregation this function doesn't attempt, since the exact
+   rule (which transfer types/statuses count, and whether a
+   scheduled-for-later transfer counts against today or its future
+   send date) hasn't been decided.
+
+   ALSO NOT covered: this is enforced client-side only. If
+   process_transfer() (the RPC createTransfer() calls) doesn't check
+   these limits itself server-side, a customer bypassing this JS
+   could still exceed them — this function is a UX guardrail, not a
+   security boundary.
+   ----------------------------------------------------------- */
+async function getEffectiveTransferLimits() {
+  const [{ data: policy }, { data: overrides }] = await Promise.all([
+    getTransferPolicy(),
+    getMyTransferLimitOverrides(),
+  ]);
+  const global = policy?.policy_values || {};
+  const custom = overrides?.override_values || {};
+
+  const pick = (key) => {
+    const overrideVal = custom[key];
+    if (overrideVal !== null && overrideVal !== undefined && overrideVal !== '') return Number(overrideVal);
+    const globalVal = global[key];
+    return globalVal !== null && globalVal !== undefined && globalVal !== '' ? Number(globalVal) : null;
+  };
+
+  return {
+    maxSingleTransfer: pick('max_single_transfer'),
+    minTransfer: pick('min_transfer'),
+    dailyTransferLimit: pick('daily_transfer_limit'), // fetched, not yet enforced — see comment above
+  };
+}
+
 async function validateStep2() {
   const info = await recalcConversion();
   if (!info.fromAccount) {
@@ -774,6 +824,22 @@ async function validateStep2() {
     showToast("That's more than the available balance on this account.", 'error');
     return false;
   }
+
+  // NEW — enforce the resolved (override-or-global) single-transfer limits.
+  if (!effectiveLimits) effectiveLimits = await getEffectiveTransferLimits();
+  const { maxSingleTransfer, minTransfer } = effectiveLimits;
+
+  if (minTransfer != null && info.sendAmount < minTransfer) {
+    showToast(`The minimum transfer amount is ${currencySymbol(info.fromCurrency)}${formatAmount(minTransfer)}.`, 'error');
+    $('#transfer-send-amount').focus();
+    return false;
+  }
+  if (maxSingleTransfer != null && info.sendAmount > maxSingleTransfer) {
+    showToast(`This exceeds your maximum single transfer limit of ${currencySymbol(info.fromCurrency)}${formatAmount(maxSingleTransfer)}.`, 'error');
+    $('#transfer-send-amount').focus();
+    return false;
+  }
+
   return true;
 }
 
@@ -902,8 +968,6 @@ async function handleConfirmSend() {
     }
   }
 
-  // NEW: save an auto-matched internal recipient as a beneficiary too,
-  // if the person left the (now-present) save checkbox checked.
   if (!recipient.isNew && verifiedRecipient?.source === 'internal') {
     const saveInternalCheckbox = $('#save-verified-beneficiary-checkbox');
     if (saveInternalCheckbox?.checked) {
@@ -961,7 +1025,6 @@ async function handleConfirmSend() {
     ? `${currencySymbol(fromAccount.currency)}${formatAmount(sendAmount)} has been sent to ${recipient.name} and is already available to them.`
     : `${currencySymbol(fromAccount.currency)}${formatAmount(sendAmount)} is on its way to ${recipient.name}. Most transfers arrive within ${speedLabel}.`;
 
-  // NEW: snapshot everything the PDF receipt needs.
   lastTransferReceipt = {
     reference: tx.transaction_reference,
     status: tx.status,
@@ -988,10 +1051,6 @@ async function handleConfirmSend() {
 /* -----------------------------------------------------------
    Receipt PDF
    ----------------------------------------------------------- */
-
-// Loads jsPDF from a CDN the first time it's actually needed, so
-// transfer.html doesn't need a new <script> tag added for this to
-// work. Safe to call repeatedly — reuses the same <script> tag.
 function loadJsPDF() {
   return new Promise((resolve, reject) => {
     if (window.jspdf?.jsPDF) return resolve(window.jspdf.jsPDF);
@@ -1013,7 +1072,6 @@ function buildReceiptPdf(JsPDFCtor, data) {
   const marginX = 56;
   let y = 64;
 
-  // Brand header
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
   doc.setTextColor('#0A1628');
@@ -1140,10 +1198,6 @@ async function handleDownloadReceipt() {
   }
 }
 
-// NEW: injects the "Download receipt" button into the success step
-// once, at init — the panel it lives in is already hidden/shown by
-// the existing .send-panel.is-active CSS, so no extra visibility
-// logic is needed here.
 function ensureDownloadReceiptButton() {
   const actions = $('.send-success-actions');
   if (!actions || $('#download-receipt-btn')) return;
@@ -1165,10 +1219,8 @@ function resetWizard() {
   $('#transfer-form').reset();
   $('#recipient-identifier').value = '';
   $('#beneficiary-search').value = '';
-  // NEW: form.reset() puts the amount field back to the HTML's
-  // value="1000" default — clear it again so "Send another" also
-  // starts at $0.00, not $1,000.00.
   $('#transfer-send-amount').value = '';
+  effectiveLimits = null; // NEW — re-resolve limits on next step-2 validation
   $('#recipient-saved-toggle').open = false;
   $('#auth-password-error').textContent = '';
   authFailedAttempts = 0;
@@ -1299,10 +1351,6 @@ function initPasswordToggle() {
   applyQueryParams();
   renderFromAccountStrip();
 
-  // NEW: default the amount to empty ($0.00 shown throughout) instead
-  // of the HTML's value="1000" — then run a real conversion pass so
-  // the rate/fee/available rows are populated immediately, not left
-  // blank until the person reaches step 2.
   $('#transfer-send-amount').value = '';
   await recalcConversion();
 
