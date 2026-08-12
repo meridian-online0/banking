@@ -887,6 +887,34 @@ export async function getMyIdentityDocuments(userId) {
   );
 }
 
+
+/* =============================================================
+   ADD to supabase/database.js, directly below getMyIdentityDocuments()
+   -----------------------------------------------------------
+   getMyIdentityDocuments() stays exactly as-is (verified + slotted
+   only — safe for anything that must never see an unverified row).
+
+   This new function is what profile.js's verification stepper
+   actually needs: EVERY submission, any status, so a pending or
+   rejected document can be shown as "this tier's current state"
+   instead of just disappearing until an admin acts on it.
+   ============================================================= */
+
+export async function getMyIdentityDocumentHistory(userId) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
+  return wrap(
+    supabase
+      .from('identity_documents')
+      .select(
+        'id, document_category, document_type, status, slot, rejection_reason, created_at, reviewed_at, id_type, full_name, id_number, date_of_birth, gender'
+      )
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false })
+  );
+}
+
+
 export async function submitIdentityDocument({ file, documentType, documentCategory, userId }) {
   if (!file) return { data: null, error: 'Choose a file to upload.' };
   if (!documentType || !documentCategory) return { data: null, error: 'Choose a document type.' };
