@@ -122,8 +122,7 @@
           <div class="admin-field-subgroup">
             <p class="admin-field-subgroup-title">Quotas</p>
             <div class="admin-field-grid">
-              <label class="admin-field"><span>Maximum physical cards</span><input type="number" name="max_physical_cards" min="0" step="1" placeholder="3"></label>
-              <label class="admin-field"><span>Maximum virtual cards</span><input type="number" name="max_virtual_cards" min="0" step="1" placeholder="5"></label>
+              <label class="admin-field"><span>Maximum physical cards (unverified)</span><input type="number" name="max_physical_cards_unverified" min="1" step="1" placeholder="1"></label>              <label class="admin-field"><span>Maximum virtual cards</span><input type="number" name="max_virtual_cards" min="0" step="1" placeholder="5"></label>
               <label class="admin-field"><span>Maximum active cards</span><input type="number" name="max_active_cards" min="0" step="1" placeholder="4"></label>
               <label class="admin-field"><span>Maximum replacement cards</span><input type="number" name="max_replacement_cards" min="0" step="1" placeholder="2"></label>
               <label class="admin-field"><span>Maximum card requests</span><div class="admin-input-suffix"><input type="number" name="max_card_requests" min="0" step="1" placeholder="3"><em>/ month</em></div></label>
@@ -174,7 +173,7 @@
           <div class="admin-field-subgroup">
             <p class="admin-field-subgroup-title">Configuration</p>
             <div class="admin-field-grid">
-              <label class="admin-field"><span>Maximum accounts per customer</span><input type="number" name="max_accounts_per_customer" min="1" step="1" placeholder="6"></label>
+              <label class="admin-field"><span>Maximum accounts (unverified)</span><input type="number" name="max_accounts_unverified" min="1" step="1" placeholder="2"></label>
               <label class="admin-field admin-field--wide"><span>Allowed account types</span>
                 <select name="allowed_account_types" multiple>
                   <option value="personal" selected>Personal</option>
