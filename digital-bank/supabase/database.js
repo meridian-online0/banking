@@ -22,7 +22,6 @@
 
 import { supabase } from './config.js';
 import { getCurrentUser } from './auth.js';
-import { uploadIdentityDocument } from './storage.js';
 
 /* -----------------------------------------------------------
    Helpers
@@ -851,62 +850,90 @@ export async function sellInvestment({ accountId, symbol, name, assetType = 'cry
    -----------------------------------------------------------
    Backed by public.identity_documents + the private
    identity-documents storage bucket (016_account_security_tiers_
-   linked_ids_sessions.sql). A submission always starts as
-   'pending' with no slot — status changes and slot assignment
-   only ever happen through admin_review_identity_document(), so
-   there's no client-side path to mark your own document verified.
+   linked_ids_sessions.sql, plus 017's id_type/full_name/id_number/
+   date_of_birth/gender review-detail columns). A submission always
+   starts as 'pending' with no slot — status, slot assignment, and
+   those detail fields only ever get set through
+   admin_review_identity_document(), so there's no client-side path
+   to mark your own document verified or backfill its details.
 
-   The actual file upload happens in storage.js's
-   uploadIdentityDocument() (same split as support-ticket
-   attachments: storage.js owns bucket/path/upload mechanics,
-   database.js owns the table row) — this just validates the
-   document type/category (a business rule, same tier as
-   SUPPORTED_CURRENCIES above) and composes the two calls.
+   The file upload happens directly against the private
+   identity-documents bucket here (rather than through storage.js)
+   so a failed table insert can clean up the just-uploaded file
+   instead of leaving an orphan with no row pointing to it.
    ----------------------------------------------------------- */
 
-const IDENTITY_DOC_ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+const IDENTITY_DOC_ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+const IDENTITY_DOC_MAX_BYTES = 10 * 1024 * 1024; // 10MB — matches the identity-documents bucket's file_size_limit (016, PART G)
 
-/** Every document the signed-in (or given) user has ever submitted, newest first. */
+/**
+ * Verified, slotted identity documents for the Linked ID cards —
+ * never pending/rejected/action-required ones. Enforced as a query
+ * filter rather than left to callers to check doc.status/doc.slot
+ * themselves, so this is safe to reuse anywhere a Linked ID card
+ * reads from.
+ */
 export async function getMyIdentityDocuments(userId) {
   const uid = await resolveUserId(userId);
-  if (!uid) return { data: [], error: 'Not signed in.' };
+  if (!uid) return { data: null, error: 'Not signed in.' };
   return wrap(
     supabase
       .from('identity_documents')
-      .select('*')
+      .select('slot, id_type, document_type, full_name, id_number, date_of_birth, gender')
       .eq('user_id', uid)
-      .order('submitted_at', { ascending: false })
+      .eq('status', 'verified')
+      .not('slot', 'is', null)
+      .order('slot', { ascending: true })
   );
 }
 
 export async function submitIdentityDocument({ file, documentType, documentCategory, userId }) {
-  const uid = await resolveUserId(userId);
-  if (!uid) return { data: null, error: 'Not signed in.' };
   if (!file) return { data: null, error: 'Choose a file to upload.' };
   if (!documentType || !documentCategory) return { data: null, error: 'Choose a document type.' };
   if (!IDENTITY_DOC_ALLOWED_TYPES.includes(file.type)) {
-    return { data: null, error: 'Unsupported file type. Upload a PDF, JPG, or PNG.' };
+    return { data: null, error: 'Only PDF, JPG, or PNG files are accepted.' };
+  }
+  if (file.size > IDENTITY_DOC_MAX_BYTES) {
+    return { data: null, error: 'File is larger than the 10MB limit.' };
   }
 
-  const documentId = crypto.randomUUID();
-  const { data: uploaded, error: uploadError } = await uploadIdentityDocument(documentId, file, uid);
-  if (uploadError) return { data: null, error: uploadError };
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
 
-  return wrap(
-    supabase
-      .from('identity_documents')
-      .insert({
-        id: documentId,
-        user_id: uid,
-        document_category: documentCategory,
-        document_type: documentType,
-        file_path: uploaded.path,
-        file_name: file.name,
-        status: 'pending',
-      })
-      .select()
-      .single()
-  );
+  // Generated client-side so the storage path (which must exist
+  // before the row does) and the identity_documents.id it belongs
+  // to line up. identity_documents.id defaults to gen_random_uuid()
+  // server-side, but nothing stops an explicit id on insert.
+  const documentId = crypto.randomUUID();
+  const extension = (file.name.split('.').pop() || 'bin').toLowerCase();
+  const storagePath = `${uid}/${documentId}/${documentId}.${extension}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('identity-documents')
+    .upload(storagePath, file, { upsert: false, contentType: file.type });
+  if (uploadError) return { data: null, error: 'Upload failed. Check your connection and try again.' };
+
+  const { data, error } = await supabase
+    .from('identity_documents')
+    .insert({
+      id: documentId,
+      user_id: uid,
+      document_category: documentCategory,
+      document_type: documentType,
+      file_path: storagePath,
+      file_name: file.name,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    // Don't leave an orphaned file in the private bucket with no
+    // identity_documents row pointing to it if the insert failed.
+    await supabase.storage.from('identity-documents').remove([storagePath]);
+    return { data: null, error: error.message };
+  }
+
+  return { data, error: null };
 }
 
 /* -----------------------------------------------------------
@@ -928,11 +955,11 @@ export async function submitIdentityDocument({ file, documentType, documentCateg
 
 export async function getMyWebauthnCredentials(userId) {
   const uid = await resolveUserId(userId);
-  if (!uid) return { data: [], error: 'Not signed in.' };
+  if (!uid) return { data: null, error: 'Not signed in.' };
   return wrap(
     supabase
       .from('webauthn_credentials')
-      .select('*')
+      .select('id, device_label, created_at, last_used_at')
       .eq('user_id', uid)
       .order('created_at', { ascending: false })
   );
