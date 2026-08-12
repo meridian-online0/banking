@@ -686,6 +686,16 @@ function initRestrictionActions() {
   });
 }
 
+
+
+function applyPermissionsToToggles(permissions) {
+  $$('#customer-permission-list .admin-toggle-row').forEach((row) => {
+    const column = PERMISSION_KEY_MAP[row.dataset.permission];
+    const checkbox = $('input', row);
+    checkbox.checked = column ? (permissions ? Boolean(permissions[column]) : true) : false;
+  });
+}
+
 /* -----------------------------------------------------------
    Deep link from admin-users.html's drawer:
    admin-policy.html?customer_id=<id>
