@@ -6,7 +6,8 @@
    project's schema.sql (accounts, transactions, beneficiaries,
    cards, savings_goals, notifications, support_tickets,
    exchange_rates, user_profiles, investments, investment_orders,
-   watchlist, market_prices_cache). Same contract as auth.js: every
+   watchlist, market_prices_cache, identity_documents,
+   webauthn_credentials). Same contract as auth.js: every
    exported function returns a plain { data, error } object, so
    callers never need try/catch for expected failures.
 
@@ -21,6 +22,7 @@
 
 import { supabase } from './config.js';
 import { getCurrentUser } from './auth.js';
+import { uploadIdentityDocument } from './storage.js';
 
 /* -----------------------------------------------------------
    Helpers
@@ -467,15 +469,9 @@ export async function getMySupportTickets(userId) {
 
 /* -----------------------------------------------------------
    Exchange rates
-   ----------------------------------------------------------- */
-
-/* =============================================================
-   Replace the existing getExchangeRate() export in
-   supabase/database.js with this version. Everything else in the
-   file — including every other function — is unchanged.
-
+   -----------------------------------------------------------
    Behavior:
-     - baseCurrency === targetCurrency short-circuits to 1, same as before.
+     - baseCurrency === targetCurrency short-circuits to 1.
      - Reads the latest cached row for the pair.
      - If it's missing or older than FX_STALE_MS, invokes the
        refresh-exchange-rates Edge Function (which fetches live
@@ -484,10 +480,7 @@ export async function getMySupportTickets(userId) {
        deployed yet, provider down), falls back to whatever was
        cached — never silently returns a fabricated 1:1 rate when a
        real cached rate exists.
-     - Same { data, error } shape as before, so every caller
-       (transfer.js, getTotalBalance(), buyInvestment(),
-       sellInvestment()) keeps working with zero changes.
-   ============================================================= */
+   ----------------------------------------------------------- */
 
 // How long a cached rate is trusted before we bother refreshing.
 // FX pairs don't move fast enough to need crypto's ~2min cadence,
@@ -529,9 +522,6 @@ export async function getExchangeRate(baseCurrency, targetCurrency) {
     return { data: data || { exchange_rate: 1 }, error: null };
   }
 }
-
-
-
 
 /* -----------------------------------------------------------
    Investments — market prices (crypto, via market_prices_cache)
@@ -651,7 +641,6 @@ export async function getMyPermissions(userId) {
   return wrap(supabase.from('user_permissions').select('*').eq('user_id', uid).maybeSingle());
 }
 
-
 /* -----------------------------------------------------------
    Transfer limits (read-only, customer side)
    -----------------------------------------------------------
@@ -682,6 +671,7 @@ export async function getMyTransferLimitOverrides(userId) {
     supabase.from('user_limit_overrides').select('override_values').eq('user_id', uid).maybeSingle()
   );
 }
+
 /* -----------------------------------------------------------
    Investments — buy / sell
    -----------------------------------------------------------
@@ -853,4 +843,116 @@ export async function sellInvestment({ accountId, symbol, name, assetType = 'cry
       .select()
       .single()
   );
+}
+
+/* -----------------------------------------------------------
+   Account & Security — identity documents (Upload documents +
+   Linked ID)
+   -----------------------------------------------------------
+   Backed by public.identity_documents + the private
+   identity-documents storage bucket (016_account_security_tiers_
+   linked_ids_sessions.sql). A submission always starts as
+   'pending' with no slot — status changes and slot assignment
+   only ever happen through admin_review_identity_document(), so
+   there's no client-side path to mark your own document verified.
+
+   The actual file upload happens in storage.js's
+   uploadIdentityDocument() (same split as support-ticket
+   attachments: storage.js owns bucket/path/upload mechanics,
+   database.js owns the table row) — this just validates the
+   document type/category (a business rule, same tier as
+   SUPPORTED_CURRENCIES above) and composes the two calls.
+   ----------------------------------------------------------- */
+
+const IDENTITY_DOC_ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+
+/** Every document the signed-in (or given) user has ever submitted, newest first. */
+export async function getMyIdentityDocuments(userId) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: [], error: 'Not signed in.' };
+  return wrap(
+    supabase
+      .from('identity_documents')
+      .select('*')
+      .eq('user_id', uid)
+      .order('submitted_at', { ascending: false })
+  );
+}
+
+export async function submitIdentityDocument({ file, documentType, documentCategory, userId }) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
+  if (!file) return { data: null, error: 'Choose a file to upload.' };
+  if (!documentType || !documentCategory) return { data: null, error: 'Choose a document type.' };
+  if (!IDENTITY_DOC_ALLOWED_TYPES.includes(file.type)) {
+    return { data: null, error: 'Unsupported file type. Upload a PDF, JPG, or PNG.' };
+  }
+
+  const documentId = crypto.randomUUID();
+  const { data: uploaded, error: uploadError } = await uploadIdentityDocument(documentId, file, uid);
+  if (uploadError) return { data: null, error: uploadError };
+
+  return wrap(
+    supabase
+      .from('identity_documents')
+      .insert({
+        id: documentId,
+        user_id: uid,
+        document_category: documentCategory,
+        document_type: documentType,
+        file_path: uploaded.path,
+        file_name: file.name,
+        status: 'pending',
+      })
+      .select()
+      .single()
+  );
+}
+
+/* -----------------------------------------------------------
+   Account & Security — Face ID / device biometrics
+   -----------------------------------------------------------
+   Backed by public.webauthn_credentials. "Enabled" is derived from
+   whether any row exists for the user (see that table's own
+   comment in the migration) — there's no separate boolean flag to
+   go out of sync.
+
+   IMPORTANT: this only stores public-key credential material from
+   navigator.credentials.create(); it does NOT implement the
+   server-side attestation/challenge verification a production
+   WebAuthn *login* would need (see the migration's "STILL OPEN"
+   item 1). Treat "Face ID: Enabled" as "a credential is on file",
+   not "assertions against it are being verified" until that
+   follow-up exists.
+   ----------------------------------------------------------- */
+
+export async function getMyWebauthnCredentials(userId) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: [], error: 'Not signed in.' };
+  return wrap(
+    supabase
+      .from('webauthn_credentials')
+      .select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false })
+  );
+}
+
+export async function registerWebauthnCredential({ credentialId, publicKey, deviceLabel, userId }) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
+  return wrap(
+    supabase
+      .from('webauthn_credentials')
+      .insert({ user_id: uid, credential_id: credentialId, public_key: publicKey, device_label: deviceLabel })
+      .select()
+      .single()
+  );
+}
+
+/** Disables Face ID entirely for this user (removes every stored credential). */
+export async function removeAllWebauthnCredentials(userId) {
+  const uid = await resolveUserId(userId);
+  if (!uid) return { data: null, error: 'Not signed in.' };
+  return wrap(supabase.from('webauthn_credentials').delete().eq('user_id', uid));
 }
