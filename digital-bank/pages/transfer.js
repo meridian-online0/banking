@@ -149,6 +149,12 @@ let effectiveLimits = null; // NEW — { maxSingleTransfer, minTransfer, dailyTr
 
 /* -----------------------------------------------------------
    Toasts
+   -----------------------------------------------------------
+   Matches accounts.js's showToast() exactly — same inline fade
+   pattern (no .is-visible toggle). My previous revision here
+   switched to the .is-visible convention admin-policy.js uses,
+   which doesn't match this app's customer-facing toast styling
+   and made things worse, not better. Reverted.
    ----------------------------------------------------------- */
 function showToast(message, variant = 'success') {
   const stack = $('#toast-stack');
