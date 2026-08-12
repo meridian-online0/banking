@@ -24,7 +24,13 @@
                                 with its own owner-scoped + admin-read
                                 storage.objects RLS policies — same
                                 private-bucket pattern as
-                                support-attachments.
+                                support-attachments. IMPORTANT: that
+                                migration deliberately creates NO
+                                UPDATE policy on storage.objects for
+                                this bucket ("no-edit-after-submit"),
+                                so uploads into it must never use
+                                upsert:true — see uploadIdentityDocument()
+                                below.
    ============================================================= */
 
 import { supabase } from './config.js';
@@ -38,10 +44,18 @@ const MAX_AVATAR_BYTES = 2 * 1024 * 1024; // 2MB, matches the bucket's configure
    Generic helpers — usable against any bucket
    ----------------------------------------------------------- */
 
-/** Uploads a file to `bucket/path`, overwriting anything already there. */
-export async function uploadFile(bucket, path, file, { contentType } = {}) {
+/**
+ * Uploads a file to `bucket/path`. Defaults to upsert:true
+ * (overwrite-in-place), which is the right default for avatars —
+ * pass { upsert: false } explicitly for anything that should be
+ * immutable once written (identity documents; see the note on
+ * that bucket above) so a path collision fails loudly instead of
+ * silently attempting an overwrite the bucket's RLS may not
+ * actually permit.
+ */
+export async function uploadFile(bucket, path, file, { contentType, upsert = true } = {}) {
   const { data, error } = await supabase.storage.from(bucket).upload(path, file, {
-    upsert: true,
+    upsert,
     contentType: contentType || file.type || undefined,
     cacheControl: '3600',
   });
@@ -101,6 +115,8 @@ export async function uploadAvatar(file, userId) {
   if (!uid) return { data: null, error: 'Not signed in.' };
 
   const path = `${uid}/avatar-${Date.now()}.${fileExtension(file)}`;
+  // upsert:true (the default) is correct here — an avatar is meant
+  // to be replaceable, unlike a submitted identity document.
   const { error: uploadError } = await uploadFile(AVATAR_BUCKET, path, file);
   if (uploadError) return { data: null, error: uploadError };
 
@@ -173,6 +189,19 @@ const MAX_IDENTITY_DOC_BYTES = 10 * 1024 * 1024; // matches the bucket's configu
  * identity_documents row. documentId should be the same UUID the
  * caller is about to insert as that row's primary key, so the
  * storage path and the DB row line up.
+ *
+ * CORRECTION: explicitly passes upsert:false, rather than
+ * inheriting uploadFile()'s upsert:true default. documentId is a
+ * freshly generated UUID per submission, so this path should never
+ * collide with an existing object in normal operation — but
+ * migration 016 deliberately creates no UPDATE policy on
+ * storage.objects for this bucket (identity documents are
+ * no-edit-after-submit, same as their DB row). If a collision ever
+ * did happen — a retried submission reusing an id, a future bug —
+ * upsert:true would attempt a silent overwrite that RLS has no
+ * policy to actually allow, surfacing as a confusing generic
+ * permission error. upsert:false fails clearly instead, which
+ * matches what this bucket is meant to guarantee.
  */
 export async function uploadIdentityDocument(documentId, file, userId) {
   if (!file) return { data: null, error: 'No file selected.' };
@@ -187,7 +216,7 @@ export async function uploadIdentityDocument(documentId, file, userId) {
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
   const path = `${uid}/${documentId}/${safeName}`;
-  const { error } = await uploadFile(IDENTITY_DOCS_BUCKET, path, file);
+  const { error } = await uploadFile(IDENTITY_DOCS_BUCKET, path, file, { upsert: false });
   if (error) return { data: null, error };
 
   return { data: { path }, error: null };
