@@ -4,38 +4,42 @@
    Loaded as a module by profile.html only. Handles:
      1. Auth guard
      2. Header identity (name, avatar) + notification badge, user
-        menu dropdown, mobile nav toggle, log out — all deferred
-        until the app-navbar component (loaded separately by
-        components.js) has actually landed in the DOM; see
-        waitForNavbar() below. (Previously these ran immediately,
-        which raced components.js's fetch() for the partial — if
-        the partial hadn't loaded yet, initUserMenu()/initLogout()/
-        initMobileNav() would each silently find nothing and never
-        retry, leaving the hamburger and user dropdown unwired.)
-     4. Section navigation (Overview / Personal / Security /
-        Notifications / Danger zone) — hash-linked, keyboard
-        accessible tabs
+        menu dropdown, mobile nav toggle, log out — deferred until
+        the app-navbar component has landed (see waitForNavbar()).
+     4. Section navigation — hash-linked, keyboard accessible tabs.
+        Covers every .profile-nav-link / .profile-panel pair
+        automatically, so the new Login settings / Account limits
+        tabs work with zero changes to this function.
      5. Loading the signed-in user's profile into the banner,
-        the Overview summary, and the (read-only) Personal info
-        form
+        the Overview summary, and the (read-only) Personal info form
      6. Avatar upload (via supabase/storage.js)
      7. Recent account activity — from audit_logs
      8. Active sessions — from login_sessions
-     9. Password change form — client-side match check +
-        supabase.auth.updateUser via updateUserPassword()
-     10. Two-factor method picker — saved to user_profiles.two_factor_method
-     11. Notification preference switches — saved to user_profiles
+     9. Password change — Security tab AND Login settings tab, both
+        re-verifying the current password first (see
+        verifyCurrentPassword() in database.js)
+     10. Two-factor method picker
+     11. Notification preference switches
      12. Danger zone actions (data export / close account) — stubs
      13. Toast helper for save feedback
+     14. NEW — Login settings: forgot password, login session
+         preference, Face ID / device biometrics
+     15. NEW — Account limits: tier badge + account info, Linked ID
+         re-auth + reveal, accepted documents (static), document
+         upload
 
    NOTE: the Personal info form is view-only by design — every
    field is disabled in the markup and there is no save handler
-   for it here. Two-factor, notification preferences, and password
-   are still editable, since those are account/security actions
-   rather than profile fields.
+   for it here.
    ============================================================= */
 
-import { requireAuth, signOutUser, updateUserPassword } from '../supabase/auth.js';
+import {
+  requireAuth,
+  signOutUser,
+  updateUserPassword,
+  verifyCurrentPassword,
+  requestPasswordReset,
+} from '../supabase/auth.js';
 import { supabase } from '../supabase/config.js';
 import {
   getMyProfile,
@@ -43,6 +47,11 @@ import {
   getMyAccounts,
   getCardsForAccount,
   getUnreadNotificationCount,
+  getMyIdentityDocuments,
+  submitIdentityDocument,
+  getMyWebauthnCredentials,
+  registerWebauthnCredential,
+  removeAllWebauthnCredentials,
 } from '../supabase/database.js';
 import { uploadAvatar } from '../supabase/storage.js';
 
@@ -118,17 +127,6 @@ function paintAvatar(url, firstName, lastName) {
 
 /* -----------------------------------------------------------
    Wait for the app-navbar component
-   profile.html loads its header from components/app-navbar.html
-   via components.js's loadComponents(), which runs as its own
-   module and dispatches `component:loaded` on `document` once
-   injection finishes. That can resolve before OR after this
-   module's own async init — calling initUserMenu()/initLogout()/
-   initMobileNav() before the partial lands means they each query
-   for elements that aren't in the DOM yet, silently no-op (they
-   all have an early `if (!el) return`), and never get wired up on
-   that page load. This checks whether the navbar markup is
-   already in the DOM first, and only falls back to listening for
-   the event if it isn't there yet, so it's correct either way.
    ----------------------------------------------------------- */
 function waitForNavbar() {
   return new Promise((resolve) => {
@@ -142,8 +140,6 @@ function waitForNavbar() {
 
 /* -----------------------------------------------------------
    Header identity + notification badge
-   Same approach as dashboard.js against the shared navbar
-   component (components/app-navbar.html).
    ----------------------------------------------------------- */
 function populateHeader(profile) {
   const nameEl = $('.app-user-name');
@@ -232,7 +228,7 @@ function initMobileNav() {
 }
 
 /* -----------------------------------------------------------
-   Log out — targets the navbar component's #logout-link
+   Log out
    ----------------------------------------------------------- */
 function initLogout() {
   const logoutLink = $('#logout-link');
@@ -276,6 +272,10 @@ function initSectionNav() {
       activate(link.dataset.tab, { focusPanel: true });
     });
   });
+
+  // Exposed so "Add document" (Linked ID empty state) can jump the
+  // user to the Upload documents card without duplicating this logic.
+  window.__profileActivateTab = activate;
 
   const initialTab = window.location.hash.replace('#', '');
   activate(initialTab || 'overview', { updateHash: false });
@@ -343,8 +343,7 @@ function populatePersonalForm(profile) {
 }
 
 /* -----------------------------------------------------------
-   Overview summary — linked accounts, active cards, active
-   sessions, all pulled live rather than hardcoded.
+   Overview summary
    ----------------------------------------------------------- */
 async function populateOverviewSummary(user, profile, accounts) {
   const values = $$('.profile-summary-card .profile-summary-value');
@@ -382,7 +381,7 @@ async function populateOverviewSummary(user, profile, accounts) {
 }
 
 /* -----------------------------------------------------------
-   Recent account activity — from audit_logs
+   Recent account activity
    ----------------------------------------------------------- */
 async function populateRecentActivity(userId) {
   const listEl = $('#activity-list');
@@ -428,13 +427,7 @@ async function populateRecentActivity(userId) {
 }
 
 /* -----------------------------------------------------------
-   Active sessions — from login_sessions where logout_time is
-   null. The most recently started open session is shown as
-   "Current". Revoking a specific *other* session is front-end
-   only for now: auth.js closes the current session's row on
-   sign-out, but there's no revokeLoginSession(sessionId) export
-   yet to close a specific other one. Wire this up once that
-   exists.
+   Active sessions
    ----------------------------------------------------------- */
 function initSessionLogoutButtons() {
   $$('.session-item .wizard-edit-link').forEach((btn) => {
@@ -535,28 +528,12 @@ function initAvatarUpload() {
 }
 
 /* -----------------------------------------------------------
-   Shared field-error helpers (used by the password form)
-   ----------------------------------------------------------- */
-function clearFieldErrors(form) {
-  $$('.field', form).forEach((field) => {
-    field.classList.remove('has-error');
-    const err = $('.field-error', field);
-    if (err) err.textContent = '';
-  });
-}
-
-function setFieldError(form, name, message) {
-  const input = form.elements[name];
-  if (!input) return;
-  const field = input.closest('.field');
-  if (!field) return;
-  field.classList.add('has-error');
-  const err = $('.field-error', field);
-  if (err) err.textContent = message;
-}
-
-/* -----------------------------------------------------------
-   Password change form
+   Password change — shared by the Security tab's form AND the
+   Login settings tab's form. Both now re-verify the current
+   password via verifyCurrentPassword() before rotating it —
+   updateUserPassword() (supabase.auth.updateUser) doesn't itself
+   check the old password, so without this, anyone with an open
+   session could change the password without knowing it.
    ----------------------------------------------------------- */
 function passwordStrength(password) {
   let score = 0;
@@ -567,8 +544,16 @@ function passwordStrength(password) {
   return score;
 }
 
-function initPasswordForm() {
-  const form = $('#password-change-form');
+function clearFieldErrors(form) {
+  $$('.field', form).forEach((field) => {
+    field.classList.remove('has-error');
+    const err = $('.field-error', field);
+    if (err) err.textContent = '';
+  });
+}
+
+function initPasswordForm(formSelector, { requirementsListSelector } = {}) {
+  const form = $(formSelector);
   if (!form) return;
 
   const newPasswordInput = form.elements['new_password'];
@@ -580,9 +565,27 @@ function initPasswordForm() {
     newPasswordInput.closest('.field').appendChild(strengthMeter);
   }
 
+  const requirementsList = requirementsListSelector ? $(requirementsListSelector) : null;
+
+  // NOTE: toggling .is-met here needs a small profile.css addition —
+  // e.g. `#login-password-requirements li.is-met { color: var(--green); }`
+  // — it isn't styled yet, same flag pattern this project already uses
+  // for .profile-nav-group-label before its own CSS landed.
+  function updateRequirements(password) {
+    if (!requirementsList) return;
+    const checks = [
+      password.length >= 10,
+      /[A-Z]/.test(password) && /[a-z]/.test(password),
+      /\d/.test(password),
+      /[^A-Za-z0-9]/.test(password),
+    ];
+    $$('li', requirementsList).forEach((li, i) => li.classList.toggle('is-met', Boolean(checks[i])));
+  }
+
   if (newPasswordInput) {
     newPasswordInput.addEventListener('input', () => {
       strengthMeter.dataset.strength = String(passwordStrength(newPasswordInput.value));
+      updateRequirements(newPasswordInput.value);
     });
   }
 
@@ -593,20 +596,27 @@ function initPasswordForm() {
     const { current_password, new_password, new_password_confirm } = Object.fromEntries(new FormData(form).entries());
 
     if (!current_password) {
-      setFieldError(form, 'current_password', 'Enter your current password.');
+      showToast('Enter your current password.', 'error');
       return;
     }
     if (new_password.length < 10) {
-      setFieldError(form, 'new_password', 'Use at least 10 characters.');
+      showToast('Use at least 10 characters for your new password.', 'error');
       return;
     }
     if (new_password !== new_password_confirm) {
-      setFieldError(form, 'new_password_confirm', 'Passwords don\u2019t match.');
+      showToast('Passwords don\u2019t match.', 'error');
       return;
     }
 
     const submitBtn = $('button[type="submit"]', form);
     setButtonLoading(submitBtn, true);
+
+    const { error: verifyError } = await verifyCurrentPassword(current_password);
+    if (verifyError) {
+      setButtonLoading(submitBtn, false);
+      showToast('Your current password is incorrect.', 'error');
+      return;
+    }
 
     const { error } = await updateUserPassword(new_password);
 
@@ -619,12 +629,15 @@ function initPasswordForm() {
 
     form.reset();
     if (strengthMeter) strengthMeter.removeAttribute('data-strength');
+    if (requirementsList) $$('li', requirementsList).forEach((li) => li.classList.remove('is-met'));
     showToast('Your password has been updated.');
   });
 }
 
 /* -----------------------------------------------------------
-   Password visibility toggle
+   Password visibility toggle — generic, covers every
+   .password-toggle on the page (Security tab, Login settings
+   tab, and the Linked ID modal) with no per-form wiring needed.
    ----------------------------------------------------------- */
 function initPasswordToggle() {
   $$('.password-toggle').forEach((btn) => {
@@ -689,8 +702,6 @@ function populateNotificationPreferences(profile) {
   const rows = $$('.preference-row');
   if (!rows.length) return;
 
-  // These map to boolean columns on user_profiles. Security alerts
-  // are intentionally always-on and disabled in the markup.
   const keyByIndex = ['notify_transactions', null, 'notify_exchange_rate', 'notify_product_news'];
 
   rows.forEach((row, i) => {
@@ -717,7 +728,7 @@ function initNotificationSwitches() {
     input.addEventListener('change', async () => {
       const { error } = await updateMyProfile({ [key]: input.checked }, currentUser?.id);
       if (error) {
-        input.checked = !input.checked; // revert on failure
+        input.checked = !input.checked;
         showToast(error, 'error');
         return;
       }
@@ -736,7 +747,6 @@ function initDangerZone() {
   if (exportBtn) {
     exportBtn.addEventListener('click', async () => {
       setButtonLoading(exportBtn, true);
-      // Placeholder: no data-export endpoint exists yet server-side.
       await new Promise((resolve) => setTimeout(resolve, 600));
       setButtonLoading(exportBtn, false);
       showToast("We'll email your data export within 24 hours.");
@@ -754,6 +764,444 @@ function initDangerZone() {
   }
 }
 
+/* =============================================================
+   NEW — Login settings
+   ============================================================= */
+
+/* ---- Forgot password ---- */
+function initForgotPassword() {
+  const btn = $('#login-forgot-password-btn');
+  const status = $('#login-forgot-password-status');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    if (!currentUser?.email) return;
+    setButtonLoading(btn, true);
+    if (status) status.textContent = '';
+
+    const { error } = await requestPasswordReset(currentUser.email);
+
+    setButtonLoading(btn, false);
+
+    if (error) {
+      if (status) status.textContent = "Couldn't send the reset email. Try again shortly.";
+      showToast('Couldn\u2019t send the reset email.', 'error');
+      return;
+    }
+
+    if (status) status.textContent = `Reset link sent to ${currentUser.email}.`;
+    showToast('Password reset email sent.');
+  });
+}
+
+/* ---- Login session preference ---- */
+function populateLoginSessionPreference(profile) {
+  const value = profile?.login_session_preference || 'always';
+  const input = $(`input[name="login_session_preference"][value="${value}"]`);
+  if (input) input.checked = true;
+}
+
+function initLoginSessionPreference() {
+  const form = $('#login-session-preference-form');
+  const status = $('#login-session-preference-status');
+  if (!form) return;
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const value = new FormData(form).get('login_session_preference');
+    if (!value) return;
+
+    const submitBtn = $('#save-session-preference-btn', form);
+    setButtonLoading(submitBtn, true);
+    if (status) status.textContent = '';
+
+    const { error } = await updateMyProfile({ login_session_preference: value }, currentUser?.id);
+
+    setButtonLoading(submitBtn, false);
+
+    if (error) {
+      showToast(error, 'error');
+      return;
+    }
+
+    if (currentProfile) currentProfile.login_session_preference = value;
+    if (status) status.textContent = 'Saved.';
+    showToast('Login session preference saved.');
+  });
+}
+
+/* ---- Face ID / device biometrics ---- */
+function populateFaceId(hasCredential) {
+  const pill = $('#faceid-status-pill');
+  const btn = $('#faceid-toggle-btn');
+  if (pill) {
+    pill.textContent = hasCredential ? 'Face ID: Enabled' : 'Face ID: Disabled';
+    pill.classList.toggle('status-pill--verified', hasCredential);
+    pill.classList.toggle('status-pill--neutral', !hasCredential);
+  }
+  if (btn) btn.textContent = hasCredential ? 'Disable Face ID' : 'Enable Face ID';
+}
+
+async function enableFaceId() {
+  if (!window.PublicKeyCredential) {
+    const unavailable = $('#faceid-unavailable');
+    if (unavailable) unavailable.hidden = false;
+    showToast('Biometric authentication isn\u2019t available on this device.', 'error');
+    return false;
+  }
+
+  try {
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userIdBytes = new TextEncoder().encode(currentUser.id);
+
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: 'Meridian' },
+        user: {
+          id: userIdBytes,
+          name: currentUser.email || 'meridian-user',
+          displayName: `${currentProfile?.first_name || ''} ${currentProfile?.last_name || ''}`.trim() || 'Meridian customer',
+        },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000,
+        attestation: 'none',
+      },
+    });
+
+    if (!credential) return false;
+
+    // Demo-only: stores the raw credential id and an opaque encoding of
+    // the attestation response so "Face ID: Enabled" is a real, persisted
+    // state. This does NOT implement the server-side signature/challenge
+    // verification a production WebAuthn login would need — see migration
+    // 016's "STILL OPEN" item 1. Nothing yet can verify a future assertion
+    // against what's stored here.
+    const toBase64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const { error } = await registerWebauthnCredential({
+      credentialId: toBase64(credential.rawId),
+      publicKey: toBase64(credential.response.attestationObject),
+      deviceLabel: navigator.platform || 'This device',
+      userId: currentUser.id,
+    });
+
+    if (error) {
+      showToast(error, 'error');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    showToast('Couldn\u2019t set up Face ID on this device.', 'error');
+    return false;
+  }
+}
+
+function initFaceId() {
+  const btn = $('#faceid-toggle-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const enabling = btn.textContent.trim() === 'Enable Face ID';
+    setButtonLoading(btn, true);
+
+    if (enabling) {
+      const ok = await enableFaceId();
+      setButtonLoading(btn, false);
+      if (ok) {
+        populateFaceId(true);
+        showToast('Face ID enabled.');
+      }
+      return;
+    }
+
+    const confirmed = window.confirm('Disable Face ID sign-in on this account?');
+    if (!confirmed) {
+      setButtonLoading(btn, false);
+      return;
+    }
+
+    const { error } = await removeAllWebauthnCredentials(currentUser.id);
+    setButtonLoading(btn, false);
+
+    if (error) {
+      showToast(error, 'error');
+      return;
+    }
+    populateFaceId(false);
+    showToast('Face ID disabled.');
+  });
+}
+
+/* =============================================================
+   NEW — Account limits
+   ============================================================= */
+
+/* ---- Account information + tier badge ---- */
+function populateAccountLimits(profile) {
+  const badge = $('#account-tier-badge');
+  if (badge) {
+    const tier = profile?.account_tier || 1;
+    badge.dataset.tier = String(tier);
+    badge.textContent = `Tier ${tier}`;
+  }
+
+  const nameEl = $('#account-info-name');
+  if (nameEl) nameEl.textContent = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || '—';
+
+  const numberEl = $('#account-number-value');
+  const toggleBtn = $('#account-number-toggle');
+  const fullNumber = profile?.account_number || '';
+  if (numberEl && toggleBtn) {
+    const masked = fullNumber ? `•••• •••• ${fullNumber.slice(-2)}` : '—';
+    numberEl.textContent = masked;
+    toggleBtn.addEventListener('click', () => {
+      const showing = toggleBtn.getAttribute('aria-pressed') === 'true';
+      numberEl.textContent = showing ? masked : (fullNumber || '—');
+      toggleBtn.textContent = showing ? 'Show' : 'Hide';
+      toggleBtn.setAttribute('aria-pressed', String(!showing));
+    });
+  }
+}
+
+/* ---- Linked ID re-auth modal + reveal ---- */
+function openLinkedIdModal() {
+  const modal = $('#linked-id-auth-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add('is-open'));
+  const input = $('#linked-id-password');
+  if (input) { input.value = ''; input.focus(); }
+  const err = $('#linked-id-modal-error');
+  if (err) err.textContent = '';
+}
+
+function closeLinkedIdModal() {
+  const modal = $('#linked-id-auth-modal');
+  if (!modal) return;
+  modal.classList.remove('is-open');
+  setTimeout(() => { modal.hidden = true; }, 200);
+}
+
+function renderLinkedIdCard(slot, doc) {
+  const card = $(`#linked-id-card-${slot}`);
+  if (!card) return;
+  const statusPill = $('[data-linked-id-status]', card);
+  const emptyState = $('.linked-id-empty', card);
+  const fields = $('.linked-id-fields', card);
+
+  if (!doc) {
+    if (statusPill) { statusPill.textContent = 'Empty'; statusPill.className = 'status-pill status-pill--neutral'; }
+    if (emptyState) emptyState.hidden = false;
+    if (fields) fields.hidden = true;
+    return;
+  }
+
+  if (statusPill) { statusPill.textContent = 'Verified'; statusPill.className = 'status-pill status-pill--verified'; }
+  if (emptyState) emptyState.hidden = true;
+  if (fields) {
+    fields.hidden = false;
+    const maskId = (value) => (value ? `${'*'.repeat(Math.max(0, value.length - 4))}${value.slice(-4)}` : '—');
+    const setField = (name, value) => {
+      const el = $(`[data-field="${name}"]`, fields);
+      if (el) el.textContent = value || '—';
+    };
+    setField('id_type', (doc.id_type || doc.document_type || '').toUpperCase());
+    setField('full_name', doc.full_name);
+    setField('id_number', maskId(doc.id_number));
+    setField('date_of_birth', doc.date_of_birth ? new Date(doc.date_of_birth).toLocaleDateString('en-GB') : null);
+    setField('gender', doc.gender);
+  }
+}
+
+async function revealLinkedIds() {
+  const details = $('#linked-id-details');
+  const { data: docs, error } = await getMyIdentityDocuments(currentUser.id);
+  if (error) {
+    showToast(error, 'error');
+    return;
+  }
+  const bySlot = { 1: null, 2: null, 3: null };
+  (docs || []).forEach((doc) => { if (doc.slot) bySlot[doc.slot] = doc; });
+  [1, 2, 3].forEach((slot) => renderLinkedIdCard(slot, bySlot[slot]));
+  if (details) details.hidden = false;
+}
+
+function initLinkedIdModal() {
+  const viewBtn = $('#view-linked-id-btn');
+  const modal = $('#linked-id-auth-modal');
+  const closeBtn = $('#linked-id-modal-close');
+  const cancelBtn = $('#linked-id-modal-cancel');
+  const form = $('#linked-id-verify-form');
+  if (!viewBtn || !modal || !form) return;
+
+  viewBtn.addEventListener('click', openLinkedIdModal);
+  closeBtn?.addEventListener('click', closeLinkedIdModal);
+  cancelBtn?.addEventListener('click', closeLinkedIdModal);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeLinkedIdModal();
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const passwordInput = $('#linked-id-password');
+    const password = passwordInput?.value || '';
+    const errEl = $('#linked-id-modal-error');
+    const submitBtn = $('#linked-id-modal-submit');
+
+    if (!password) {
+      if (errEl) errEl.textContent = 'Enter your password.';
+      return;
+    }
+
+    setButtonLoading(submitBtn, true);
+    const { error } = await verifyCurrentPassword(password);
+    setButtonLoading(submitBtn, false);
+
+    if (error) {
+      if (errEl) errEl.textContent = 'Incorrect password. Try again.';
+      return;
+    }
+
+    closeLinkedIdModal();
+    await revealLinkedIds();
+  });
+}
+
+/* ---- Document upload ---- */
+const IDENTITY_ADDRESS_TYPES = [
+  'electricity_bill', 'bank_statement', 'waste_bill', 'water_bill',
+  'house_rent_receipt', 'tenancy_agreement', 'land_use_charge',
+];
+
+function initDocumentUpload() {
+  const form = $('#document-upload-form');
+  if (!form) return;
+
+  const dropzone = $('#document-upload-dropzone');
+  const fileInput = $('#document-upload-input');
+  const typeSelect = $('#document-type-select');
+  const preview = $('#document-upload-preview');
+  const previewName = $('#document-upload-preview-name');
+  const removeBtn = $('#document-upload-remove');
+  const progress = $('#document-upload-progress');
+  const progressBar = $('#document-upload-progress-bar');
+  const errorEl = $('#document-upload-error');
+  const statusPill = $('#document-upload-status');
+  const submitBtn = $('#document-upload-submit-btn');
+
+  let selectedFile = null;
+
+  function updateSubmitState() {
+    submitBtn.disabled = !(selectedFile && typeSelect.value);
+  }
+
+  function setFile(file) {
+    selectedFile = file || null;
+    if (errorEl) errorEl.textContent = '';
+    if (selectedFile) {
+      if (previewName) previewName.textContent = selectedFile.name;
+      if (preview) preview.hidden = false;
+    } else if (preview) {
+      preview.hidden = true;
+    }
+    updateSubmitState();
+  }
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+
+  ['dragover', 'dragenter'].forEach((evt) => dropzone.addEventListener(evt, (event) => {
+    event.preventDefault();
+    dropzone.classList.add('is-dragover');
+  }));
+  ['dragleave', 'dragend', 'drop'].forEach((evt) => dropzone.addEventListener(evt, () => {
+    dropzone.classList.remove('is-dragover');
+  }));
+  dropzone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const file = event.dataTransfer?.files?.[0];
+    if (file) setFile(file);
+  });
+
+  fileInput.addEventListener('change', () => setFile(fileInput.files?.[0]));
+  removeBtn.addEventListener('click', () => {
+    fileInput.value = '';
+    setFile(null);
+  });
+  typeSelect.addEventListener('change', updateSubmitState);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!selectedFile || !typeSelect.value) return;
+
+    const documentCategory = IDENTITY_ADDRESS_TYPES.includes(typeSelect.value) ? 'proof_of_address' : 'identity';
+
+    if (errorEl) errorEl.textContent = '';
+    setButtonLoading(submitBtn, true);
+    if (progress) progress.hidden = false;
+    if (progressBar) progressBar.style.width = '15%';
+
+    // supabase-js's storage upload doesn't expose a real progress
+    // callback — this is a visual approximation, not measured bytes,
+    // same "demo-friendly" honesty this file already uses elsewhere.
+    const tick = setInterval(() => {
+      if (!progressBar) return;
+      const current = parseFloat(progressBar.style.width) || 0;
+      if (current < 85) progressBar.style.width = `${current + 10}%`;
+    }, 200);
+
+    const { error } = await submitIdentityDocument({
+      file: selectedFile,
+      documentType: typeSelect.value,
+      documentCategory,
+      userId: currentUser.id,
+    });
+
+    clearInterval(tick);
+
+    if (error) {
+      if (progress) progress.hidden = true;
+      setButtonLoading(submitBtn, false);
+      if (errorEl) errorEl.textContent = error;
+      return;
+    }
+
+    if (progressBar) progressBar.style.width = '100%';
+    setTimeout(() => {
+      if (progress) progress.hidden = true;
+      if (progressBar) progressBar.style.width = '0%';
+    }, 500);
+
+    setButtonLoading(submitBtn, false);
+    if (statusPill) {
+      statusPill.hidden = false;
+      statusPill.textContent = 'Pending verification';
+      statusPill.className = 'status-pill status-pill--pending';
+    }
+
+    form.reset();
+    setFile(null);
+    showToast('Document submitted for verification.');
+  });
+}
+
+function initAddDocumentButtons() {
+  $$('[data-add-document-for]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const typeSelect = $('#document-type-select');
+      if (typeSelect) typeSelect.value = '';
+      $('#document-upload-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      typeSelect?.focus();
+    });
+  });
+}
+
 /* -----------------------------------------------------------
    Init
    ----------------------------------------------------------- */
@@ -762,8 +1210,6 @@ function initDangerZone() {
   if (!user) return; // requireAuth() already redirected to login.html
   currentUser = user;
 
-  // Header-dependent init waits for the app-navbar component to
-  // actually be in the DOM — see waitForNavbar() above.
   waitForNavbar().then(() => {
     populateNotificationBadge();
     initUserMenu();
@@ -773,11 +1219,22 @@ function initDangerZone() {
 
   initSectionNav();
   initAvatarUpload();
-  initPasswordForm();
+  initPasswordForm('#password-change-form');
+  initPasswordForm('#login-password-change-form', { requirementsListSelector: '#login-password-requirements' });
   initPasswordToggle();
   initTwoFactorPicker();
   initNotificationSwitches();
   initDangerZone();
+
+  // Login settings
+  initForgotPassword();
+  initLoginSessionPreference();
+  initFaceId();
+
+  // Account limits
+  initLinkedIdModal();
+  initDocumentUpload();
+  initAddDocumentButtons();
 
   const { data: profile, error } = await getMyProfile(user.id);
   if (error || !profile) {
@@ -791,6 +1248,11 @@ function initDangerZone() {
   populatePersonalForm(profile);
   populateTwoFactor(profile);
   populateNotificationPreferences(profile);
+  populateAccountLimits(profile);
+  populateLoginSessionPreference(profile);
+
+  const { data: credentials } = await getMyWebauthnCredentials(user.id);
+  populateFaceId(Boolean(credentials?.length));
 
   const { data: accounts } = await getMyAccounts(user.id);
   await populateOverviewSummary(user, profile, accounts || []);
