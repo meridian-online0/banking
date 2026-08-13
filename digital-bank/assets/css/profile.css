@@ -7,8 +7,7 @@
    Load order on profile.html:
      1. style.css     (tokens, reset, buttons, .field/.form-row-*)
      2. components.css (shared app widgets — toasts, status pills,
-                         switches; this file no longer redefines
-                         those, see note in section 13/16 below)
+                         switches; see note in section 15/22 below)
      3. profile.css    (this file)
 
    This file assumes the design tokens defined in style.css's
@@ -17,40 +16,20 @@
 
    CHANGE LOG (this revision)
    ---------------------------
-   Replaced the old "3 Linked ID cards shown at once + one static
-   upload dropzone" styling with the sequential Opay-style
-   verification stepper profile.js/profile.html now render:
-     - Section 22 is now the stepper itself — one .verification-tier
-       per tier, state-flagged (is-locked / is-active / is-pending /
-       is-rejected / is-verified) the same way admin-policy.js's own
-       status badge is attribute/class-driven rather than JS-styled.
-     - Section 24 is now the upload form that gets built INSIDE an
-       active or rejected tier, rather than a single static dropzone
-       card that lived outside the tier list. Class names follow
-       what profile.js actually renders (.verification-upload-form,
-       .document-upload-dropzone, etc.) — the old .document-dropzone
-       / .accepted-docs-* rules are gone since nothing renders that
-       markup anymore.
-     - Section 25's modal is unchanged in substance (still the same
-       .modal-overlay/.modal-panel primitives) but its comments/ids
-       now refer to #verify-identity-modal, the single shared
-       instance profile.js opens for any tier's "View details",
-       replacing the old per-Linked-ID-card modal.
-     - Added .status-pill--rejected (red) so a rejected/action-
-       required tier reads differently at a glance from a pending
-       one (amber) — profile.js applies it to that tier's pill.
+   profile.html was rebuilt around a single-column, Opay-style
+   "settings stack" — one root list of rows, each either pushing
+   into a sub-list (Account & security → Login settings / Account
+   limits) or straight into a content screen, with a back button on
+   every non-root screen. This replaces the old two-column
+   sidebar-tabs layout (.profile-layout / .profile-nav /
+   .profile-nav-link / .profile-panel) entirely — those rules are
+   gone from this file since nothing renders that markup anymore.
 
-   FLAG: .modal-overlay / .modal-panel / .modal-close /
-   .modal-body-text / .modal-actions / .admin-field-error appear
-   in admin-policy.html but this file has never seen
-   admin.css/admin-policy.css, so it has no visibility into
-   whether those classes are already styled there and, if so,
-   whether this definition matches. Defining them here, scoped to
-   what profile.html actually needs, so the identity re-auth modal
-   renders correctly regardless — but if admin.css turns out to
-   define the same class names differently, you'll want to
-   reconcile the two (ideally by moving one shared definition into
-   components.css) rather than run both indefinitely.
+   The previous revision's Tier 1→2→3 "verification stepper"
+   section is also gone: the new profile.html went back to the
+   earlier Linked ID (3 static cards, password-gated reveal) +
+   Accepted documents + single Upload documents form pattern, so
+   those are rebuilt here instead (sections 21–23).
 
    Contents:
      1.  App shell base
@@ -59,24 +38,24 @@
      4.  Mobile app nav toggle
      5.  Profile main layout
      6.  Profile banner (identity)
-     7.  Profile section nav (sidebar / tab bar)
-     8.  Profile panels
-     9.  Summary cards (Overview)
-     10. Activity list
-     11. Generic profile card
-     12. Forms — subheads, avatar edit, password field
-     13. Status pills
-     14. Auth method picker (2FA)
-     15. Session list
-     16. Preference list / switch toggle
-     17. Danger zone
-     18. Toast (save feedback)
-     19. Nav group label (Account & Security)
+     7.  Settings stack (screen container)
+     8.  Settings header (back button + title)
+     9.  Settings list / rows
+     10. Summary cards (Overview)
+     11. Activity list
+     12. Generic profile card
+     13. Forms — subheads, avatar edit, password field
+     14. Status pills
+     15. Auth method picker (2FA)
+     16. Session list
+     17. Preference list / switch toggle
+     18. Danger zone
+     19. Toast (save feedback)
      20. Tier badge
      21. Account info grid (Account limits)
-     22. Verification stepper (Tier 1 → 2 → 3)
-     23. Session preference options (Login settings)
-     24. Document upload (verification stepper forms)
+     22. Linked ID cards
+     23. Accepted documents / document upload
+     24. Session preference options (Login settings)
      25. Shared modal (identity re-auth)
      26. Skeleton / loading states
      27. Responsive breakpoints
@@ -340,9 +319,18 @@
 
 /* -------------------------------------------------------------
    5. Profile main layout
+   -----------------------------------------------------------
+   .profile-main-narrow keeps the whole settings stack centered
+   at a mobile-app width even on a wide desktop viewport — this
+   page is a single column top to bottom now, not a two-pane
+   dashboard, so there's no reason to let it stretch full width.
    ------------------------------------------------------------- */
 .profile-main {
   padding-block: 2.5rem 5rem;
+}
+
+.profile-main-narrow {
+  max-width: 640px;
 }
 
 /* -------------------------------------------------------------
@@ -358,7 +346,7 @@
   color: var(--ivory);
   border-radius: var(--radius-lg);
   padding: 2rem 2.25rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.75rem;
   box-shadow: var(--shadow-soft);
 }
 
@@ -371,7 +359,7 @@
 
 .profile-banner-identity h1 {
   color: var(--ivory);
-  font-size: 1.6rem;
+  font-size: 1.5rem;
   margin-bottom: 0.25rem;
 }
 
@@ -440,123 +428,210 @@
 }
 
 /* -------------------------------------------------------------
-   7. Profile section nav (sidebar / tab bar)
+   7. Settings stack (screen container)
+   -----------------------------------------------------------
+   Every .settings-screen occupies the same slot; only the one
+   with .is-active is shown. Screen-switching JS isn't wired up
+   yet (per profile.html's own header comment), but the CSS is
+   already written for it: swapping .is-active on click is all
+   that future JS needs to do, and the fade/slide below will
+   apply automatically. prefers-reduced-motion is respected in
+   section 26.
    ------------------------------------------------------------- */
-.profile-layout {
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  gap: 2.5rem;
-  align-items: start;
+.settings-stack {
+  position: relative;
 }
 
-.profile-nav {
+.settings-screen {
+  display: none;
+}
+
+.settings-screen.is-active {
+  display: block;
+  animation: settings-screen-in 0.22s ease;
+}
+
+@keyframes settings-screen-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* -------------------------------------------------------------
+   8. Settings header (back button + title)
+   ------------------------------------------------------------- */
+.settings-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  position: sticky;
-  top: calc(var(--app-header-h) + 1.5rem);
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.5rem;
+}
+
+.settings-header h2 {
+  font-size: 1.3rem;
+}
+
+.settings-back {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.settings-back:hover {
+  border-color: var(--ink);
+  background: rgba(10, 22, 40, 0.04);
+}
+
+.settings-back svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Root screen has no back button, so its (implicit) header is
+   just the page's own profile-banner above — no extra title
+   needed there. Sub-lists and content screens both use
+   .settings-header consistently, list or not. */
+.profile-panel-lede {
+  font-size: 0.9rem;
+  color: var(--slate);
+  max-width: 56ch;
+  margin: -0.75rem 0 1.5rem;
+}
+
+/* -------------------------------------------------------------
+   9. Settings list / rows
+   -----------------------------------------------------------
+   Root list and every sub-list (Security, Account & security,
+   Login settings, Account limits) share this exact styling —
+   a single bordered card containing full-width row buttons,
+   divided by hairlines, same visual language as .session-item
+   / .activity-list below it.
+   ------------------------------------------------------------- */
+.settings-list {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: 0.6rem;
+  overflow: hidden;
 }
 
-.profile-nav-link {
+.settings-list-divider {
+  padding: 0.9rem 1.25rem 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--slate);
+  background: var(--ivory);
+  border-top: 1px solid var(--line);
+}
+
+.settings-list-divider:first-child {
+  border-top: none;
+}
+
+.settings-row {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.7rem 0.85rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--slate);
-  transition: background-color 0.16s ease, color 0.16s ease;
+  gap: 0.9rem;
+  padding: 1rem 1.25rem;
+  border: none;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
-.profile-nav-link svg {
+.settings-list > .settings-row:first-child,
+.settings-list-divider + .settings-row {
+  border-top: none;
+}
+
+.settings-row:hover {
+  background: var(--ivory);
+}
+
+.settings-row-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: rgba(10, 22, 40, 0.05);
+  color: var(--slate-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-row-icon svg {
   width: 17px;
   height: 17px;
-  flex-shrink: 0;
-  color: var(--slate);
-  transition: color 0.16s ease;
 }
 
-.profile-nav-link:hover {
-  background: var(--ivory);
-  color: var(--ink);
-}
-
-.profile-nav-link.is-active {
-  background: var(--ink);
-  color: var(--ivory);
-}
-
-.profile-nav-link.is-active svg {
-  color: var(--brass-light);
-}
-
-.profile-nav-link--danger {
-  color: var(--red);
-}
-
-.profile-nav-link--danger svg {
-  color: var(--red);
-}
-
-.profile-nav-link--danger:hover {
+.settings-row-icon--danger {
   background: var(--red-bg);
   color: var(--red);
 }
 
-.profile-nav-link--danger.is-active {
-  background: var(--red);
-  color: var(--ivory);
-}
-
-.profile-nav-link--danger.is-active svg {
-  color: var(--ivory);
-}
-
-/* -------------------------------------------------------------
-   8. Profile panels
-   ------------------------------------------------------------- */
-.profile-content {
+.settings-row-label {
+  flex: 1;
   min-width: 0;
-}
-
-.profile-panel {
-  display: none;
-  animation: panel-in 0.25s ease;
-}
-
-.profile-panel.is-active {
-  display: block;
-}
-
-@keyframes panel-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.profile-panel-head {
-  margin-bottom: 1.75rem;
-}
-
-.profile-panel-head h2 {
-  font-size: 1.4rem;
-  margin-bottom: 0.3rem;
-}
-
-.profile-panel-head p {
   font-size: 0.92rem;
-  max-width: 56ch;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-value {
+  flex-shrink: 0;
+  font-size: 0.83rem;
+  color: var(--slate);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row .status-pill {
+  flex-shrink: 0;
+}
+
+.settings-row-chevron {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  color: var(--slate);
+}
+
+.settings-row--danger .settings-row-label {
+  color: var(--red);
+}
+
+.settings-row--danger:hover {
+  background: var(--red-bg);
+}
+
+.tier-badge--sm {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.68rem;
 }
 
 /* -------------------------------------------------------------
-   9. Summary cards (Overview)
+   10. Summary cards (Overview)
    ------------------------------------------------------------- */
 .profile-summary-grid {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
   margin-bottom: 1.75rem;
 }
@@ -587,7 +662,7 @@
 }
 
 /* -------------------------------------------------------------
-   10. Activity list
+   11. Activity list
    ------------------------------------------------------------- */
 .activity-list {
   display: flex;
@@ -639,7 +714,7 @@
 }
 
 /* -------------------------------------------------------------
-   11. Generic profile card
+   12. Generic profile card
    ------------------------------------------------------------- */
 .profile-card {
   background: var(--paper);
@@ -672,7 +747,7 @@
 }
 
 /* -------------------------------------------------------------
-   12. Forms — subheads, avatar edit, password field
+   13. Forms — subheads, avatar edit, password field
    ------------------------------------------------------------- */
 .profile-form-subhead {
   font-size: 0.95rem;
@@ -756,22 +831,14 @@
 .password-strength[data-strength="4"] span { background: var(--green); }
 
 /* -------------------------------------------------------------
-   13. Status pills
+   14. Status pills
    -----------------------------------------------------------
    NOTE: .status-pill / --verified / --neutral / --pending /
    --blocked are also defined in components.css (the canonical
-   owner per that file's own header). Kept here unchanged from
-   the previous revision of this file rather than removed, to
-   avoid a behavior change outside the scope of this pass — but
-   this is duplicate styling now that components.css is loaded
-   on every page that loads this file. Worth deleting from here
-   in a follow-up cleanup pass, matching what components.css
-   already did for its own dashboard.css duplication.
-
-   --rejected is NEW this revision (components.css doesn't have
-   it) — the verification stepper uses it for a rejected/action-
-   required tier, distinct from the amber --pending used for
-   "awaiting review" so the two read differently at a glance.
+   owner per that file's own header). Kept here unchanged, same
+   duplication note as previous revisions of this file — worth
+   deleting from here in a follow-up cleanup pass rather than in
+   the middle of this one.
    ------------------------------------------------------------- */
 .status-pill {
   display: inline-flex;
@@ -806,14 +873,13 @@
   color: var(--amber);
 }
 
-.status-pill--blocked,
-.status-pill--rejected {
+.status-pill--blocked {
   background: var(--red-bg);
   color: var(--red);
 }
 
 /* -------------------------------------------------------------
-   14. Auth method picker (2FA)
+   15. Auth method picker (2FA)
    ------------------------------------------------------------- */
 .auth-methods {
   display: grid;
@@ -859,7 +925,7 @@
 }
 
 /* -------------------------------------------------------------
-   15. Session list
+   16. Session list
    ------------------------------------------------------------- */
 .session-list {
   display: flex;
@@ -934,10 +1000,10 @@
 }
 
 /* -------------------------------------------------------------
-   16. Preference list / switch toggle
+   17. Preference list / switch toggle
    -----------------------------------------------------------
    NOTE: .switch / .switch-track are also defined in
-   components.css — same duplication note as section 13 above.
+   components.css — same duplication note as section 14 above.
    ------------------------------------------------------------- */
 .preference-list {
   display: flex;
@@ -1029,7 +1095,7 @@
 }
 
 /* -------------------------------------------------------------
-   17. Danger zone
+   18. Danger zone
    ------------------------------------------------------------- */
 .profile-card--danger {
   border-color: rgba(192, 69, 59, 0.25);
@@ -1040,16 +1106,14 @@
 }
 
 /* -------------------------------------------------------------
-   18. Toast (save feedback)
+   19. Toast (save feedback)
    -----------------------------------------------------------
-   profile.html now uses the canonical .toast-stack / .toast /
-   .toast--success / .toast--error / .is-visible primitives owned
-   by components.css (see that file's "6. Toast notifications"
-   section) — same fix admin-policy.js's own header comment
-   describes making on the admin side. The .profile-toast* rules
-   below are kept ONLY in case profile.js hasn't been updated yet
-   to build the canonical markup; once it has, this whole section
-   can be deleted.
+   profile.html includes the canonical #toast-stack markup owned
+   by components.css. The .profile-toast* rules below are kept as
+   a fallback only for as long as profile.js still builds its own
+   .profile-toast-region — same note as previous revisions of this
+   file. Safe to delete once profile.js is confirmed to use the
+   canonical #toast-stack instead.
    ------------------------------------------------------------- */
 .profile-toast-region {
   position: fixed;
@@ -1110,24 +1174,9 @@
 }
 
 /* -------------------------------------------------------------
-   19. Nav group label (Account & Security)
-   -----------------------------------------------------------
-   Plain section divider above the Login settings / Account
-   limits links in .profile-nav. Not a link, not focusable —
-   purely a label, so it's kept visually quiet (small, uppercase,
-   muted) rather than competing with the actual nav links.
-   ------------------------------------------------------------- */
-.profile-nav-group-label {
-  padding: 0.9rem 0.85rem 0.35rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--slate);
-}
-
-/* -------------------------------------------------------------
-   20. Tier badge (Account limits > Account information)
+   20. Tier badge (Account limits > Account information, and the
+   small preview badges on the Account & security / Account
+   limits list rows)
    -----------------------------------------------------------
    Colored by data-tier on the badge element itself
    (data-tier="1" | "2" | "3"), same attribute-driven pattern
@@ -1169,9 +1218,6 @@
 
 /* -------------------------------------------------------------
    21. Account info grid (Account limits > Account information)
-   -----------------------------------------------------------
-   Also reused (smaller) inside a verified tier's revealed detail
-   block — see .verification-tier-details dl in section 22.
    ------------------------------------------------------------- */
 .account-info-grid {
   display: grid;
@@ -1198,123 +1244,187 @@
 }
 
 /* -------------------------------------------------------------
-   22. Verification stepper (Tier 1 → 2 → 3)
+   22. Linked ID cards
    -----------------------------------------------------------
-   profile.js renders exactly ONE of these states into each
-   .verification-tier at a time (is-locked / is-active / is-pending
-   / is-rejected / is-verified), so the styling below is scoped by
-   those state classes rather than by which child elements happen
-   to be present.
+   #linked-id-details holds 3 .linked-id-card panels, revealed
+   together once verifyCurrentPassword() succeeds in the shared
+   modal (section 25). Each card is independently either
+   .linked-id-empty (nothing linked in that slot) or its
+   .linked-id-fields dl (verified document detail).
    ------------------------------------------------------------- */
-.verification-stepper {
-  display: flex;
-  flex-direction: column;
+.linked-id-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
+  margin-top: 1.5rem;
 }
 
-.verification-tier {
+.linked-id-card {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--ivory);
-  padding: 1.5rem;
+  padding: 1.25rem;
+}
+
+.linked-id-card .profile-card-head {
+  margin-bottom: 0.9rem;
+}
+
+.linked-id-empty {
+  text-align: center;
+  padding-block: 0.5rem;
+}
+
+.linked-id-empty p {
+  font-size: 0.83rem;
+  color: var(--slate);
+  margin-bottom: 0.9rem;
+}
+
+.linked-id-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.linked-id-fields > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.linked-id-fields dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--slate);
+  font-weight: 600;
+}
+
+.linked-id-fields dd {
+  font-size: 0.88rem;
+  color: var(--ink);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* -------------------------------------------------------------
+   23. Accepted documents / document upload
+   ------------------------------------------------------------- */
+.accepted-docs-group {
+  margin-bottom: 1.5rem;
+}
+
+.accepted-docs-group:last-child {
+  margin-bottom: 0;
+}
+
+.accepted-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.accepted-docs-list li {
+  position: relative;
+  padding-left: 1.4rem;
+  font-size: 0.88rem;
+  color: var(--slate-dark);
+}
+
+.accepted-docs-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.5em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brass);
+}
+
+.document-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 1.75rem 1.25rem;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius-md);
+  background: var(--ivory);
+  cursor: pointer;
   transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
-.verification-tier.is-locked {
-  opacity: 0.6;
+.document-dropzone svg {
+  width: 22px;
+  height: 22px;
+  color: var(--slate);
 }
 
-.verification-tier.is-active {
+.document-dropzone:hover,
+.document-dropzone:focus-visible,
+.document-dropzone.is-dragover {
   border-color: var(--brass);
   background: rgba(181, 138, 68, 0.05);
 }
 
-.verification-tier.is-pending {
-  border-color: rgba(196, 149, 60, 0.4);
+.document-dropzone:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
 }
 
-.verification-tier.is-rejected {
-  border-color: rgba(192, 69, 59, 0.3);
-}
-
-.verification-tier.is-verified {
-  border-color: rgba(60, 140, 100, 0.3);
-  background: var(--paper);
-}
-
-.verification-tier-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-}
-
-.verification-tier-head > div {
-  flex: 1;
-  min-width: 0;
-}
-
-.verification-tier-head h4 {
-  font-size: 1rem;
-  margin-bottom: 0.2rem;
-}
-
-.verification-tier-head p {
-  font-size: 0.85rem;
+.document-dropzone p {
+  font-size: 0.87rem;
   color: var(--slate);
 }
 
-.verification-tier-head .status-pill {
-  flex-shrink: 0;
-  margin-top: 0.1rem;
+.document-dropzone-browse {
+  color: var(--brass-dark);
+  font-weight: 600;
+  text-decoration: underline;
 }
 
-.verification-tier-number {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+.document-upload-preview {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.95rem;
-  background: rgba(10, 22, 40, 0.06);
-  color: var(--slate-dark);
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--ivory);
 }
 
-.verification-tier.is-active .verification-tier-number,
-.verification-tier.is-rejected .verification-tier-number {
-  background: var(--brass);
+.document-upload-preview-name {
+  font-size: 0.85rem;
   color: var(--ink);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.verification-tier.is-verified .verification-tier-number {
-  background: var(--green);
-  color: var(--ivory);
+.document-upload-progress {
+  margin-top: 0.85rem;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
 }
 
-.verification-tier-details {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-}
-
-.verification-tier-details .account-info-grid {
-  gap: 1rem;
-  margin-bottom: 0.85rem;
-}
-
-.verification-tier-details .account-info-grid dd {
-  font-size: 0.88rem;
-}
-
-.verification-upgrade-btn {
-  margin-top: 1.25rem;
+.document-upload-progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--brass);
+  transition: width 0.2s ease;
 }
 
 /* -------------------------------------------------------------
-   23. Session preference options (Login settings)
+   24. Session preference options (Login settings)
    ------------------------------------------------------------- */
 .session-preference-options {
   display: flex;
@@ -1365,106 +1475,18 @@
 }
 
 /* -------------------------------------------------------------
-   24. Document upload (verification stepper forms)
-   -----------------------------------------------------------
-   This is the form profile.js builds INSIDE an "active" or
-   "rejected" tier (buildUploadForm() / wireUploadForm()) — there
-   is no longer a standalone upload card outside the stepper, and
-   no static "accepted documents" list (each tier's own
-   <select> already shows exactly what that tier accepts).
-   ------------------------------------------------------------- */
-.verification-upload {
-  margin-top: 1.25rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid var(--line);
-}
-
-.verification-tier.is-rejected .verification-upload {
-  border-top: none;
-  padding-top: 0;
-  margin-top: 1rem;
-}
-
-.verification-upload-form .field {
-  margin-bottom: 1rem;
-}
-
-.document-upload-dropzone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  text-align: center;
-  padding: 1.75rem 1.25rem;
-  border: 1.5px dashed var(--line);
-  border-radius: var(--radius-md);
-  background: var(--paper);
-  cursor: pointer;
-  transition: border-color 0.18s ease, background-color 0.18s ease;
-}
-
-.document-upload-dropzone:hover,
-.document-upload-dropzone:focus-visible,
-.document-upload-dropzone.is-dragover {
-  border-color: var(--brass);
-  background: rgba(181, 138, 68, 0.05);
-}
-
-.document-upload-dropzone:focus-visible {
-  outline: 2px solid var(--brass);
-  outline-offset: 2px;
-}
-
-.document-upload-dropzone p {
-  font-size: 0.87rem;
-  color: var(--slate);
-}
-
-.document-upload-preview {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: 0.85rem;
-  padding: 0.65rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--ivory);
-}
-
-.document-upload-preview [data-preview-name] {
-  font-size: 0.85rem;
-  color: var(--ink);
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.document-upload-progress {
-  margin-top: 0.85rem;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.document-upload-progress-bar {
-  height: 100%;
-  width: 0%;
-  border-radius: 999px;
-  background: var(--brass);
-  transition: width 0.2s ease;
-}
-
-/* -------------------------------------------------------------
    25. Shared modal (identity re-auth)
    -----------------------------------------------------------
-   See FLAG in this file's header — these class names also appear
-   in admin-policy.html without a definition this file has ever
-   seen. Scoped here just enough to render profile.html's single
-   #verify-identity-modal correctly, regardless of which
-   verification tier opened it.
+   FLAG: .modal-overlay / .modal-panel / .modal-close /
+   .modal-body-text / .modal-actions / .admin-field-error also
+   appear in admin-policy.html but this file has never seen
+   admin.css/admin-policy.css, so it has no visibility into
+   whether those classes are already styled there and, if so,
+   whether this definition matches. Scoped here just enough to
+   render #linked-id-auth-modal correctly — if admin.css turns
+   out to define the same names differently, reconcile the two
+   (ideally by moving one shared definition into components.css)
+   rather than running both indefinitely.
    ------------------------------------------------------------- */
 .modal-overlay {
   position: fixed;
@@ -1594,7 +1616,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .profile-panel,
+  .settings-screen,
   .is-skeleton,
   .btn.is-loading::after,
   .profile-avatar-edit.is-loading svg {
@@ -1604,13 +1626,15 @@
 
 /* -------------------------------------------------------------
    27. Responsive breakpoints
+   -----------------------------------------------------------
+   The settings stack is single-column by design at every width
+   — .profile-main-narrow already caps it well below desktop
+   reading width, so there's no desktop-vs-mobile layout switch
+   to handle here the way the old sidebar-tabs version needed.
+   These breakpoints just tighten spacing and stack a few
+   multi-column bits (auth methods, account info, linked ID
+   cards) as the viewport narrows.
    ------------------------------------------------------------- */
-@media (max-width: 1080px) {
-  .profile-summary-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 @media (max-width: 980px) {
   .app-nav {
     display: none;
@@ -1645,41 +1669,47 @@
   }
 }
 
-@media (max-width: 860px) {
-  .profile-layout {
-    grid-template-columns: 1fr;
+@media (max-width: 640px) {
+  .profile-main {
+    padding-block: 1.5rem 3.5rem;
   }
 
-  .profile-nav {
-    position: sticky;
-    top: var(--app-header-h);
-    z-index: 500;
-    flex-direction: row;
-    overflow-x: auto;
-    gap: 0.3rem;
-    padding: 0.5rem;
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  .profile-banner {
+    padding: 1.5rem;
   }
 
-  .profile-nav::-webkit-scrollbar {
+  .profile-banner-identity {
+    gap: 0.9rem;
+  }
+
+  .profile-banner-identity h1 {
+    font-size: 1.25rem;
+  }
+
+  .avatar-initial--lg {
+    width: 60px;
+    height: 60px;
+    font-size: 1.4rem;
+  }
+
+  .profile-summary-grid {
+    gap: 0.75rem;
+  }
+
+  .profile-card {
+    padding: 1.25rem;
+  }
+
+  .settings-row {
+    padding: 0.9rem 1rem;
+  }
+
+  .settings-row-value {
     display: none;
   }
 
-  .profile-nav-link {
-    flex-shrink: 0;
-  }
-
-  .profile-nav-link span,
-  .profile-nav-link {
-    white-space: nowrap;
-  }
-
-  .profile-nav-group-label {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    padding-inline: 0.6rem;
+  .linked-id-grid {
+    grid-template-columns: 1fr;
   }
 
   .form-row-2,
@@ -1693,51 +1723,6 @@
 
   .account-info-grid {
     grid-template-columns: 1fr;
-  }
-
-  .verification-tier-details .account-info-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .profile-banner {
-    padding: 1.5rem;
-  }
-
-  .profile-banner-identity {
-    gap: 0.9rem;
-  }
-
-  .profile-banner-identity h1 {
-    font-size: 1.3rem;
-  }
-
-  .avatar-initial--lg {
-    width: 64px;
-    height: 64px;
-    font-size: 1.5rem;
-  }
-
-  .profile-summary-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-  }
-
-  .profile-card {
-    padding: 1.25rem;
-  }
-
-  .verification-tier {
-    padding: 1.1rem;
-  }
-
-  .verification-tier-head {
-    flex-wrap: wrap;
-  }
-
-  .verification-tier-head .status-pill {
-    margin-left: 2.75rem;
   }
 
   .app-user-name {
@@ -1776,5 +1761,9 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 0.6rem;
+  }
+
+  .settings-header h2 {
+    font-size: 1.15rem;
   }
 }
