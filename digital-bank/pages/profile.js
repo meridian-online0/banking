@@ -1,1288 +1,754 @@
 /* =============================================================
-   MERIDIAN — Account profile page
+   MERIDIAN — International Digital Banking
    Script: pages/profile.js
-   Loaded as a module by profile.html only. Handles:
-     1. Auth guard
-     2. Header identity (name, avatar) + notification badge, user
-        menu dropdown, mobile nav toggle, log out — deferred until
-        the app-navbar component has landed (see waitForNavbar()).
-     4. Section navigation — hash-linked, keyboard accessible tabs.
-        Covers every .profile-nav-link / .profile-panel pair
-        automatically, so the new Login settings / Account limits
-        tabs work with zero changes to this function.
-     5. Loading the signed-in user's profile into the banner,
-        the Overview summary, and the (read-only) Personal info form
-     6. Avatar upload (via supabase/storage.js)
-     7. Recent account activity — from audit_logs
-     8. Active sessions — from login_sessions
-     9. Password change — Security tab AND Login settings tab, both
-        re-verifying the current password first (see
-        verifyCurrentPassword() in database.js)
-     10. Two-factor method picker
-     11. Notification preference switches
-     12. Danger zone actions (data export / close account) — stubs
-     13. Toast helper for save feedback
-     14. Login settings: forgot password, login session preference,
-         Face ID / device biometrics
-     15. Account limits: tier badge + account info, and the
-         sequential identity-verification stepper (Tier 1 → 2 → 3)
+   Loaded as a module by profile.html only. Wires up:
+     1. Screen-stack navigation (root → sublist/content, back, history)
+     2. Password show/hide toggles
+     3. Profile banner + Personal info (read-only display)
+     4. Overview summary cards + activity
+     5. Security > Password, Two-factor (display only), Sessions
+     6. Account & security > Login settings (password, forgot
+        password, session preference, Face ID — status only)
+     7. Account & security > Account limits (info, Linked ID,
+        accepted docs, document upload)
+     8. Danger zone (no backend yet — honest placeholders)
+     9. Avatar upload
 
-   NOTE: the Personal info form is view-only by design — every
-   field is disabled in the markup and there is no save handler
-   for it here.
+   -----------------------------------------------------------
+   KNOWN GAPS / ASSUMPTIONS — flagged rather than silently
+   guessed, per the files actually available at the time this
+   was written:
 
-   CHANGE LOG (this revision)
-   ---------------------------
-   Replaced the old "3 Linked ID cards shown at once + one static
-   upload form" Account limits UI with a sequential, Opay-style
-   verification stepper:
-     - Only the CURRENT tier is ever actionable. Tier 2 doesn't even
-       render an upload form until Tier 1 has been admin-verified;
-       Tier 3 doesn't until Tier 2 has.
-     - Each tier's body (locked / upload form / pending / rejected /
-       verified) is computed fresh from getMyIdentityDocumentHistory()
-       — a new read that, unlike getMyIdentityDocuments(), returns
-       EVERY submission regardless of status, which this needs to
-       show "pending review" and "rejected — resubmit" states at all.
-     - Tier 1's document list is NIN / driver's license / int'l
-       passport / voter's card. Tier 2 shows the same list minus
-       whichever type Tier 1 actually used. Tier 3's is the
-       proof-of-address list (utility bills, bank statement,
-       tenancy agreement, etc).
-     - Verified-tier detail fields (full name, ID number, DOB,
-       gender) still sit behind the same password re-auth as
-       before — the modal is now shared across all three tiers
-       (#verify-identity-modal) rather than one-off per Linked ID
-       card, and records which tier it's currently unlocking.
-     - Those detail fields are admin-supplied at verification time
-       (see 017_identity_document_review_details.sql), not typed by
-       the customer — the upload form only ever collects document
-       type + file, matching what submitIdentityDocument() accepts.
+   - AVATAR FIELD MISMATCH: storage.js's uploadAvatar() writes
+     user_profiles.profile_photo, but auth-ui.js reads
+     user_profiles.avatar_url. These look like two different
+     column names for the same thing. This file reads whichever
+     is present (avatar_url first, profile_photo as fallback) so
+     the photo shows up either way, but the underlying mismatch
+     should be fixed in the schema/storage.js — right now a
+     photo uploaded here may not be picked up by auth-ui.js's
+     header rendering (or vice versa) depending on which column
+     actually exists.
+   - SESSIONS: database.js has no exported "list my sessions"
+     function. fetchLoginSessions() below queries the
+     login_sessions table directly (the same table auth.js
+     already reads/writes), assuming an owner-scoped SELECT RLS
+     policy exists. If it doesn't yet, this section will just
+     show "no sessions on record" rather than break the page.
+   - ACTIVITY LIST: no exported getter exists for audit_logs (or
+     any activity feed) in database.js, so the Overview activity
+     list honestly says it isn't wired up yet instead of spinning
+     forever or fabricating entries.
+   - NOTIFICATION PREFERENCES + LOGIN SESSION PREFERENCE: no
+     known user_profiles column for either. Both are wired for
+     immediate UI feedback only (not persisted server-side) and
+     say so in their toast/status text.
+   - ACCOUNT TIER (Tier 1/2/3 badges): no confirmed field for
+     this in user_profiles or elsewhere, so the tier badges are
+     left exactly as they are in the HTML (static "Tier 1")
+     rather than guessing a column name.
+   - DANGER ZONE (data export / close account): no backend
+     functions exist yet, so both buttons show an honest "not
+     available yet — contact support" message instead of doing
+     nothing silently or faking success.
+   - AVATAR FILE INPUT: profile.html's .profile-avatar-edit
+     button has no associated <input type="file">. One is
+     created here in JS rather than editing that markup.
+   - FACE ID: per instruction, left for later. This file only
+     reads and displays real state (via getMyWebauthnCredentials
+     — a credential existing means "enabled") and disables the
+     enable/disable button with a "Coming soon" label. It does
+     NOT attempt navigator.credentials.create()/get() or any
+     enrollment/login flow.
    ============================================================= */
 
-import {
-  requireAuth,
-  signOutUser,
-  updateUserPassword,
-  verifyCurrentPassword,
-  requestPasswordReset,
-} from '../supabase/auth.js';
-import { supabase } from '../supabase/config.js';
+import { getCurrentUser, updateUserPassword, verifyCurrentPassword, requestPasswordReset } from '../supabase/auth.js';
 import {
   getMyProfile,
-  updateMyProfile,
   getMyAccounts,
   getCardsForAccount,
-  getUnreadNotificationCount,
-  getMyIdentityDocumentHistory,
-  submitIdentityDocument,
+  getMyIdentityDocuments,
   getMyWebauthnCredentials,
-  registerWebauthnCredential,
-  removeAllWebauthnCredentials,
+  submitIdentityDocument,
 } from '../supabase/database.js';
 import { uploadAvatar } from '../supabase/storage.js';
+import { supabase } from '../supabase/config.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
 const $$ = (selector, scope) => Array.from((scope || document).querySelectorAll(selector));
 
 let currentUser = null;
 let currentProfile = null;
+let screenStack = null;
 
 /* -----------------------------------------------------------
-   Toasts
+   Small shared helpers
    ----------------------------------------------------------- */
-function toastRegion() {
-  let region = $('.profile-toast-region');
-  if (!region) {
-    region = document.createElement('div');
-    region.className = 'profile-toast-region';
-    region.setAttribute('aria-live', 'polite');
-    document.body.appendChild(region);
-  }
-  return region;
+
+function getInitials(name) {
+  return (
+    String(name || '')
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0].toUpperCase())
+      .join('') || '·'
+  );
 }
 
-function showToast(message, type = 'success') {
-  const region = toastRegion();
-  const toast = document.createElement('div');
-  toast.className = `profile-toast profile-toast--${type}`;
-  const icon = type === 'success'
-    ? '<path d="M2.5 7 5.5 10 11.5 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
-    : '<path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>';
-  toast.innerHTML = `
-    <span class="ic"><svg viewBox="0 0 14 13" fill="none" aria-hidden="true">${icon}</svg></span>
-    <span>${message}</span>
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/** Mirrors auth-ui.js's renderAvatar() locally — that function isn't exported, so this page owns its own copy for the elements it controls. */
+function renderAvatarLocal(el, avatarUrl, initials) {
+  if (!el) return;
+  const existingImg = el.querySelector('img.avatar-image');
+  if (avatarUrl) {
+    const img = existingImg || document.createElement('img');
+    img.className = 'avatar-image';
+    img.alt = '';
+    img.onerror = () => {
+      img.remove();
+      el.classList.remove('has-avatar-image');
+      el.textContent = initials;
+    };
+    img.src = avatarUrl;
+    if (!existingImg) {
+      el.textContent = '';
+      el.appendChild(img);
+    }
+    el.classList.add('has-avatar-image');
+  } else {
+    if (existingImg) existingImg.remove();
+    el.classList.remove('has-avatar-image');
+    el.textContent = initials;
+  }
+}
+
+function currentFullName() {
+  return document.querySelector('.profile-banner-identity h1')?.textContent?.trim() || '';
+}
+
+/* -----------------------------------------------------------
+   Toast — uses the canonical #toast-stack element from
+   components.css, but doesn't assume any specific class names
+   from that (unseen) file — styled inline so it renders
+   correctly regardless of what components.css defines.
+   ----------------------------------------------------------- */
+function toast(message, tone = 'success') {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+
+  const el = document.createElement('div');
+  el.setAttribute('role', 'status');
+  el.style.cssText = `
+    display:flex;align-items:center;gap:.6rem;
+    background:${tone === 'error' ? '#c0453b' : '#0a1628'};
+    color:#f6f5f0;padding:.85rem 1.1rem;border-radius:14px;
+    box-shadow:0 20px 60px -20px rgba(10,22,40,.35);
+    font-size:.87rem;font-weight:500;max-width:340px;
+    opacity:0;transform:translateY(8px);
+    transition:opacity .2s ease, transform .2s ease;
   `;
-  region.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add('is-visible'));
+  el.textContent = message;
+  stack.appendChild(el);
 
-  setTimeout(() => {
-    toast.classList.remove('is-visible');
-    setTimeout(() => toast.remove(), 250);
-  }, 3600);
-}
-
-/* -----------------------------------------------------------
-   Button loading helper
-   ----------------------------------------------------------- */
-function setButtonLoading(button, isLoading) {
-  if (!button) return;
-  button.classList.toggle('is-loading', isLoading);
-  button.disabled = isLoading;
-}
-
-/* -----------------------------------------------------------
-   Simple HTML-escaping for anything interpolated into innerHTML
-   that ultimately traces back to a document's own submitted
-   values (file names, admin-entered full names, etc.)
-   ----------------------------------------------------------- */
-function escapeHtml(value) {
-  if (value === null || value === undefined) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/* -----------------------------------------------------------
-   Initials / avatar rendering
-   ----------------------------------------------------------- */
-function initials(firstName, lastName) {
-  const a = (firstName || '').trim().charAt(0);
-  const b = (lastName || '').trim().charAt(0);
-  return (a + b).toUpperCase() || 'M';
-}
-
-function paintAvatar(url, firstName, lastName) {
-  const label = initials(firstName, lastName);
-
-  $$('.avatar-initial--sm, .avatar-initial--lg').forEach((el) => {
-    if (url) {
-      el.innerHTML = `<img class="avatar-photo" src="${url}" alt="">`;
-    } else {
-      el.textContent = label;
-    }
-  });
-}
-
-/* -----------------------------------------------------------
-   Wait for the app-navbar component
-   ----------------------------------------------------------- */
-function waitForNavbar() {
-  return new Promise((resolve) => {
-    if ($('.app-user-menu')) {
-      resolve();
-      return;
-    }
-    document.addEventListener('component:loaded', () => resolve(), { once: true });
-  });
-}
-
-/* -----------------------------------------------------------
-   Header identity + notification badge
-   ----------------------------------------------------------- */
-function populateHeader(profile) {
-  const nameEl = $('.app-user-name');
-  if (nameEl) nameEl.textContent = profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : 'Your account';
-  paintAvatar(profile?.profile_photo, profile?.first_name, profile?.last_name);
-}
-
-async function populateNotificationBadge() {
-  const badge = $('.app-icon-btn-badge');
-  if (!badge) return;
-
-  const { data: count } = await getUnreadNotificationCount();
-  if (!count) {
-    badge.style.display = 'none';
-    return;
-  }
-  badge.textContent = count > 9 ? '9+' : String(count);
-  badge.style.display = 'flex';
-}
-
-/* -----------------------------------------------------------
-   User menu dropdown
-   ----------------------------------------------------------- */
-function initUserMenu() {
-  const menu = $('.app-user-menu');
-  const trigger = $('.app-user-trigger', menu);
-  if (!menu || !trigger) return;
-
-  function open() {
-    menu.classList.add('is-open');
-    trigger.setAttribute('aria-expanded', 'true');
-    document.addEventListener('click', handleOutsideClick);
-    document.addEventListener('keydown', handleKeydown);
-  }
-
-  function close() {
-    menu.classList.remove('is-open');
-    trigger.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('click', handleOutsideClick);
-    document.removeEventListener('keydown', handleKeydown);
-  }
-
-  function handleOutsideClick(event) {
-    if (!menu.contains(event.target)) close();
-  }
-
-  function handleKeydown(event) {
-    if (event.key === 'Escape') {
-      close();
-      trigger.focus();
-    }
-  }
-
-  trigger.addEventListener('click', (event) => {
-    event.stopPropagation();
-    if (menu.classList.contains('is-open')) close();
-    else open();
-  });
-}
-
-/* -----------------------------------------------------------
-   Mobile nav toggle
-   ----------------------------------------------------------- */
-function initMobileNav() {
-  const toggle = $('.app-nav-toggle');
-  const nav = $('.app-nav');
-  if (!toggle || !nav) return;
-
-  toggle.addEventListener('click', () => {
-    const isOpen = nav.classList.toggle('is-mobile-open');
-    toggle.setAttribute('aria-expanded', String(isOpen));
-  });
-  nav.addEventListener('click', (event) => {
-    if (event.target.tagName === 'A') {
-      nav.classList.remove('is-mobile-open');
-      toggle.setAttribute('aria-expanded', 'false');
-    }
-  });
-  document.addEventListener('click', (event) => {
-    if (!nav.classList.contains('is-mobile-open')) return;
-    if (!nav.contains(event.target) && !toggle.contains(event.target)) {
-      nav.classList.remove('is-mobile-open');
-      toggle.setAttribute('aria-expanded', 'false');
-    }
-  });
-}
-
-/* -----------------------------------------------------------
-   Log out
-   ----------------------------------------------------------- */
-function initLogout() {
-  const logoutLink = $('#logout-link');
-  if (!logoutLink) return;
-
-  logoutLink.addEventListener('click', async (event) => {
-    event.preventDefault();
-    await signOutUser();
-    window.location.href = logoutLink.getAttribute('href');
-  });
-}
-
-/* -----------------------------------------------------------
-   Section navigation (tabs)
-   ----------------------------------------------------------- */
-function initSectionNav() {
-  const links = $$('.profile-nav-link');
-  const panels = $$('.profile-panel');
-  if (!links.length || !panels.length) return;
-
-  function activate(tabName, { focusPanel = false, updateHash = true } = {}) {
-    const targetLink = links.find((l) => l.dataset.tab === tabName) || links[0];
-    const targetPanel = panels.find((p) => p.dataset.panel === targetLink.dataset.tab);
-    if (!targetPanel) return;
-
-    links.forEach((l) => l.classList.toggle('is-active', l === targetLink));
-    panels.forEach((p) => p.classList.toggle('is-active', p === targetPanel));
-
-    if (updateHash) {
-      history.replaceState(null, '', `#${targetLink.dataset.tab}`);
-    }
-    if (focusPanel) {
-      targetPanel.setAttribute('tabindex', '-1');
-      targetPanel.focus({ preventScroll: true });
-    }
-  }
-
-  links.forEach((link) => {
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      activate(link.dataset.tab, { focusPanel: true });
-    });
+  requestAnimationFrame(() => {
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
   });
 
-  window.__profileActivateTab = activate;
-
-  const initialTab = window.location.hash.replace('#', '');
-  activate(initialTab || 'overview', { updateHash: false });
+  window.setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(8px)';
+    window.setTimeout(() => el.remove(), 250);
+  }, 4200);
 }
 
 /* -----------------------------------------------------------
-   Load profile data into banner + Personal info form
+   1. Screen-stack navigation
    ----------------------------------------------------------- */
-function populateBanner(profile) {
-  const heading = $('.profile-banner-identity h1');
-  const meta = $('.profile-banner-meta');
-  const statusRegion = $('.profile-banner-status');
+function initScreenStack() {
+  const stack = document.getElementById('settings-stack');
+  if (!stack) return null;
 
-  if (heading) heading.textContent = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 'Your profile';
-
-  if (meta) {
-    const since = profile?.created_at
-      ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-      : null;
-    meta.textContent = `Personal account${since ? ` · Member since ${since}` : ''}`;
-  }
-
-  if (statusRegion) {
-    statusRegion.innerHTML = '';
-
-    const identityPill = document.createElement('span');
-    if (profile?.account_status === 'Active') {
-      identityPill.className = 'status-pill status-pill--verified';
-      identityPill.innerHTML = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg> Identity verified`;
-    } else {
-      identityPill.className = 'status-pill status-pill--pending';
-      identityPill.textContent = profile?.account_status || 'Pending review';
-    }
-    statusRegion.appendChild(identityPill);
-
-    const emailPill = document.createElement('span');
-    emailPill.className = 'status-pill status-pill--neutral';
-    emailPill.textContent = profile?.email_verified ? 'Email confirmed' : 'Email unconfirmed';
-    statusRegion.appendChild(emailPill);
-  }
-}
-
-function populatePersonalForm(profile) {
-  const form = $('#personal-info-form');
-  if (!form || !profile) return;
-
-  const setValue = (name, value) => {
-    const field = form.elements[name];
-    if (field && value !== undefined && value !== null) field.value = value;
-  };
-
-  setValue('first_name', profile.first_name);
-  setValue('last_name', profile.last_name);
-  setValue('email', profile.email);
-  setValue('phone', profile.phone);
-  setValue('date_of_birth', profile.date_of_birth);
-  setValue('gender', profile.gender);
-  setValue('nationality', profile.nationality);
-  setValue('occupation', profile.occupation);
-  setValue('address', profile.address);
-  setValue('city', profile.city);
-  setValue('state', profile.state);
-  setValue('postal_code', profile.postal_code);
-  setValue('country', profile.country);
-}
-
-/* -----------------------------------------------------------
-   Overview summary
-   ----------------------------------------------------------- */
-async function populateOverviewSummary(user, profile, accounts) {
-  const values = $$('.profile-summary-card .profile-summary-value');
-  const [statusVal, accountsVal, cardsVal, sessionsVal] = values;
-
-  if (statusVal) statusVal.textContent = profile?.account_status || 'Pending';
-
-  if (accountsVal) {
-    const count = accounts.length;
-    accountsVal.textContent = count ? `${count} currenc${count === 1 ? 'y' : 'ies'}` : 'None yet';
-  }
-
-  if (cardsVal) {
-    if (!accounts.length) {
-      cardsVal.textContent = 'None yet';
-    } else {
-      const cardLists = await Promise.all(accounts.map((a) => getCardsForAccount(a.id)));
-      const activeCount = cardLists.reduce(
-        (sum, { data }) => sum + (data || []).filter((c) => c.card_status === 'Active').length,
-        0
-      );
-      cardsVal.textContent = `${activeCount} card${activeCount === 1 ? '' : 's'}`;
+  function showScreen(id, { pushHistory = true } = {}) {
+    const target = document.getElementById(id);
+    if (!target) return;
+    const current = stack.querySelector('.settings-screen.is-active');
+    if (current === target) return;
+    if (current) current.classList.remove('is-active');
+    target.classList.add('is-active');
+    window.scrollTo({ top: 0, behavior: 'auto' });
+    if (pushHistory) {
+      history.pushState({ meridianScreen: id }, '', `#${id}`);
     }
   }
 
-  if (sessionsVal) {
-    const { count, error } = await supabase
-      .from('login_sessions')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .is('logout_time', null);
-    const deviceCount = error ? 0 : (count ?? 0);
-    sessionsVal.textContent = `${deviceCount} device${deviceCount === 1 ? '' : 's'}`;
-  }
-}
-
-/* -----------------------------------------------------------
-   Recent account activity
-   ----------------------------------------------------------- */
-async function populateRecentActivity(userId) {
-  const listEl = $('#activity-list');
-  if (!listEl) return;
-
-  const { data, error } = await supabase
-    .from('audit_logs')
-    .select('action, browser, operating_system, device, created_at')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(3);
-
-  if (error || !data?.length) {
-    listEl.innerHTML = `
-      <li>
-        <span class="activity-dot"></span>
-        <div>
-          <strong>No recent activity</strong>
-          <span>Account actions will show up here.</span>
-        </div>
-      </li>
-    `;
-    return;
-  }
-
-  listEl.innerHTML = '';
-  data.forEach((entry) => {
-    const context = [entry.browser, entry.operating_system].filter(Boolean).join(' on ');
-    const when = new Date(entry.created_at).toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    });
-    const li = document.createElement('li');
-    li.innerHTML = `
-      <span class="activity-dot"></span>
-      <div>
-        <strong>${entry.action || 'Account activity'}</strong>
-        <span>${context || entry.device || ''}</span>
-      </div>
-      <time>${when}</time>
-    `;
-    listEl.appendChild(li);
-  });
-}
-
-/* -----------------------------------------------------------
-   Active sessions
-   ----------------------------------------------------------- */
-function initSessionLogoutButtons() {
-  $$('.session-item .wizard-edit-link').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const item = btn.closest('.session-item');
-      btn.disabled = true;
-      item.style.opacity = '0.5';
-      setTimeout(() => {
-        item.remove();
-        showToast('Signed out of that device.');
-      }, 200);
-    });
-  });
-}
-
-async function populateSessions(userId) {
-  const listEl = $('#session-list');
-  if (!listEl) return;
-
-  const { data, error } = await supabase
-    .from('login_sessions')
-    .select('id, browser, device, login_time')
-    .eq('user_id', userId)
-    .is('logout_time', null)
-    .order('login_time', { ascending: false });
-
-  if (error || !data?.length) {
-    listEl.innerHTML = `
-      <li class="session-item">
-        <div>
-          <strong>No active sessions found</strong>
-          <span>You're not logged in anywhere we can see.</span>
-        </div>
-      </li>
-    `;
-    return;
-  }
-
-  listEl.innerHTML = '';
-  data.forEach((session, index) => {
-    const isCurrent = index === 0;
-    const when = new Date(session.login_time).toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-    });
-    const li = document.createElement('li');
-    li.className = 'session-item';
-    li.innerHTML = `
-      <span class="session-icon">
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4" width="15" height="10" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M7 17h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-      </span>
-      <div>
-        <strong>${session.browser || 'Unknown browser'}${session.device ? ` on ${session.device}` : ''}${isCurrent ? ' · This device' : ''}</strong>
-        <span>Active since ${when}</span>
-      </div>
-      ${isCurrent
-        ? '<span class="status-pill status-pill--neutral">Current</span>'
-        : '<button type="button" class="wizard-edit-link">Log out</button>'}
-    `;
-    listEl.appendChild(li);
+  $$('.settings-row[data-target], .settings-back[data-target]', stack).forEach((btn) => {
+    btn.addEventListener('click', () => showScreen(btn.getAttribute('data-target')));
   });
 
-  initSessionLogoutButtons();
+  window.addEventListener('popstate', (event) => {
+    showScreen(event.state?.meridianScreen || 'screen-root', { pushHistory: false });
+  });
+
+  const initial = window.location.hash.replace('#', '');
+  if (initial && document.getElementById(initial)) {
+    $$('.settings-screen', stack).forEach((s) => s.classList.remove('is-active'));
+    document.getElementById(initial).classList.add('is-active');
+    history.replaceState({ meridianScreen: initial }, '', `#${initial}`);
+  } else {
+    history.replaceState({ meridianScreen: 'screen-root' }, '', '#screen-root');
+  }
+
+  return { showScreen };
 }
 
 /* -----------------------------------------------------------
-   Avatar upload
+   2. Password show/hide toggles (every .password-toggle on the page)
    ----------------------------------------------------------- */
-function initAvatarUpload() {
-  const editBtn = $('.profile-avatar-edit');
-  if (!editBtn) return;
-
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.accept = 'image/*';
-  fileInput.hidden = true;
-  document.body.appendChild(fileInput);
-
-  editBtn.addEventListener('click', () => fileInput.click());
-
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files?.[0];
-    fileInput.value = '';
-    if (!file || !currentUser) return;
-
-    editBtn.classList.add('is-loading');
-    const { data, error } = await uploadAvatar(file, currentUser.id);
-    editBtn.classList.remove('is-loading');
-
-    if (error) {
-      showToast(error, 'error');
-      return;
-    }
-
-    paintAvatar(data.url, currentProfile?.first_name, currentProfile?.last_name);
-    if (currentProfile) currentProfile.profile_photo = data.url;
-    showToast('Profile photo updated.');
-  });
-}
-
-/* -----------------------------------------------------------
-   Password change — shared by the Security tab's form AND the
-   Login settings tab's form.
-   ----------------------------------------------------------- */
-function passwordStrength(password) {
-  let score = 0;
-  if (password.length >= 10) score += 1;
-  if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score += 1;
-  if (/\d/.test(password)) score += 1;
-  if (/[^A-Za-z0-9]/.test(password)) score += 1;
-  return score;
-}
-
-function clearFieldErrors(form) {
-  $$('.field', form).forEach((field) => {
-    field.classList.remove('has-error');
-    const err = $('.field-error', field);
-    if (err) err.textContent = '';
-  });
-}
-
-function initPasswordForm(formSelector, { requirementsListSelector } = {}) {
-  const form = $(formSelector);
-  if (!form) return;
-
-  const newPasswordInput = form.elements['new_password'];
-  let strengthMeter = $('.password-strength', form);
-  if (!strengthMeter && newPasswordInput) {
-    strengthMeter = document.createElement('div');
-    strengthMeter.className = 'password-strength';
-    strengthMeter.innerHTML = '<span></span><span></span><span></span><span></span>';
-    newPasswordInput.closest('.field').appendChild(strengthMeter);
-  }
-
-  const requirementsList = requirementsListSelector ? $(requirementsListSelector) : null;
-
-  function updateRequirements(password) {
-    if (!requirementsList) return;
-    const checks = [
-      password.length >= 10,
-      /[A-Z]/.test(password) && /[a-z]/.test(password),
-      /\d/.test(password),
-      /[^A-Za-z0-9]/.test(password),
-    ];
-    $$('li', requirementsList).forEach((li, i) => li.classList.toggle('is-met', Boolean(checks[i])));
-  }
-
-  if (newPasswordInput) {
-    newPasswordInput.addEventListener('input', () => {
-      strengthMeter.dataset.strength = String(passwordStrength(newPasswordInput.value));
-      updateRequirements(newPasswordInput.value);
-    });
-  }
-
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    clearFieldErrors(form);
-
-    const { current_password, new_password, new_password_confirm } = Object.fromEntries(new FormData(form).entries());
-
-    if (!current_password) {
-      showToast('Enter your current password.', 'error');
-      return;
-    }
-    if (new_password.length < 10) {
-      showToast('Use at least 10 characters for your new password.', 'error');
-      return;
-    }
-    if (new_password !== new_password_confirm) {
-      showToast('Passwords don\u2019t match.', 'error');
-      return;
-    }
-
-    const submitBtn = $('button[type="submit"]', form);
-    setButtonLoading(submitBtn, true);
-
-    const { error: verifyError } = await verifyCurrentPassword(current_password);
-    if (verifyError) {
-      setButtonLoading(submitBtn, false);
-      showToast('Your current password is incorrect.', 'error');
-      return;
-    }
-
-    const { error } = await updateUserPassword(new_password);
-
-    setButtonLoading(submitBtn, false);
-
-    if (error) {
-      showToast(error, 'error');
-      return;
-    }
-
-    form.reset();
-    if (strengthMeter) strengthMeter.removeAttribute('data-strength');
-    if (requirementsList) $$('li', requirementsList).forEach((li) => li.classList.remove('is-met'));
-    showToast('Your password has been updated.');
-  });
-}
-
-/* -----------------------------------------------------------
-   Password visibility toggle — generic, covers every
-   .password-toggle on the page (Security tab, Login settings
-   tab, and the verify-identity modal) with no per-form wiring
-   needed. Delegated to a live NodeList re-scan happens naturally
-   here since dynamically-added .password-toggle elements (there
-   are none in the stepper today, but future-proofing costs
-   nothing) would just need this called again after render.
-   ----------------------------------------------------------- */
-function initPasswordToggle() {
+function wirePasswordToggles() {
   $$('.password-toggle').forEach((btn) => {
-    const input = btn.closest('.password-field-wrap')?.querySelector('input');
+    const wrap = btn.closest('.password-field-wrap');
+    const input = wrap?.querySelector('input');
     if (!input) return;
     btn.addEventListener('click', () => {
-      const showing = input.type === 'text';
-      input.type = showing ? 'password' : 'text';
-      btn.setAttribute('aria-pressed', String(!showing));
-      btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', String(show));
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
     });
   });
 }
 
 /* -----------------------------------------------------------
-   Two-factor method picker
+   3. Profile banner + Personal info
    ----------------------------------------------------------- */
-function initTwoFactorPicker() {
-  const buttons = $$('.auth-method-btn');
-  if (!buttons.length) return;
+function populateBanner(user, profile) {
+  const h1 = document.querySelector('.profile-banner-identity h1');
+  const meta = user.user_metadata || {};
+  const firstName = profile?.first_name || meta.first_name || '';
+  const lastName = profile?.last_name || meta.last_name || '';
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || user.email || 'Meridian customer';
+  if (h1) h1.textContent = fullName;
 
-  buttons.forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      if (btn.classList.contains('is-selected')) return;
+  const avatarEl = document.querySelector('.profile-avatar-wrap .avatar-initial');
+  const avatarUrl = profile?.avatar_url || profile?.profile_photo || null;
+  renderAvatarLocal(avatarEl, avatarUrl, getInitials(fullName));
 
-      buttons.forEach((b) => b.classList.remove('is-selected'));
-      btn.classList.add('is-selected');
+  const statusWrap = document.querySelector('.profile-banner-status');
+  if (statusWrap) {
+    const status = profile?.account_status || 'Pending';
+    const lower = String(status).toLowerCase();
+    const cls =
+      lower === 'active' || lower === 'verified'
+        ? 'status-pill--verified'
+        : lower === 'pending'
+        ? 'status-pill--pending'
+        : lower === 'suspended' || lower === 'closed'
+        ? 'status-pill--blocked'
+        : 'status-pill--neutral';
+    statusWrap.innerHTML = `<span class="status-pill ${cls}">${escapeHtml(status)}</span>`;
+  }
+}
 
-      const label = $('.profile-card-head .status-pill--verified', btn.closest('.profile-card'));
-      if (label) label.textContent = `Enabled — ${btn.textContent.trim()}`;
+function populatePersonalInfo(user, profile) {
+  const form = document.getElementById('personal-info-form');
+  if (!form) return;
 
-      const { error } = await updateMyProfile({ two_factor_method: btn.dataset.method }, currentUser?.id);
-      if (error) {
-        showToast(error, 'error');
+  const values = {
+    first_name: profile?.first_name || user.user_metadata?.first_name || '',
+    last_name: profile?.last_name || user.user_metadata?.last_name || '',
+    email: profile?.email || user.email || '',
+    phone: profile?.phone || '',
+    date_of_birth: profile?.date_of_birth || '',
+    gender: profile?.gender || '',
+    nationality: profile?.nationality || '',
+    occupation: profile?.occupation || '',
+    address: profile?.address || '',
+    city: profile?.city || '',
+    state: profile?.state || '',
+    postal_code: profile?.postal_code || '',
+    country: profile?.country || '',
+  };
+
+  Object.entries(values).forEach(([name, value]) => {
+    const field = form.elements.namedItem(name);
+    if (field) field.value = value;
+  });
+}
+
+function populateAccountInfo(profile) {
+  const nameEl = document.getElementById('account-info-name');
+  if (nameEl) {
+    const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ');
+    nameEl.textContent = fullName || '—';
+  }
+}
+
+function wireAccountNumberToggle(accounts) {
+  const valueEl = document.getElementById('account-number-value');
+  const toggleBtn = document.getElementById('account-number-toggle');
+  if (!valueEl || !toggleBtn) return;
+
+  const primary = accounts?.[0];
+  const full = primary?.account_number || primary?.iban || null;
+
+  if (!full) {
+    valueEl.textContent = 'No account on file';
+    toggleBtn.disabled = true;
+    return;
+  }
+
+  const masked = `•••• •••• ${String(full).slice(-2)}`;
+  valueEl.textContent = masked;
+
+  toggleBtn.addEventListener('click', () => {
+    const showing = toggleBtn.getAttribute('aria-pressed') === 'true';
+    toggleBtn.setAttribute('aria-pressed', String(!showing));
+    toggleBtn.textContent = showing ? 'Show' : 'Hide';
+    valueEl.textContent = showing ? masked : full;
+  });
+}
+
+/* -----------------------------------------------------------
+   4. Overview summary + activity
+   ----------------------------------------------------------- */
+function populateActivityPlaceholder() {
+  const list = document.getElementById('activity-list');
+  if (!list) return;
+  list.innerHTML = `
+    <li>
+      <span class="activity-dot"></span>
+      <div><strong>Activity history isn't available yet</strong><span>This screen needs a backend endpoint before it can show real activity.</span></div>
+    </li>`;
+}
+
+async function loadOverviewSummary(userId, accounts) {
+  const cards = $$('.profile-summary-card .profile-summary-value');
+  const [accountStatusEl, linkedEl, cardsEl, sessionsEl] = cards;
+
+  if (accountStatusEl) accountStatusEl.textContent = currentProfile?.account_status || '—';
+
+  const { data: idDocs } = await getMyIdentityDocuments(userId);
+  if (linkedEl) linkedEl.textContent = `${idDocs?.length || 0} / 3`;
+
+  let cardCount = 0;
+  for (const account of accounts) {
+    const { data: accountCards } = await getCardsForAccount(account.id);
+    cardCount += (accountCards || []).filter((c) => String(c.card_status || '').toLowerCase() !== 'cancelled').length;
+  }
+  if (cardsEl) cardsEl.textContent = String(cardCount);
+
+  const { data: sessions } = await fetchLoginSessions(userId);
+  if (sessionsEl) sessionsEl.textContent = String((sessions || []).filter((s) => !s.logout_time).length);
+}
+
+/* -----------------------------------------------------------
+   5. Sessions (see KNOWN GAPS note at the top of this file)
+   ----------------------------------------------------------- */
+async function fetchLoginSessions(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('login_sessions')
+      .select('id, browser, device, login_time, logout_time')
+      .eq('user_id', userId)
+      .order('login_time', { ascending: false })
+      .limit(20);
+    if (error) return { data: [], error: error.message };
+    return { data: data || [], error: null };
+  } catch (err) {
+    return { data: [], error: err.message };
+  }
+}
+
+async function loadSessions(userId) {
+  const list = document.getElementById('session-list');
+  if (!list) return;
+
+  const { data: sessions, error } = await fetchLoginSessions(userId);
+
+  if (error || !sessions.length) {
+    list.innerHTML = `<li class="session-item"><div><strong>${
+      error ? "Couldn't load sessions" : 'No sessions on record'
+    }</strong></div></li>`;
+    return;
+  }
+
+  list.innerHTML = sessions
+    .map((s) => {
+      const active = !s.logout_time;
+      const when = s.login_time ? new Date(s.login_time).toLocaleString() : 'Unknown time';
+      return `
+      <li class="session-item">
+        <span class="session-icon">
+          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4" width="15" height="10" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M7 17h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </span>
+        <div>
+          <strong>${escapeHtml(s.browser || 'Unknown browser')} · ${escapeHtml(s.device || 'Unknown device')}</strong>
+          <span>${active ? 'Active now' : 'Signed out'} · ${escapeHtml(when)}</span>
+        </div>
+      </li>`;
+    })
+    .join('');
+}
+
+/* -----------------------------------------------------------
+   6a. Password change (shared by Security > Password and
+       Account & security > Login settings > Change password)
+   ----------------------------------------------------------- */
+function passwordMeetsRequirements(pw) {
+  return pw.length >= 10 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /[0-9]/.test(pw) && /[^A-Za-z0-9]/.test(pw);
+}
+
+function wirePasswordForms() {
+  const configs = [
+    { formId: 'password-change-form', currentId: 'current-password', newId: 'new-password', confirmId: 'new-password-confirm' },
+    { formId: 'login-password-change-form', currentId: 'login-current-password', newId: 'login-new-password', confirmId: 'login-new-password-confirm' },
+  ];
+
+  configs.forEach(({ formId, currentId, newId, confirmId }) => {
+    const form = document.getElementById(formId);
+    if (!form) return;
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const currentInput = document.getElementById(currentId);
+      const newInput = document.getElementById(newId);
+      const confirmInput = document.getElementById(confirmId);
+      const submitBtn = form.querySelector('button[type="submit"]');
+
+      const currentPassword = currentInput?.value || '';
+      const newPassword = newInput?.value || '';
+      const confirmPassword = confirmInput?.value || '';
+
+      if (!currentPassword) {
+        toast('Enter your current password.', 'error');
+        currentInput?.focus();
         return;
       }
-      showToast('Two-factor method updated.');
-    });
-  });
-}
-
-function populateTwoFactor(profile) {
-  const buttons = $$('.auth-method-btn');
-  const label = $('.profile-card-head .status-pill--verified', $('#security'));
-  if (!buttons.length) return;
-
-  buttons.forEach((btn) => {
-    btn.classList.toggle('is-selected', btn.dataset.method === (profile?.two_factor_method || 'email-code'));
-  });
-
-  if (label) {
-    const selected = buttons.find((b) => b.classList.contains('is-selected'));
-    const name = selected ? selected.textContent.trim() : 'Email code';
-    label.textContent = `Enabled — ${name}`;
-  }
-}
-
-/* -----------------------------------------------------------
-   Notification preference switches
-   ----------------------------------------------------------- */
-function populateNotificationPreferences(profile) {
-  const rows = $$('.preference-row');
-  if (!rows.length) return;
-
-  const keyByIndex = ['notify_transactions', null, 'notify_exchange_rate', 'notify_product_news'];
-
-  rows.forEach((row, i) => {
-    const key = keyByIndex[i];
-    if (!key) return;
-    const input = $('input[type="checkbox"]', row);
-    if (input && profile && key in profile) {
-      input.checked = Boolean(profile[key]);
-    }
-  });
-}
-
-function initNotificationSwitches() {
-  const rows = $$('.preference-row');
-  if (!rows.length) return;
-
-  const keyByIndex = ['notify_transactions', null, 'notify_exchange_rate', 'notify_product_news'];
-
-  rows.forEach((row, i) => {
-    const key = keyByIndex[i];
-    const input = $('input[type="checkbox"]', row);
-    if (!key || !input || input.disabled) return;
-
-    input.addEventListener('change', async () => {
-      const { error } = await updateMyProfile({ [key]: input.checked }, currentUser?.id);
-      if (error) {
-        input.checked = !input.checked;
-        showToast(error, 'error');
+      if (!passwordMeetsRequirements(newPassword)) {
+        toast('New password needs 10+ characters, upper and lower case, a number, and a symbol.', 'error');
+        newInput?.focus();
         return;
       }
-      showToast('Notification preferences saved.');
+      if (newPassword !== confirmPassword) {
+        toast('New password and confirmation do not match.', 'error');
+        confirmInput?.focus();
+        return;
+      }
+
+      submitBtn?.classList.add('is-loading');
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const { data: verified, error: verifyError } = await verifyCurrentPassword(currentPassword);
+        if (verifyError || !verified) {
+          toast(verifyError || 'Current password is incorrect.', 'error');
+          return;
+        }
+        const { error: updateError } = await updateUserPassword(newPassword);
+        if (updateError) {
+          toast(updateError, 'error');
+          return;
+        }
+        toast('Password updated.');
+        form.reset();
+      } catch (err) {
+        toast('Something went wrong updating your password.', 'error');
+      } finally {
+        submitBtn?.classList.remove('is-loading');
+        if (submitBtn) submitBtn.disabled = false;
+      }
     });
   });
 }
 
 /* -----------------------------------------------------------
-   Danger zone
+   6b. Forgot password (Login settings)
    ----------------------------------------------------------- */
-function initDangerZone() {
-  const exportBtn = $('#danger .profile-card:nth-of-type(1) .btn');
-  const closeBtn = $('#danger .profile-card:nth-of-type(2) .btn-danger');
-
-  if (exportBtn) {
-    exportBtn.addEventListener('click', async () => {
-      setButtonLoading(exportBtn, true);
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      setButtonLoading(exportBtn, false);
-      showToast("We'll email your data export within 24 hours.");
-    });
-  }
-
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => {
-      const confirmed = window.confirm(
-        'Close your Meridian account? This can\u2019t be undone, and every account must already be at a zero balance.'
-      );
-      if (!confirmed) return;
-      showToast('Account closure requires a zero balance on every currency account.', 'error');
-    });
-  }
-}
-
-/* =============================================================
-   Login settings
-   ============================================================= */
-
-function initForgotPassword() {
-  const btn = $('#login-forgot-password-btn');
-  const status = $('#login-forgot-password-status');
+function wireForgotPassword() {
+  const btn = document.getElementById('login-forgot-password-btn');
+  const status = document.getElementById('login-forgot-password-status');
   if (!btn) return;
 
   btn.addEventListener('click', async () => {
-    if (!currentUser?.email) return;
-    setButtonLoading(btn, true);
-    if (status) status.textContent = '';
-
-    const { error } = await requestPasswordReset(currentUser.email);
-
-    setButtonLoading(btn, false);
-
-    if (error) {
-      if (status) status.textContent = "Couldn't send the reset email. Try again shortly.";
-      showToast('Couldn\u2019t send the reset email.', 'error');
+    if (!currentUser?.email) {
+      if (status) status.textContent = 'Could not determine your email address.';
       return;
     }
+    btn.classList.add('is-loading');
+    btn.disabled = true;
+    const { error } = await requestPasswordReset(currentUser.email);
+    btn.classList.remove('is-loading');
+    btn.disabled = false;
 
-    if (status) status.textContent = `Reset link sent to ${currentUser.email}.`;
-    showToast('Password reset email sent.');
+    if (status) status.textContent = error || `Reset link sent to ${currentUser.email}.`;
+    toast(error ? 'Could not send reset email.' : 'Reset email sent.', error ? 'error' : 'success');
   });
 }
 
-function populateLoginSessionPreference(profile) {
-  const value = profile?.login_session_preference || 'always';
-  const input = $(`input[name="login_session_preference"][value="${value}"]`);
-  if (input) input.checked = true;
+/* -----------------------------------------------------------
+   6c. Two-factor method picker (display + dead-end, matching
+       login.js's existing pattern — no backend to switch method)
+   ----------------------------------------------------------- */
+function wireTwoFactorPicker() {
+  $$('.auth-method-btn[data-method]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('is-selected')) return;
+      const method = btn.getAttribute('data-method') === 'authenticator' ? 'an authenticator app' : 'an email code';
+      toast(`Switching to ${method} isn't available yet.`, 'error');
+    });
+  });
 }
 
-function initLoginSessionPreference() {
-  const form = $('#login-session-preference-form');
-  const status = $('#login-session-preference-status');
+/* -----------------------------------------------------------
+   6d. Notification preferences (UI-only — see KNOWN GAPS)
+   ----------------------------------------------------------- */
+function wireNotificationToggles() {
+  $$('.preference-row .switch input:not(:disabled)').forEach((input) => {
+    input.addEventListener('change', () => {
+      toast("Saved for this session — notification preferences aren't stored on your account yet.");
+    });
+  });
+}
+
+/* -----------------------------------------------------------
+   6e. Login session preference (UI-only — see KNOWN GAPS)
+   ----------------------------------------------------------- */
+function wireLoginSessionPreference() {
+  const form = document.getElementById('login-session-preference-form');
+  const preview = document.getElementById('login-session-preview');
+  const status = document.getElementById('login-session-preference-status');
   if (!form) return;
+
+  const labels = {
+    until_logout: 'Until I log out',
+    sixty_minutes: '60 minutes',
+    always: 'Always require',
+  };
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const selected = form.querySelector('input[name="login_session_preference"]:checked');
+    const value = selected?.value || 'always';
+    if (preview) preview.textContent = labels[value] || 'Always require';
+    if (status) status.textContent = "Saved for this device — this preference isn't synced to your account yet.";
+    toast('Session preference updated for this device.');
+  });
+}
+
+/* -----------------------------------------------------------
+   6f. Face ID — status display only, deferred per instruction
+   ----------------------------------------------------------- */
+async function loadFaceIdStatus(userId) {
+  const { data: creds } = await getMyWebauthnCredentials(userId);
+  const enabled = !!(creds && creds.length);
+
+  const previewPill = document.getElementById('login-faceid-preview');
+  if (previewPill) {
+    previewPill.textContent = enabled ? 'Enabled' : 'Disabled';
+    previewPill.classList.toggle('status-pill--verified', enabled);
+    previewPill.classList.toggle('status-pill--neutral', !enabled);
+  }
+
+  const statusPill = document.getElementById('faceid-status-pill');
+  if (statusPill) {
+    statusPill.textContent = `Face ID: ${enabled ? 'Enabled' : 'Disabled'}`;
+    statusPill.classList.toggle('status-pill--verified', enabled);
+    statusPill.classList.toggle('status-pill--neutral', !enabled);
+  }
+
+  const toggleBtn = document.getElementById('faceid-toggle-btn');
+  if (toggleBtn) {
+    toggleBtn.textContent = 'Coming soon';
+    toggleBtn.disabled = true;
+    toggleBtn.title = "Face ID sign-in is being built — enrollment and login verification aren't wired up yet.";
+  }
+
+  const unavailableNote = document.getElementById('faceid-unavailable');
+  if (unavailableNote && !window.PublicKeyCredential) {
+    unavailableNote.hidden = false;
+  }
+}
+
+/* -----------------------------------------------------------
+   7a. Linked ID — password-gated reveal
+   ----------------------------------------------------------- */
+function wireLinkedId() {
+  const viewBtn = document.getElementById('view-linked-id-btn');
+  const modal = document.getElementById('linked-id-auth-modal');
+  const closeBtn = document.getElementById('linked-id-modal-close');
+  const cancelBtn = document.getElementById('linked-id-modal-cancel');
+  const form = document.getElementById('linked-id-verify-form');
+  const passwordInput = document.getElementById('linked-id-password');
+  const errorEl = document.getElementById('linked-id-modal-error');
+  const details = document.getElementById('linked-id-details');
+  if (!viewBtn || !modal || !form) return;
+
+  function openModal() {
+    modal.hidden = false;
+    requestAnimationFrame(() => modal.classList.add('is-open'));
+    passwordInput?.focus();
+  }
+
+  function closeModal() {
+    modal.classList.remove('is-open');
+    if (errorEl) errorEl.textContent = '';
+    form.reset();
+    window.setTimeout(() => {
+      modal.hidden = true;
+    }, 200);
+  }
+
+  viewBtn.addEventListener('click', openModal);
+  closeBtn?.addEventListener('click', closeModal);
+  cancelBtn?.addEventListener('click', closeModal);
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) closeModal();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) closeModal();
+  });
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    const value = new FormData(form).get('login_session_preference');
-    if (!value) return;
+    const submitBtn = document.getElementById('linked-id-modal-submit');
+    const password = passwordInput?.value || '';
 
-    const submitBtn = $('#save-session-preference-btn', form);
-    setButtonLoading(submitBtn, true);
-    if (status) status.textContent = '';
-
-    const { error } = await updateMyProfile({ login_session_preference: value }, currentUser?.id);
-
-    setButtonLoading(submitBtn, false);
-
-    if (error) {
-      showToast(error, 'error');
+    if (!password) {
+      if (errorEl) errorEl.textContent = 'Enter your password to continue.';
       return;
     }
 
-    if (currentProfile) currentProfile.login_session_preference = value;
-    if (status) status.textContent = 'Saved.';
-    showToast('Login session preference saved.');
-  });
-}
+    submitBtn?.classList.add('is-loading');
+    if (submitBtn) submitBtn.disabled = true;
 
-function populateFaceId(hasCredential) {
-  const pill = $('#faceid-status-pill');
-  const btn = $('#faceid-toggle-btn');
-  if (pill) {
-    pill.textContent = hasCredential ? 'Face ID: Enabled' : 'Face ID: Disabled';
-    pill.classList.toggle('status-pill--verified', hasCredential);
-    pill.classList.toggle('status-pill--neutral', !hasCredential);
-  }
-  if (btn) btn.textContent = hasCredential ? 'Disable Face ID' : 'Enable Face ID';
-}
-
-async function enableFaceId() {
-  if (!window.PublicKeyCredential) {
-    const unavailable = $('#faceid-unavailable');
-    if (unavailable) unavailable.hidden = false;
-    showToast('Biometric authentication isn\u2019t available on this device.', 'error');
-    return false;
-  }
-
-  try {
-    const challenge = crypto.getRandomValues(new Uint8Array(32));
-    const userIdBytes = new TextEncoder().encode(currentUser.id);
-
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge,
-        rp: { name: 'Meridian' },
-        user: {
-          id: userIdBytes,
-          name: currentUser.email || 'meridian-user',
-          displayName: `${currentProfile?.first_name || ''} ${currentProfile?.last_name || ''}`.trim() || 'Meridian customer',
-        },
-        pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
-        timeout: 60000,
-        attestation: 'none',
-      },
-    });
-
-    if (!credential) return false;
-
-    const toBase64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
-    const { error } = await registerWebauthnCredential({
-      credentialId: toBase64(credential.rawId),
-      publicKey: toBase64(credential.response.attestationObject),
-      deviceLabel: navigator.platform || 'This device',
-      userId: currentUser.id,
-    });
-
-    if (error) {
-      showToast(error, 'error');
-      return false;
-    }
-    return true;
-  } catch (err) {
-    showToast('Couldn\u2019t set up Face ID on this device.', 'error');
-    return false;
-  }
-}
-
-function initFaceId() {
-  const btn = $('#faceid-toggle-btn');
-  if (!btn) return;
-
-  btn.addEventListener('click', async () => {
-    const enabling = btn.textContent.trim() === 'Enable Face ID';
-    setButtonLoading(btn, true);
-
-    if (enabling) {
-      const ok = await enableFaceId();
-      setButtonLoading(btn, false);
-      if (ok) {
-        populateFaceId(true);
-        showToast('Face ID enabled.');
+    try {
+      const { data: verified, error } = await verifyCurrentPassword(password);
+      if (error || !verified) {
+        if (errorEl) errorEl.textContent = error || 'Incorrect password.';
+        return;
       }
-      return;
+      await renderLinkedIdCards();
+      if (details) details.hidden = false;
+      closeModal();
+    } finally {
+      submitBtn?.classList.remove('is-loading');
+      if (submitBtn) submitBtn.disabled = false;
     }
+  });
 
-    const confirmed = window.confirm('Disable Face ID sign-in on this account?');
-    if (!confirmed) {
-      setButtonLoading(btn, false);
-      return;
-    }
-
-    const { error } = await removeAllWebauthnCredentials(currentUser.id);
-    setButtonLoading(btn, false);
-
-    if (error) {
-      showToast(error, 'error');
-      return;
-    }
-    populateFaceId(false);
-    showToast('Face ID disabled.');
+  $$('[data-add-document-for]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      screenStack?.showScreen('screen-limits-upload');
+    });
   });
 }
 
-/* =============================================================
-   Account limits
-   ============================================================= */
-
-/* ---- Account information + tier badge ---- */
-function populateAccountLimits(profile) {
-  const badge = $('#account-tier-badge');
-  if (badge) {
-    const tier = profile?.account_tier || 1;
-    badge.dataset.tier = String(tier);
-    badge.textContent = `Tier ${tier}`;
+async function renderLinkedIdCards() {
+  if (!currentUser) return;
+  const { data: docs, error } = await getMyIdentityDocuments(currentUser.id);
+  if (error) {
+    toast('Could not load your linked ID details.', 'error');
+    return;
   }
 
-  const nameEl = $('#account-info-name');
-  if (nameEl) nameEl.textContent = `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || '—';
+  const bySlot = new Map((docs || []).map((d) => [String(d.slot), d]));
 
-  const numberEl = $('#account-number-value');
-  const toggleBtn = $('#account-number-toggle');
-  const fullNumber = profile?.account_number || '';
-  if (numberEl && toggleBtn) {
-    const masked = fullNumber ? `•••• •••• ${fullNumber.slice(-2)}` : '—';
-    numberEl.textContent = masked;
-    toggleBtn.addEventListener('click', () => {
-      const showing = toggleBtn.getAttribute('aria-pressed') === 'true';
-      numberEl.textContent = showing ? masked : (fullNumber || '—');
-      toggleBtn.textContent = showing ? 'Show' : 'Hide';
-      toggleBtn.setAttribute('aria-pressed', String(!showing));
-    });
-  }
+  [1, 2, 3].forEach((slot) => {
+    const card = document.getElementById(`linked-id-card-${slot}`);
+    if (!card) return;
+    const doc = bySlot.get(String(slot));
+    const statusPill = card.querySelector('[data-linked-id-status]');
+    const emptyState = card.querySelector('.linked-id-empty');
+    const fieldsList = card.querySelector('.linked-id-fields');
+
+    if (!doc) {
+      if (statusPill) {
+        statusPill.textContent = 'Empty';
+        statusPill.className = 'status-pill status-pill--neutral';
+        statusPill.setAttribute('data-linked-id-status', '');
+      }
+      if (emptyState) emptyState.hidden = false;
+      if (fieldsList) fieldsList.hidden = true;
+      return;
+    }
+
+    if (statusPill) {
+      statusPill.textContent = 'Verified';
+      statusPill.className = 'status-pill status-pill--verified';
+      statusPill.setAttribute('data-linked-id-status', '');
+    }
+    if (emptyState) emptyState.hidden = true;
+    if (fieldsList) {
+      fieldsList.hidden = false;
+      const setField = (name, value) => {
+        const dd = fieldsList.querySelector(`[data-field="${name}"]`);
+        if (dd) dd.textContent = value || '—';
+      };
+      setField('id_type', doc.id_type || doc.document_type);
+      setField('full_name', doc.full_name);
+      setField('id_number', doc.id_number);
+      setField('date_of_birth', doc.date_of_birth);
+      setField('gender', doc.gender);
+    }
+  });
 }
 
 /* -----------------------------------------------------------
-   Verification stepper — Tier 1 → 2 → 3
-   -----------------------------------------------------------
-   Document type lists per tier. Tier 2 renders the same identity
-   list as Tier 1 but with whichever type Tier 1 actually used
-   filtered out (per the requested "removed the document first
-   submitted in tier 1" behavior).
+   7b. Document upload
    ----------------------------------------------------------- */
-const TIER_DOC_TYPES = {
-  identity: [
-    { value: 'nin', label: 'National Identification Number (NIN)' },
-    { value: 'drivers_license', label: "Driver's license" },
-    { value: 'international_passport', label: 'International passport' },
-    { value: 'voters_card', label: "Voter's card" },
-  ],
-  proof_of_address: [
-    { value: 'electricity_bill', label: 'Electricity bill' },
-    { value: 'bank_statement', label: 'Bank statement' },
-    { value: 'waste_bill', label: 'Waste bill' },
-    { value: 'water_bill', label: 'Water bill' },
-    { value: 'house_rent_receipt', label: 'House rent receipt' },
-    { value: 'tenancy_agreement', label: 'Tenancy agreement' },
-  ],
+const IDENTITY_CATEGORY_BY_TYPE = {
+  nin: 'identity',
+  drivers_license: 'identity',
+  passport: 'identity',
+  electricity_bill: 'proof_of_address',
+  bank_statement: 'proof_of_address',
+  waste_bill: 'proof_of_address',
+  water_bill: 'proof_of_address',
+  house_rent_receipt: 'proof_of_address',
+  tenancy_agreement: 'proof_of_address',
+  land_use_charge: 'proof_of_address',
 };
 
-const TIER_META = {
-  1: { category: 'identity', title: 'Tier 1 verification', blurb: 'Verify your identity with one government-issued ID.' },
-  2: { category: 'identity', title: 'Tier 2 verification', blurb: 'Verify with a second, different form of ID.' },
-  3: { category: 'proof_of_address', title: 'Tier 3 verification', blurb: 'Confirm your address to unlock the highest limits.' },
-};
-
-// The full document history for the signed-in user, newest first —
-// re-fetched after every submission so the stepper always reflects
-// the latest admin decision.
-let identityDocsCache = [];
-
-// Which tier's verified details are currently unmasked in the UI,
-// and which tier the shared re-auth modal is unlocking right now.
-const revealedTiers = new Set();
-let pendingRevealTier = null;
-
-function docTypeLabel(category, value) {
-  const match = (TIER_DOC_TYPES[category] || []).find((t) => t.value === value);
-  return match ? match.label : value;
-}
-
-/**
- * Works out where each tier stands from the raw document history.
- * Slot is only ever assigned to VERIFIED identity documents (slot 1
- * = Tier 1, slot 2 = Tier 2 — see 017_identity_document_review_
- * details.sql); proof-of-address documents never take a slot, so
- * Tier 3's "verified" state is just "a verified proof_of_address row
- * exists" with no slot check.
- *
- * A pending/rejected identity submission with no slot yet is
- * attributed to whichever identity tier is currently open — Tier 1
- * if it isn't verified yet, otherwise Tier 2 — which holds because
- * the stepper itself never lets a customer start Tier 2 before
- * Tier 1 is verified, so only one identity tier can have an
- * in-flight submission at a time.
- */
-function classifyIdentityDocs(docs) {
-  const identityDocs = (docs || [])
-    .filter((d) => d.document_category === 'identity')
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  const addressDocs = (docs || [])
-    .filter((d) => d.document_category === 'proof_of_address')
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-  const tier1Verified = identityDocs.find((d) => d.status === 'verified' && d.slot === 1) || null;
-  const tier2Verified = identityDocs.find((d) => d.status === 'verified' && d.slot === 2) || null;
-  const tier3Verified = addressDocs.find((d) => d.status === 'verified') || null;
-
-  const latestIdentityOpen = identityDocs.find((d) => d.status !== 'verified') || null;
-  const latestAddressOpen = addressDocs.find((d) => d.status !== 'verified') || null;
-
-  return {
-    1: { verified: tier1Verified, open: !tier1Verified ? latestIdentityOpen : null },
-    2: { verified: tier2Verified, open: (tier1Verified && !tier2Verified) ? latestIdentityOpen : null },
-    3: { verified: tier3Verified, open: (tier2Verified && !tier3Verified) ? latestAddressOpen : null },
-  };
-}
-
-function maskId(value) {
-  if (!value) return '—';
-  return `${'*'.repeat(Math.max(0, value.length - 4))}${value.slice(-4)}`;
-}
-
-function verifiedDetailsMarkup(category, doc) {
-  if (category === 'proof_of_address') {
-    return `
-      <dl class="account-info-grid">
-        <div><dt>Document</dt><dd>${escapeHtml(docTypeLabel(category, doc.document_type))}</dd></div>
-      </dl>
-    `;
-  }
-  return `
-    <dl class="account-info-grid">
-      <div><dt>ID type</dt><dd>${escapeHtml((doc.id_type || doc.document_type || '').toUpperCase())}</dd></div>
-      <div><dt>Full name</dt><dd>${escapeHtml(doc.full_name) || '—'}</dd></div>
-      <div><dt>ID number</dt><dd>${escapeHtml(maskId(doc.id_number))}</dd></div>
-      <div><dt>Date of birth</dt><dd>${doc.date_of_birth ? new Date(doc.date_of_birth).toLocaleDateString('en-GB') : '—'}</dd></div>
-      <div><dt>Gender</dt><dd>${escapeHtml(doc.gender) || '—'}</dd></div>
-    </dl>
-  `;
-}
-
-/* ---- Block builders — one per tier state ---- */
-
-function buildLockedTierBlock(tier, meta) {
-  const wrap = document.createElement('div');
-  wrap.innerHTML = `
-    <div class="verification-tier-head">
-      <span class="verification-tier-number">${tier}</span>
-      <div>
-        <h4>${meta.title}</h4>
-        <p>Complete Tier ${tier - 1} first to unlock this step.</p>
-      </div>
-      <span class="status-pill status-pill--neutral">Locked</span>
-    </div>
-  `;
-  return wrap;
-}
-
-function buildVerifiedTierBlock(tier, meta, doc) {
-  const wrap = document.createElement('div');
-  const nextTier = tier + 1;
-  const isRevealed = revealedTiers.has(tier);
-  const verifiedDate = doc.reviewed_at
-    ? new Date(doc.reviewed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : '';
-
-  wrap.innerHTML = `
-    <div class="verification-tier-head">
-      <span class="verification-tier-number">${tier}</span>
-      <div>
-        <h4>${meta.title}</h4>
-        <p>${escapeHtml(docTypeLabel(meta.category, doc.document_type))}${verifiedDate ? ` · Verified ${verifiedDate}` : ''}</p>
-      </div>
-      <span class="status-pill status-pill--verified">Verified</span>
-    </div>
-    <div class="verification-tier-details">
-      ${isRevealed ? verifiedDetailsMarkup(meta.category, doc) : ''}
-      <button type="button" class="link-arrow-sm" data-reveal-btn>${isRevealed ? 'Hide details' : 'View details'}</button>
-    </div>
-  `;
-
-  $('[data-reveal-btn]', wrap).addEventListener('click', () => {
-    if (revealedTiers.has(tier)) {
-      revealedTiers.delete(tier);
-      renderVerificationStepper(identityDocsCache);
-      return;
-    }
-    pendingRevealTier = tier;
-    openVerifyIdentityModal();
-  });
-
-  if (nextTier <= 3) {
-    const upgradeBtn = document.createElement('button');
-    upgradeBtn.type = 'button';
-    upgradeBtn.className = 'btn btn-primary verification-upgrade-btn';
-    upgradeBtn.textContent = `Upgrade to Tier ${nextTier}`;
-    upgradeBtn.addEventListener('click', () => {
-      $(`#verification-tier-${nextTier}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-    wrap.appendChild(upgradeBtn);
-  } else {
-    const doneNote = document.createElement('p');
-    doneNote.className = 'field-hint';
-    doneNote.textContent = 'You\u2019ve completed every verification tier.';
-    wrap.appendChild(doneNote);
-  }
-
-  return wrap;
-}
-
-function buildPendingTierBlock(tier, meta, doc) {
-  const wrap = document.createElement('div');
-  const submitted = new Date(doc.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  wrap.innerHTML = `
-    <div class="verification-tier-head">
-      <span class="verification-tier-number">${tier}</span>
-      <div>
-        <h4>${meta.title}</h4>
-        <p>${escapeHtml(docTypeLabel(meta.category, doc.document_type))} submitted ${submitted}</p>
-      </div>
-      <span class="status-pill status-pill--pending">Pending review</span>
-    </div>
-    <p class="profile-card-desc">We're reviewing your document. This will update automatically once it's been checked.</p>
-  `;
-  return wrap;
-}
-
-function buildRejectedTierBlock(tier, meta, doc, tier1UsedType) {
-  const wrap = document.createElement('div');
-  const label = doc.status === 'rejected' ? 'Rejected' : 'Action required';
-  wrap.innerHTML = `
-    <div class="verification-tier-head">
-      <span class="verification-tier-number">${tier}</span>
-      <div>
-        <h4>${meta.title}</h4>
-        <p>${escapeHtml(docTypeLabel(meta.category, doc.document_type))}</p>
-      </div>
-      <span class="status-pill status-pill--rejected">${label}</span>
-    </div>
-    <p class="profile-card-desc">${escapeHtml(doc.rejection_reason) || 'This submission needs another look — please resubmit.'}</p>
-  `;
-  wrap.appendChild(buildUploadForm(tier, meta, tier1UsedType, { resubmit: true }));
-  return wrap;
-}
-
-function buildActiveTierBlock(tier, meta, tier1UsedType) {
-  const wrap = document.createElement('div');
-  wrap.innerHTML = `
-    <div class="verification-tier-head">
-      <span class="verification-tier-number">${tier}</span>
-      <div>
-        <h4>${meta.title}</h4>
-        <p>${meta.blurb}</p>
-      </div>
-      <span class="status-pill status-pill--neutral">Not started</span>
-    </div>
-  `;
-  wrap.appendChild(buildUploadForm(tier, meta, tier1UsedType));
-  return wrap;
-}
-
-/* ---- The upload form itself, shared by "active" and "rejected/resubmit" states ---- */
-function buildUploadForm(tier, meta, tier1UsedType, { resubmit = false } = {}) {
-  const container = document.createElement('div');
-  container.className = 'verification-upload';
-
-  let options = TIER_DOC_TYPES[meta.category];
-  if (tier === 2 && tier1UsedType) {
-    options = options.filter((opt) => opt.value !== tier1UsedType);
-  }
-  const optionsHtml = options.map((opt) => `<option value="${opt.value}">${opt.label}</option>`).join('');
-
-  container.innerHTML = `
-    <form class="profile-form verification-upload-form" novalidate>
-      <div class="field">
-        <label>Document type</label>
-        <select name="document_type" required>
-          <option value="">Select a document</option>
-          ${optionsHtml}
-        </select>
-      </div>
-      <div class="document-upload-dropzone" tabindex="0" role="button" aria-label="Upload document">
-        <p>Click or drop a file here — PDF, JPG, or PNG, up to 10MB</p>
-        <input type="file" accept=".pdf,.jpg,.jpeg,.png" hidden>
-      </div>
-      <div class="document-upload-preview" hidden>
-        <span data-preview-name></span>
-        <button type="button" class="link-arrow-sm" data-remove-file>Remove</button>
-      </div>
-      <div class="document-upload-progress" hidden><div class="document-upload-progress-bar" style="width:0%"></div></div>
-      <div class="admin-field-error" data-upload-error></div>
-      <div class="profile-form-actions">
-        <button type="submit" class="btn btn-primary">${resubmit ? 'Resubmit document' : 'Submit for verification'}</button>
-      </div>
-    </form>
-  `;
-
-  wireUploadForm(container, meta.category);
-  return container;
-}
-
-function wireUploadForm(scope, documentCategory) {
-  const form = $('.verification-upload-form', scope);
-  const dropzone = $('.document-upload-dropzone', scope);
-  const fileInput = $('input[type="file"]', scope);
-  const typeSelect = $('select[name="document_type"]', scope);
-  const preview = $('.document-upload-preview', scope);
-  const previewName = $('[data-preview-name]', scope);
-  const removeBtn = $('[data-remove-file]', scope);
-  const progress = $('.document-upload-progress', scope);
-  const progressBar = $('.document-upload-progress-bar', scope);
-  const errorEl = $('[data-upload-error]', scope);
-  const submitBtn = $('button[type="submit"]', form);
+function wireDocumentUpload() {
+  const form = document.getElementById('document-upload-form');
+  const typeSelect = document.getElementById('document-type-select');
+  const dropzone = document.getElementById('document-upload-dropzone');
+  const fileInput = document.getElementById('document-upload-input');
+  const preview = document.getElementById('document-upload-preview');
+  const previewName = document.getElementById('document-upload-preview-name');
+  const removeBtn = document.getElementById('document-upload-remove');
+  const progress = document.getElementById('document-upload-progress');
+  const progressBar = document.getElementById('document-upload-progress-bar');
+  const errorEl = document.getElementById('document-upload-error');
+  const statusPill = document.getElementById('document-upload-status');
+  const submitBtn = document.getElementById('document-upload-submit-btn');
+  if (!form || !dropzone || !fileInput) return;
 
   let selectedFile = null;
 
-  function setFile(file) {
+  function updateSubmitState() {
+    if (submitBtn) submitBtn.disabled = !(selectedFile && typeSelect?.value);
+  }
+
+  function setSelectedFile(file) {
     selectedFile = file || null;
-    if (errorEl) errorEl.textContent = '';
     if (selectedFile) {
       if (previewName) previewName.textContent = selectedFile.name;
       if (preview) preview.hidden = false;
-    } else if (preview) {
-      preview.hidden = true;
+    } else {
+      if (preview) preview.hidden = true;
+      fileInput.value = '';
     }
+    updateSubmitState();
   }
 
+  dropzone.setAttribute('tabindex', '0');
   dropzone.addEventListener('click', () => fileInput.click());
   dropzone.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -1291,29 +757,35 @@ function wireUploadForm(scope, documentCategory) {
     }
   });
 
-  ['dragover', 'dragenter'].forEach((evt) => dropzone.addEventListener(evt, (event) => {
-    event.preventDefault();
-    dropzone.classList.add('is-dragover');
-  }));
-  ['dragleave', 'dragend', 'drop'].forEach((evt) => dropzone.addEventListener(evt, () => {
-    dropzone.classList.remove('is-dragover');
-  }));
+  ['dragenter', 'dragover'].forEach((evt) => {
+    dropzone.addEventListener(evt, (event) => {
+      event.preventDefault();
+      dropzone.classList.add('is-dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((evt) => {
+    dropzone.addEventListener(evt, (event) => {
+      event.preventDefault();
+      dropzone.classList.remove('is-dragover');
+    });
+  });
   dropzone.addEventListener('drop', (event) => {
-    event.preventDefault();
     const file = event.dataTransfer?.files?.[0];
-    if (file) setFile(file);
+    if (file) setSelectedFile(file);
   });
 
-  fileInput.addEventListener('change', () => setFile(fileInput.files?.[0]));
-  removeBtn.addEventListener('click', () => {
-    fileInput.value = '';
-    setFile(null);
-  });
+  fileInput.addEventListener('change', () => setSelectedFile(fileInput.files?.[0] || null));
+  removeBtn?.addEventListener('click', () => setSelectedFile(null));
+  typeSelect?.addEventListener('change', updateSubmitState);
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (errorEl) errorEl.textContent = '';
 
-    if (!typeSelect.value) {
+    const documentType = typeSelect?.value;
+    const documentCategory = IDENTITY_CATEGORY_BY_TYPE[documentType];
+
+    if (!documentType || !documentCategory) {
       if (errorEl) errorEl.textContent = 'Choose a document type.';
       return;
     }
@@ -1322,159 +794,100 @@ function wireUploadForm(scope, documentCategory) {
       return;
     }
 
-    if (errorEl) errorEl.textContent = '';
-    setButtonLoading(submitBtn, true);
+    if (submitBtn) submitBtn.disabled = true;
+    submitBtn?.classList.add('is-loading');
     if (progress) progress.hidden = false;
     if (progressBar) progressBar.style.width = '15%';
 
-    // supabase-js's storage upload doesn't expose real upload
-    // progress — this is a visual approximation, not measured bytes.
-    const tick = setInterval(() => {
-      if (!progressBar) return;
-      const current = parseFloat(progressBar.style.width) || 0;
-      if (current < 85) progressBar.style.width = `${current + 10}%`;
-    }, 200);
+    try {
+      // supabase-js's storage.upload() doesn't expose an upload-progress
+      // callback in this client version, so this bar is indicative
+      // (jumps to ~60% while the request is in flight, 100% on success)
+      // rather than a byte-accurate readout.
+      if (progressBar) progressBar.style.width = '60%';
+      const { error } = await submitIdentityDocument({ file: selectedFile, documentType, documentCategory });
+      if (progressBar) progressBar.style.width = '100%';
 
-    const { error } = await submitIdentityDocument({
-      file: selectedFile,
-      documentType: typeSelect.value,
-      documentCategory,
-      userId: currentUser.id,
-    });
+      if (error) {
+        if (errorEl) errorEl.textContent = error;
+        toast(error, 'error');
+        return;
+      }
 
-    clearInterval(tick);
-
-    if (error) {
-      if (progress) progress.hidden = true;
-      setButtonLoading(submitBtn, false);
-      if (errorEl) errorEl.textContent = error;
-      return;
+      if (statusPill) statusPill.hidden = false;
+      toast('Document submitted for verification.');
+      form.reset();
+      setSelectedFile(null);
+    } catch (err) {
+      if (errorEl) errorEl.textContent = 'Upload failed. Please try again.';
+    } finally {
+      submitBtn?.classList.remove('is-loading');
+      updateSubmitState();
+      window.setTimeout(() => {
+        if (progress) progress.hidden = true;
+        if (progressBar) progressBar.style.width = '0%';
+      }, 600);
     }
-
-    if (progressBar) progressBar.style.width = '100%';
-    setButtonLoading(submitBtn, false);
-    showToast('Document submitted for verification.');
-
-    await reloadVerificationStepper();
   });
 }
 
-/* ---- Top-level render: one tier container at a time ---- */
-function renderTier(tier, status, tier1UsedType) {
-  const container = $(`#verification-tier-${tier}`);
-  if (!container) return;
+/* -----------------------------------------------------------
+   8. Danger zone — no backend yet, honest placeholders
+   ----------------------------------------------------------- */
+function wireDangerZone() {
+  const dangerScreen = document.getElementById('screen-danger');
+  if (!dangerScreen) return;
 
-  const meta = TIER_META[tier];
-  const state = status[tier];
-  const prevVerified = tier === 1 ? true : Boolean(status[tier - 1].verified);
+  const exportBtn = dangerScreen.querySelector('.btn-ghost');
+  const closeBtn = dangerScreen.querySelector('.btn-danger');
 
-  container.innerHTML = '';
-  container.classList.remove('is-locked', 'is-verified', 'is-pending', 'is-rejected', 'is-active');
-
-  if (!prevVerified) {
-    container.classList.add('is-locked');
-    container.appendChild(buildLockedTierBlock(tier, meta));
-    return;
-  }
-
-  if (state.verified) {
-    container.classList.add('is-verified');
-    container.appendChild(buildVerifiedTierBlock(tier, meta, state.verified));
-    return;
-  }
-
-  if (state.open && state.open.status === 'pending') {
-    container.classList.add('is-pending');
-    container.appendChild(buildPendingTierBlock(tier, meta, state.open));
-    return;
-  }
-
-  if (state.open && (state.open.status === 'rejected' || state.open.status === 'action_required')) {
-    container.classList.add('is-rejected');
-    container.appendChild(buildRejectedTierBlock(tier, meta, state.open, tier1UsedType));
-    return;
-  }
-
-  container.classList.add('is-active');
-  container.appendChild(buildActiveTierBlock(tier, meta, tier1UsedType));
-}
-
-function renderVerificationStepper(docs) {
-  identityDocsCache = docs || [];
-  const status = classifyIdentityDocs(identityDocsCache);
-  const tier1UsedType = status[1].verified?.document_type || status[1].open?.document_type || null;
-
-  [1, 2, 3].forEach((tier) => renderTier(tier, status, tier1UsedType));
-}
-
-async function reloadVerificationStepper() {
-  const { data: docs, error } = await getMyIdentityDocumentHistory(currentUser.id);
-  if (error) {
-    showToast(error, 'error');
-    return;
-  }
-  renderVerificationStepper(docs || []);
-}
-
-/* ---- Shared re-auth modal (unlocks a verified tier's details) ---- */
-function openVerifyIdentityModal() {
-  const modal = $('#verify-identity-modal');
-  if (!modal) return;
-  modal.hidden = false;
-  requestAnimationFrame(() => modal.classList.add('is-open'));
-  const input = $('#verify-identity-password');
-  if (input) { input.value = ''; input.focus(); }
-  const err = $('#verify-identity-modal-error');
-  if (err) err.textContent = '';
-}
-
-function closeVerifyIdentityModal() {
-  const modal = $('#verify-identity-modal');
-  if (!modal) return;
-  modal.classList.remove('is-open');
-  setTimeout(() => { modal.hidden = true; }, 200);
-  pendingRevealTier = null;
-}
-
-function initVerifyIdentityModal() {
-  const modal = $('#verify-identity-modal');
-  const closeBtn = $('#verify-identity-modal-close');
-  const cancelBtn = $('#verify-identity-modal-cancel');
-  const form = $('#verify-identity-form');
-  if (!modal || !form) return;
-
-  closeBtn?.addEventListener('click', closeVerifyIdentityModal);
-  cancelBtn?.addEventListener('click', closeVerifyIdentityModal);
-  modal.addEventListener('click', (event) => {
-    if (event.target === modal) closeVerifyIdentityModal();
+  exportBtn?.addEventListener('click', () => {
+    toast("Data export requests aren't wired up yet — contact support in the meantime.", 'error');
   });
 
-  form.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const passwordInput = $('#verify-identity-password');
-    const password = passwordInput?.value || '';
-    const errEl = $('#verify-identity-modal-error');
-    const submitBtn = $('#verify-identity-modal-submit');
+  closeBtn?.addEventListener('click', () => {
+    toast("Account closure isn't available from this screen yet — contact support.", 'error');
+  });
+}
 
-    if (!password) {
-      if (errEl) errEl.textContent = 'Enter your password.';
-      return;
-    }
+/* -----------------------------------------------------------
+   9. Avatar upload
+   ----------------------------------------------------------- */
+function wireAvatarUpload() {
+  const editBtn = document.querySelector('.profile-avatar-edit');
+  if (!editBtn) return;
 
-    setButtonLoading(submitBtn, true);
-    const { error } = await verifyCurrentPassword(password);
-    setButtonLoading(submitBtn, false);
+  // profile.html has no <input type="file"> tied to this button —
+  // created here rather than editing that markup (see KNOWN GAPS).
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.hidden = true;
+  document.body.appendChild(input);
 
-    if (error) {
-      if (errEl) errEl.textContent = 'Incorrect password. Try again.';
-      return;
-    }
+  editBtn.addEventListener('click', () => input.click());
 
-    const tier = pendingRevealTier;
-    closeVerifyIdentityModal();
-    if (tier) {
-      revealedTiers.add(tier);
-      renderVerificationStepper(identityDocsCache);
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file || !currentUser) return;
+
+    editBtn.classList.add('is-loading');
+    try {
+      const { data, error } = await uploadAvatar(file, currentUser.id);
+      if (error) {
+        toast(error, 'error');
+        return;
+      }
+
+      const fullName = currentFullName();
+      const initials = getInitials(fullName);
+      renderAvatarLocal(document.querySelector('.profile-avatar-wrap .avatar-initial'), data.url, initials);
+      $$('.app-user-menu .avatar-initial').forEach((el) => renderAvatarLocal(el, data.url, initials));
+
+      toast('Profile photo updated.');
+    } finally {
+      editBtn.classList.remove('is-loading');
+      input.value = '';
     }
   });
 }
@@ -1482,56 +895,40 @@ function initVerifyIdentityModal() {
 /* -----------------------------------------------------------
    Init
    ----------------------------------------------------------- */
-(async function init() {
-  const user = await requireAuth();
-  if (!user) return; // requireAuth() already redirected to login.html
+async function init() {
+  screenStack = initScreenStack();
+  wirePasswordToggles();
+
+  const { data: user, error: userError } = await getCurrentUser();
+  if (userError || !user) return; // auth-ui.js's requireAuth() already handles the redirect
+
   currentUser = user;
 
-  waitForNavbar().then(() => {
-    populateNotificationBadge();
-    initUserMenu();
-    initMobileNav();
-    initLogout();
-  });
-
-  initSectionNav();
-  initAvatarUpload();
-  initPasswordForm('#password-change-form');
-  initPasswordForm('#login-password-change-form', { requirementsListSelector: '#login-password-requirements' });
-  initPasswordToggle();
-  initTwoFactorPicker();
-  initNotificationSwitches();
-  initDangerZone();
-
-  // Login settings
-  initForgotPassword();
-  initLoginSessionPreference();
-  initFaceId();
-
-  // Account limits
-  initVerifyIdentityModal();
-
-  const { data: profile, error } = await getMyProfile(user.id);
-  if (error || !profile) {
-    showToast('Couldn\u2019t load your profile. Try refreshing the page.', 'error');
-    return;
-  }
-
+  const { data: profile, error: profileError } = await getMyProfile(user.id);
+  if (profileError) console.warn('[Meridian] Could not load profile:', profileError);
   currentProfile = profile;
-  waitForNavbar().then(() => populateHeader(profile));
-  populateBanner(profile);
-  populatePersonalForm(profile);
-  populateTwoFactor(profile);
-  populateNotificationPreferences(profile);
-  populateAccountLimits(profile);
-  populateLoginSessionPreference(profile);
-
-  const { data: credentials } = await getMyWebauthnCredentials(user.id);
-  populateFaceId(Boolean(credentials?.length));
 
   const { data: accounts } = await getMyAccounts(user.id);
-  await populateOverviewSummary(user, profile, accounts || []);
-  await populateRecentActivity(user.id);
-  await populateSessions(user.id);
-  await reloadVerificationStepper();
-})();
+
+  populateBanner(user, profile);
+  populatePersonalInfo(user, profile);
+  populateAccountInfo(profile);
+  populateActivityPlaceholder();
+  wireAccountNumberToggle(accounts || []);
+
+  await loadOverviewSummary(user.id, accounts || []);
+  await loadSessions(user.id);
+  await loadFaceIdStatus(user.id);
+
+  wirePasswordForms();
+  wireForgotPassword();
+  wireTwoFactorPicker();
+  wireNotificationToggles();
+  wireLoginSessionPreference();
+  wireLinkedId();
+  wireDocumentUpload();
+  wireAvatarUpload();
+  wireDangerZone();
+}
+
+document.addEventListener('DOMContentLoaded', init);
