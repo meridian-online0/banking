@@ -17,19 +17,15 @@
 <a class="skip-link" href="#main-content">Skip to main content</a>
 
 <!-- =========================================================
-     LOGGED-IN APP HEADER
-     Loaded from components/app-navbar.html by components.js —
-     also carries the notification bell ([data-notification-bell])
-     and boots the notification center automatically once injected.
-     Do not hardcode the header markup here — edit components/app-navbar.html instead.
+     LOGGED-IN APP HEADER — unchanged, see components/app-navbar.html
      ========================================================= -->
 <div data-component="app-navbar"></div>
 
 <main id="main-content" class="profile-main">
-  <div class="container">
+  <div class="container profile-main-narrow">
 
     <!-- =========================================================
-         PROFILE HEADER / IDENTITY BANNER
+         PROFILE HEADER / IDENTITY BANNER — unchanged, same colors
          ========================================================= -->
     <section class="profile-banner">
       <div class="profile-banner-identity">
@@ -50,671 +46,877 @@
       </div>
     </section>
 
-    <div class="profile-layout">
+    <!-- =========================================================
+         SETTINGS SCREEN STACK — OPay-style: one list at a time,
+         a row either pushes into a sublist (data-screen-type="list")
+         or a content screen (data-screen-type="content"). Only the
+         root screen has no back button. Screen switching itself
+         (adding/removing .is-active, updating the header title,
+         tracking the back-target per screen) is NOT wired up in
+         this pass — every row/back-button below already carries a
+         stable data-target / data-parent for that JS to bind to
+         next, same as previous passes on this page.
+         ========================================================= -->
+    <div class="settings-stack" id="settings-stack">
 
-      <!-- =========================================================
-           SIDEBAR NAVIGATION
+      <!-- ============ ROOT ============ -->
+      <section class="settings-screen is-active" id="screen-root" data-screen="root" data-screen-type="list">
+        <div class="settings-list">
 
-           NEW — "Account & Security" group added below Notifications:
-           two new tabs, Login Settings and Account Limits. These
-           follow the exact same data-tab / data-panel / #hash contract
-           initSectionNav() in profile.js already implements for the
-           existing tabs — no changes to that function are needed for
-           the tabs themselves to switch correctly.
-           ========================================================= -->
-      <nav class="profile-nav" aria-label="Profile sections">
-        <a href="#overview" class="profile-nav-link is-active" data-tab="overview">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/><rect x="11" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/><rect x="2.5" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/><rect x="11" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/></svg>
-          Overview
-        </a>
-        <a href="#personal" class="profile-nav-link" data-tab="personal">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3.3" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 17c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-          Personal info
-        </a>
-        <a href="#security" class="profile-nav-link" data-tab="security">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 4-2.7 6.9-6 8-3.3-1.1-6-4-6-8V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-          Security
-        </a>
-        <a href="#notifications" class="profile-nav-link" data-tab="notifications">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 8a5 5 0 0 1 10 0c0 4 1.5 5 1.5 5h-13S5 12 5 8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-          Notifications
-        </a>
+          <button type="button" class="settings-row" data-target="screen-overview">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/><rect x="11" y="2.5" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/><rect x="2.5" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/><rect x="11" y="11" width="6.5" height="6.5" rx="1.4" stroke="currentColor" stroke-width="1.4"/></svg>
+            </span>
+            <span class="settings-row-label">Overview</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
 
-        <!-- ===== NEW — Account & Security group ===== -->
-        <div class="profile-nav-group-label">Account &amp; security</div>
+          <button type="button" class="settings-row" data-target="screen-personal">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3.3" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 17c0-3.6 3-6 6.5-6s6.5 2.4 6.5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Personal info</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
 
-        <a href="#login-settings" class="profile-nav-link" data-tab="login-settings">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-          Login settings
-        </a>
-        <a href="#account-limits" class="profile-nav-link" data-tab="account-limits">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 4-2.7 6.9-6 8-3.3-1.1-6-4-6-8V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.3 10.1l1.9 1.9 3.5-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Account limits
-        </a>
+          <button type="button" class="settings-row" data-target="screen-security">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 4-2.7 6.9-6 8-3.3-1.1-6-4-6-8V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="settings-row-label">Security</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
 
-        <a href="#danger" class="profile-nav-link profile-nav-link--danger" data-tab="danger">
-          <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3 17.5 16h-15L10 3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10 8.3v3M10 13.6v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-          Danger zone
-        </a>
-      </nav>
+          <button type="button" class="settings-row" data-target="screen-notifications">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 8a5 5 0 0 1 10 0c0 4 1.5 5 1.5 5h-13S5 12 5 8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="settings-row-label">Notifications</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
 
-      <div class="profile-content">
+          <div class="settings-list-divider">Account &amp; security</div>
 
-        <!-- =========================================================
-             OVERVIEW
-             ========================================================= -->
-        <section class="profile-panel is-active" id="overview" data-panel="overview">
-          <div class="profile-panel-head">
-            <h2>Overview</h2>
-            <p>A quick summary of your account and where it stands.</p>
+          <button type="button" class="settings-row" data-target="screen-account-security">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Account &amp; security</span>
+            <span class="settings-row-value">Login, limits</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row settings-row--danger" data-target="screen-danger">
+            <span class="settings-row-icon settings-row-icon--danger">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3 17.5 16h-15L10 3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M10 8.3v3M10 13.6v.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Danger zone</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+        </div>
+      </section>
+
+      <!-- ============ OVERVIEW (content) ============ -->
+      <section class="settings-screen" id="screen-overview" data-screen="overview" data-screen-type="content" data-parent="screen-root">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-root" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Overview</h2>
+        </header>
+
+        <div class="grid profile-summary-grid">
+          <div class="profile-summary-card">
+            <span class="profile-summary-label">Account status</span>
+            <span class="profile-summary-value">—</span>
           </div>
-
-          <div class="grid profile-summary-grid">
-            <div class="profile-summary-card">
-              <span class="profile-summary-label">Account status</span>
-              <span class="profile-summary-value">—</span>
-            </div>
-            <div class="profile-summary-card">
-              <span class="profile-summary-label">Linked accounts</span>
-              <span class="profile-summary-value">—</span>
-            </div>
-            <div class="profile-summary-card">
-              <span class="profile-summary-label">Active cards</span>
-              <span class="profile-summary-value">—</span>
-            </div>
-            <div class="profile-summary-card">
-              <span class="profile-summary-label">Active sessions</span>
-              <span class="profile-summary-value">—</span>
-            </div>
+          <div class="profile-summary-card">
+            <span class="profile-summary-label">Linked accounts</span>
+            <span class="profile-summary-value">—</span>
           </div>
-
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Recent account activity</h3>
-              <a href="#security" class="link-arrow-sm">View all</a>
-            </div>
-            <ul class="activity-list" id="activity-list">
-              <li>
-                <span class="activity-dot"></span>
-                <div><strong>Loading activity…</strong></div>
-              </li>
-            </ul>
+          <div class="profile-summary-card">
+            <span class="profile-summary-label">Active cards</span>
+            <span class="profile-summary-value">—</span>
           </div>
-        </section>
-
-        <!-- =========================================================
-             PERSONAL INFO — maps to public.user_profiles
-             (read-only: contact support to update these details)
-             ========================================================= -->
-        <section class="profile-panel" id="personal" data-panel="personal">
-          <div class="profile-panel-head">
-            <h2>Personal info</h2>
-            <p>This is the information Meridian uses to verify your identity and keep your account secure. These details are read-only here — contact support to request a change.</p>
+          <div class="profile-summary-card">
+            <span class="profile-summary-label">Active sessions</span>
+            <span class="profile-summary-value">—</span>
           </div>
+        </div>
 
-          <form id="personal-info-form" class="profile-form" novalidate>
-            <div class="form-row-2">
-              <div class="field">
-                <label for="profile-first-name">First name</label>
-                <input type="text" id="profile-first-name" name="first_name" autocomplete="given-name" disabled>
-              </div>
-              <div class="field">
-                <label for="profile-last-name">Last name</label>
-                <input type="text" id="profile-last-name" name="last_name" autocomplete="family-name" disabled>
-              </div>
-            </div>
+        <div class="profile-card">
+          <div class="profile-card-head">
+            <h3>Recent account activity</h3>
+          </div>
+          <ul class="activity-list" id="activity-list">
+            <li>
+              <span class="activity-dot"></span>
+              <div><strong>Loading activity…</strong></div>
+            </li>
+          </ul>
+        </div>
+      </section>
 
-            <div class="form-row-2">
-              <div class="field">
-                <label for="profile-email">Email address</label>
-                <input type="email" id="profile-email" name="email" autocomplete="email" disabled>
-              </div>
-              <div class="field">
-                <label for="profile-phone">Phone number</label>
-                <input type="tel" id="profile-phone" name="phone" autocomplete="tel" disabled>
-              </div>
-            </div>
+      <!-- ============ PERSONAL INFO (content) ============ -->
+      <section class="settings-screen" id="screen-personal" data-screen="personal" data-screen-type="content" data-parent="screen-root">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-root" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Personal info</h2>
+        </header>
+        <p class="profile-panel-lede">This is the information Meridian uses to verify your identity and keep your account secure. These details are read-only here — contact support to request a change.</p>
 
-            <div class="form-row-2">
-              <div class="field">
-                <label for="profile-dob">Date of birth</label>
-                <input type="date" id="profile-dob" name="date_of_birth" disabled>
-              </div>
-              <div class="field">
-                <label for="profile-gender">Gender</label>
-                <select id="profile-gender" name="gender" disabled>
-                  <option value="">Prefer not to say</option>
-                  <option value="female">Female</option>
-                  <option value="male">Male</option>
-                  <option value="nonbinary">Non-binary</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="form-row-2">
-              <div class="field">
-                <label for="profile-nationality">Nationality</label>
-                <input type="text" id="profile-nationality" name="nationality" disabled>
-              </div>
-              <div class="field">
-                <label for="profile-occupation">Occupation</label>
-                <input type="text" id="profile-occupation" name="occupation" disabled>
-              </div>
-            </div>
-
-            <h3 class="profile-form-subhead">Address</h3>
-
+        <form id="personal-info-form" class="profile-form" novalidate>
+          <div class="form-row-2">
             <div class="field">
-              <label for="profile-address">Street address</label>
-              <input type="text" id="profile-address" name="address" disabled>
+              <label for="profile-first-name">First name</label>
+              <input type="text" id="profile-first-name" name="first_name" autocomplete="given-name" disabled>
             </div>
-
-            <div class="form-row-3">
-              <div class="field">
-                <label for="profile-city">City</label>
-                <input type="text" id="profile-city" name="city" disabled>
-              </div>
-              <div class="field">
-                <label for="profile-state">State / region</label>
-                <input type="text" id="profile-state" name="state" disabled>
-              </div>
-              <div class="field">
-                <label for="profile-postal">Postal code</label>
-                <input type="text" id="profile-postal" name="postal_code" disabled>
-              </div>
-            </div>
-
             <div class="field">
-              <label for="profile-country">Country</label>
-              <select id="profile-country" name="country" disabled>
-                <option value="">—</option>
-                <option value="NG">Nigeria</option>
-                <option value="US">United States</option>
-                <option value="GB">United Kingdom</option>
-                <option value="DE">Germany</option>
-                <option value="FR">France</option>
-                <option value="SG">Singapore</option>
-                <option value="OTHER">Other</option>
+              <label for="profile-last-name">Last name</label>
+              <input type="text" id="profile-last-name" name="last_name" autocomplete="family-name" disabled>
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="field">
+              <label for="profile-email">Email address</label>
+              <input type="email" id="profile-email" name="email" autocomplete="email" disabled>
+            </div>
+            <div class="field">
+              <label for="profile-phone">Phone number</label>
+              <input type="tel" id="profile-phone" name="phone" autocomplete="tel" disabled>
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="field">
+              <label for="profile-dob">Date of birth</label>
+              <input type="date" id="profile-dob" name="date_of_birth" disabled>
+            </div>
+            <div class="field">
+              <label for="profile-gender">Gender</label>
+              <select id="profile-gender" name="gender" disabled>
+                <option value="">Prefer not to say</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="nonbinary">Non-binary</option>
               </select>
             </div>
+          </div>
+
+          <div class="form-row-2">
+            <div class="field">
+              <label for="profile-nationality">Nationality</label>
+              <input type="text" id="profile-nationality" name="nationality" disabled>
+            </div>
+            <div class="field">
+              <label for="profile-occupation">Occupation</label>
+              <input type="text" id="profile-occupation" name="occupation" disabled>
+            </div>
+          </div>
+
+          <h3 class="profile-form-subhead">Address</h3>
+
+          <div class="field">
+            <label for="profile-address">Street address</label>
+            <input type="text" id="profile-address" name="address" disabled>
+          </div>
+
+          <div class="form-row-3">
+            <div class="field">
+              <label for="profile-city">City</label>
+              <input type="text" id="profile-city" name="city" disabled>
+            </div>
+            <div class="field">
+              <label for="profile-state">State / region</label>
+              <input type="text" id="profile-state" name="state" disabled>
+            </div>
+            <div class="field">
+              <label for="profile-postal">Postal code</label>
+              <input type="text" id="profile-postal" name="postal_code" disabled>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="profile-country">Country</label>
+            <select id="profile-country" name="country" disabled>
+              <option value="">—</option>
+              <option value="NG">Nigeria</option>
+              <option value="US">United States</option>
+              <option value="GB">United Kingdom</option>
+              <option value="DE">Germany</option>
+              <option value="FR">France</option>
+              <option value="SG">Singapore</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
+        </form>
+      </section>
+
+      <!-- ============ SECURITY (sublist) ============ -->
+      <section class="settings-screen" id="screen-security" data-screen="security" data-screen-type="list" data-parent="screen-root">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-root" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Security</h2>
+        </header>
+
+        <div class="settings-list">
+          <button type="button" class="settings-row" data-target="screen-security-password">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Password</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-security-2fa">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="2.5" width="10" height="15" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M8.5 15h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Two-factor verification</span>
+            <span class="settings-row-value">Email code</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-security-sessions">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4" width="15" height="10" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M7 17h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Active sessions</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ============ SECURITY > Password (content) ============ -->
+      <section class="settings-screen" id="screen-security-password" data-screen="security-password" data-screen-type="content" data-parent="screen-security">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-security" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Password</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">Use a password you don't use anywhere else.</p>
+          <form id="password-change-form" class="profile-form" novalidate>
+            <div class="field">
+              <label for="current-password">Current password</label>
+              <div class="password-field-wrap">
+                <input type="password" id="current-password" name="current_password" autocomplete="current-password">
+                <button type="button" class="password-toggle" aria-pressed="false" aria-label="Show password">
+                  <svg class="icon-show" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M1.5 10S4.5 4 10 4s8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.4" stroke="currentColor" stroke-width="1.4"/></svg>
+                  <svg class="icon-hide" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 2.5l15 15M8.3 8.4a2.4 2.4 0 0 0 3.3 3.3M6.2 6.1C3.6 7.4 1.5 10 1.5 10s3 6 8.5 6c1.5 0 2.8-.4 3.9-1M13.9 5.2C12.7 4.5 11.4 4 10 4c-.4 0-.7 0-1.1.1M15.6 6.6c1.5 1.3 2.9 3.4 2.9 3.4s-.6 1.2-1.7 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="field">
+                <label for="new-password">New password</label>
+                <input type="password" id="new-password" name="new_password" autocomplete="new-password" minlength="10">
+              </div>
+              <div class="field">
+                <label for="new-password-confirm">Confirm new password</label>
+                <input type="password" id="new-password-confirm" name="new_password_confirm" autocomplete="new-password">
+              </div>
+            </div>
+            <div class="profile-form-actions">
+              <button type="submit" class="btn btn-primary">Update password</button>
+            </div>
           </form>
-        </section>
+        </div>
+      </section>
 
-        <!-- =========================================================
-             SECURITY
-             ========================================================= -->
-        <section class="profile-panel" id="security" data-panel="security">
-          <div class="profile-panel-head">
-            <h2>Security</h2>
-            <p>Manage how you sign in and keep your account protected.</p>
+      <!-- ============ SECURITY > Two-factor (content) ============ -->
+      <section class="settings-screen" id="screen-security-2fa" data-screen="security-2fa" data-screen-type="content" data-parent="screen-security">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-security" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Two-factor verification</h2>
+        </header>
+
+        <div class="profile-card">
+          <div class="profile-card-head">
+            <span class="status-pill status-pill--verified">Enabled — Email code</span>
           </div>
+          <p class="profile-card-desc">Every login from a new device requires a one-time code, in addition to your password.</p>
+          <div class="auth-methods">
+            <button type="button" class="auth-method-btn is-selected" data-method="email-code">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4.5" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M4 6l6 4.5L16 6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+              Email code
+            </button>
+            <button type="button" class="auth-method-btn" data-method="authenticator">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="2.5" width="10" height="15" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M8.5 15h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+              Authenticator app
+            </button>
+          </div>
+        </div>
+      </section>
 
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Password</h3>
+      <!-- ============ SECURITY > Active sessions (content) ============ -->
+      <section class="settings-screen" id="screen-security-sessions" data-screen="security-sessions" data-screen-type="content" data-parent="screen-security">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-security" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Active sessions</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">These are the devices currently logged into your account.</p>
+          <ul class="session-list" id="session-list">
+            <li class="session-item">
+              <div><strong>Loading sessions…</strong></div>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============ NOTIFICATIONS (content) ============ -->
+      <section class="settings-screen" id="screen-notifications" data-screen="notifications" data-screen-type="content" data-parent="screen-root">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-root" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Notifications</h2>
+        </header>
+
+        <div class="profile-card">
+          <ul class="preference-list">
+            <li class="preference-row">
+              <div>
+                <strong>Transaction alerts</strong>
+                <span>Get notified for every payment, transfer, or card charge.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox">
+                <span class="switch-track"></span>
+              </label>
+            </li>
+            <li class="preference-row">
+              <div>
+                <strong>Security alerts</strong>
+                <span>New device logins, password changes, and suspicious activity.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox" checked disabled>
+                <span class="switch-track"></span>
+              </label>
+            </li>
+            <li class="preference-row">
+              <div>
+                <strong>Exchange rate alerts</strong>
+                <span>When a currency you hold moves more than 1% in a day.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox">
+                <span class="switch-track"></span>
+              </label>
+            </li>
+            <li class="preference-row">
+              <div>
+                <strong>Product news</strong>
+                <span>New features and market updates, at most twice a month.</span>
+              </div>
+              <label class="switch">
+                <input type="checkbox">
+                <span class="switch-track"></span>
+              </label>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============ ACCOUNT & SECURITY (sublist) ============ -->
+      <section class="settings-screen" id="screen-account-security" data-screen="account-security" data-screen-type="list" data-parent="screen-root">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-root" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Account &amp; security</h2>
+        </header>
+
+        <div class="settings-list">
+          <button type="button" class="settings-row" data-target="screen-login-settings">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Login settings</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-account-limits">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 4-2.7 6.9-6 8-3.3-1.1-6-4-6-8V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.3 10.1l1.9 1.9 3.5-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="settings-row-label">Account limits</span>
+            <span class="tier-badge tier-badge--sm" id="account-security-tier-preview" data-tier="1">Tier 1</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ============ LOGIN SETTINGS (sublist) ============ -->
+      <section class="settings-screen" id="screen-login-settings" data-screen="login-settings" data-screen-type="list" data-parent="screen-account-security">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-account-security" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Login settings</h2>
+        </header>
+
+        <div class="settings-list">
+          <button type="button" class="settings-row" data-target="screen-login-change-password">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="9" width="12" height="8" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Change password</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-login-forgot-password">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4.5" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M4 6l6 4.5L16 6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="settings-row-label">Forgot password</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-login-session">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4"/><path d="M10 6v4l2.6 1.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Login session settings</span>
+            <span class="settings-row-value" id="login-session-preview">Always require</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-login-faceid">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 3.5H4.5A1.5 1.5 0 0 0 3 5v1.5M14 3.5h1.5A1.5 1.5 0 0 1 17 5v1.5M6 16.5H4.5A1.5 1.5 0 0 1 3 15v-1.5M14 16.5h1.5a1.5 1.5 0 0 0 1.5-1.5v-1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="7.5" cy="9" r="0.9" fill="currentColor"/><circle cx="12.5" cy="9" r="0.9" fill="currentColor"/><path d="M7.5 12.5c.7.6 1.6.9 2.5.9s1.8-.3 2.5-.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Login with Face ID</span>
+            <span class="status-pill status-pill--neutral" id="login-faceid-preview">Disabled</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ============ LOGIN SETTINGS > Change password (content) ============ -->
+      <section class="settings-screen" id="screen-login-change-password" data-screen="login-change-password" data-screen-type="content" data-parent="screen-login-settings">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-login-settings" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Change password</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">Use a password you don't use anywhere else.</p>
+          <form id="login-password-change-form" class="profile-form" novalidate>
+            <div class="field">
+              <label for="login-current-password">Current password</label>
+              <div class="password-field-wrap">
+                <input type="password" id="login-current-password" name="current_password" autocomplete="current-password">
+                <button type="button" class="password-toggle" aria-pressed="false" aria-label="Show password">
+                  <svg class="icon-show" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M1.5 10S4.5 4 10 4s8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.4" stroke="currentColor" stroke-width="1.4"/></svg>
+                  <svg class="icon-hide" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 2.5l15 15M8.3 8.4a2.4 2.4 0 0 0 3.3 3.3M6.2 6.1C3.6 7.4 1.5 10 1.5 10s3 6 8.5 6c1.5 0 2.8-.4 3.9-1M13.9 5.2C12.7 4.5 11.4 4 10 4c-.4 0-.7 0-1.1.1M15.6 6.6c1.5 1.3 2.9 3.4 2.9 3.4s-.6 1.2-1.7 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
             </div>
-            <p class="profile-card-desc">Use a password you don't use anywhere else.</p>
-            <form id="password-change-form" class="profile-form" novalidate>
+            <div class="form-row-2">
               <div class="field">
-                <label for="current-password">Current password</label>
-                <div class="password-field-wrap">
-                  <input type="password" id="current-password" name="current_password" autocomplete="current-password">
-                  <button type="button" class="password-toggle" aria-pressed="false" aria-label="Show password">
-                    <svg class="icon-show" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M1.5 10S4.5 4 10 4s8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.4" stroke="currentColor" stroke-width="1.4"/></svg>
-                    <svg class="icon-hide" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 2.5l15 15M8.3 8.4a2.4 2.4 0 0 0 3.3 3.3M6.2 6.1C3.6 7.4 1.5 10 1.5 10s3 6 8.5 6c1.5 0 2.8-.4 3.9-1M13.9 5.2C12.7 4.5 11.4 4 10 4c-.4 0-.7 0-1.1.1M15.6 6.6c1.5 1.3 2.9 3.4 2.9 3.4s-.6 1.2-1.7 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </button>
-                </div>
+                <label for="login-new-password">New password</label>
+                <input type="password" id="login-new-password" name="new_password" autocomplete="new-password" minlength="10">
               </div>
-              <div class="form-row-2">
-                <div class="field">
-                  <label for="new-password">New password</label>
-                  <input type="password" id="new-password" name="new_password" autocomplete="new-password" minlength="10">
-                </div>
-                <div class="field">
-                  <label for="new-password-confirm">Confirm new password</label>
-                  <input type="password" id="new-password-confirm" name="new_password_confirm" autocomplete="new-password">
-                </div>
+              <div class="field">
+                <label for="login-new-password-confirm">Confirm new password</label>
+                <input type="password" id="login-new-password-confirm" name="new_password_confirm" autocomplete="new-password">
               </div>
-              <div class="profile-form-actions">
-                <button type="submit" class="btn btn-primary">Update password</button>
-              </div>
-            </form>
+            </div>
+            <ul class="field-hint" id="login-password-requirements">
+              <li>At least 10 characters</li>
+              <li>A mix of upper and lower case letters</li>
+              <li>At least one number</li>
+              <li>At least one symbol</li>
+            </ul>
+            <div class="profile-form-actions">
+              <button type="submit" class="btn btn-primary">Update password</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ============ LOGIN SETTINGS > Forgot password (content) ============ -->
+      <section class="settings-screen" id="screen-login-forgot-password" data-screen="login-forgot-password" data-screen-type="content" data-parent="screen-login-settings">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-login-settings" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Forgot password</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">Send a password-reset link to your email on file. You'll be signed out of this device once the reset is complete.</p>
+          <div class="profile-form-actions" style="justify-content:flex-start;">
+            <button type="button" class="btn btn-ghost" id="login-forgot-password-btn">Send reset email</button>
+          </div>
+          <p class="field-hint" id="login-forgot-password-status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- ============ LOGIN SETTINGS > Login session settings (content) ============ -->
+      <section class="settings-screen" id="screen-login-session" data-screen="login-session" data-screen-type="content" data-parent="screen-login-settings">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-login-settings" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Login session settings</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">Choose how long you stay signed in before we ask for your password again.</p>
+
+          <form id="login-session-preference-form" class="profile-form" novalidate>
+            <div class="session-preference-options" role="radiogroup" aria-label="Login session preference">
+              <label class="session-preference-option">
+                <input type="radio" name="login_session_preference" value="until_logout" id="session-pref-until-logout">
+                <span>
+                  <strong>Keep me logged in until I log out</strong>
+                  <span class="field-hint">Only use this on a private, trusted device — anyone with access to it can open your account.</span>
+                </span>
+              </label>
+              <label class="session-preference-option">
+                <input type="radio" name="login_session_preference" value="sixty_minutes" id="session-pref-60min">
+                <span>
+                  <strong>Keep me logged in for 60 minutes</strong>
+                  <span class="field-hint">You won't need to re-enter your password for an hour of activity.</span>
+                </span>
+              </label>
+              <label class="session-preference-option">
+                <input type="radio" name="login_session_preference" value="always" id="session-pref-always" checked>
+                <span>
+                  <strong>Always require authentication</strong>
+                  <span class="field-hint">The most secure option — password or biometrics every time you open Meridian.</span>
+                </span>
+              </label>
+            </div>
+            <div class="profile-form-actions">
+              <button type="submit" class="btn btn-primary" id="save-session-preference-btn">Save changes</button>
+            </div>
+            <p class="field-hint" id="login-session-preference-status" aria-live="polite"></p>
+          </form>
+        </div>
+      </section>
+
+      <!-- ============ LOGIN SETTINGS > Login with Face ID (content) ============ -->
+      <section class="settings-screen" id="screen-login-faceid" data-screen="login-faceid" data-screen-type="content" data-parent="screen-login-settings">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-login-settings" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Login with Face ID</h2>
+        </header>
+
+        <div class="profile-card">
+          <div class="profile-card-head">
+            <span class="status-pill status-pill--neutral" id="faceid-status-pill">Face ID: Disabled</span>
+          </div>
+          <p class="profile-card-desc">Use Face ID or another supported device biometric to authenticate securely, instead of typing your password every time.</p>
+          <div class="profile-form-actions" style="justify-content:flex-start;">
+            <button type="button" class="btn btn-primary" id="faceid-toggle-btn">Enable Face ID</button>
+          </div>
+          <p class="field-hint" id="faceid-unavailable" hidden>Biometric authentication isn't available on this device or browser. You can still use your password to sign in.</p>
+        </div>
+      </section>
+
+      <!-- ============ ACCOUNT LIMITS (sublist) ============ -->
+      <section class="settings-screen" id="screen-account-limits" data-screen="account-limits" data-screen-type="list" data-parent="screen-account-security">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-account-security" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Account limits</h2>
+        </header>
+
+        <div class="settings-list">
+          <button type="button" class="settings-row" data-target="screen-limits-info">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4" width="15" height="11" rx="1.8" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 8h15" stroke="currentColor" stroke-width="1.4"/></svg>
+            </span>
+            <span class="settings-row-label">Account information</span>
+            <span class="tier-badge tier-badge--sm" id="account-info-tier-preview" data-tier="1">Tier 1</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-limits-linked-id">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 4-2.7 6.9-6 8-3.3-1.1-6-4-6-8V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.3 10.1l1.9 1.9 3.5-3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            <span class="settings-row-label">Linked ID</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-limits-accepted-docs">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="2.5" width="12" height="15" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M7 7h6M7 10.5h6M7 14h3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Accepted documents</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <button type="button" class="settings-row" data-target="screen-limits-upload">
+            <span class="settings-row-icon">
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 13V4M10 4 6.5 7.5M10 4l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v1.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+            </span>
+            <span class="settings-row-label">Upload documents</span>
+            <svg class="settings-row-chevron" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3.5 11 8l-5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <!-- ============ ACCOUNT LIMITS > Account information (content) ============ -->
+      <section class="settings-screen" id="screen-limits-info" data-screen="limits-info" data-screen-type="content" data-parent="screen-account-limits">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-account-limits" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Account information</h2>
+        </header>
+
+        <div class="profile-card">
+          <div class="profile-card-head">
+            <h3>Account information</h3>
+            <span class="tier-badge" id="account-tier-badge" data-tier="1">Tier 1</span>
+          </div>
+          <dl class="account-info-grid">
+            <div>
+              <dt>Account name</dt>
+              <dd id="account-info-name">—</dd>
+            </div>
+            <div>
+              <dt>Account number</dt>
+              <dd>
+                <span id="account-number-value" class="mono">•••• •••• ••</span>
+                <button type="button" class="link-arrow-sm" id="account-number-toggle" aria-pressed="false">Show</button>
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- ============ ACCOUNT LIMITS > Linked ID (content) ============ -->
+      <section class="settings-screen" id="screen-limits-linked-id" data-screen="limits-linked-id" data-screen-type="content" data-parent="screen-account-limits">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-account-limits" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Linked ID</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">View the identification documents linked to your account. For your security, we'll ask you to re-enter your password first.</p>
+          <div class="profile-form-actions" style="justify-content:flex-start;">
+            <button type="button" class="btn btn-primary" id="view-linked-id-btn">View Linked ID</button>
           </div>
 
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Two-factor verification</h3>
-              <span class="status-pill status-pill--verified">Enabled — Email code</span>
-            </div>
-            <p class="profile-card-desc">Every login from a new device requires a one-time code, in addition to your password.</p>
-            <div class="auth-methods">
-              <button type="button" class="auth-method-btn is-selected" data-method="email-code">
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4.5" width="14" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M4 6l6 4.5L16 6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-                Email code
-              </button>
-              <button type="button" class="auth-method-btn" data-method="authenticator">
-                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="5" y="2.5" width="10" height="15" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M8.5 15h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-                Authenticator app
-              </button>
-            </div>
-          </div>
+          <div id="linked-id-details" class="linked-id-grid" hidden>
 
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Active sessions</h3>
+            <div class="linked-id-card" id="linked-id-card-1" data-slot="1">
+              <div class="profile-card-head">
+                <h4>Linked ID 1</h4>
+                <span class="status-pill status-pill--neutral" data-linked-id-status>Empty</span>
+              </div>
+              <div class="linked-id-empty">
+                <p>No identification document linked.</p>
+                <button type="button" class="btn btn-ghost" data-add-document-for="1">Add document</button>
+              </div>
+              <dl class="linked-id-fields" hidden>
+                <div><dt>ID type</dt><dd data-field="id_type">—</dd></div>
+                <div><dt>Full name</dt><dd data-field="full_name">—</dd></div>
+                <div><dt>ID number</dt><dd class="mono" data-field="id_number">—</dd></div>
+                <div><dt>Date of birth</dt><dd data-field="date_of_birth">—</dd></div>
+                <div><dt>Gender</dt><dd data-field="gender">—</dd></div>
+              </dl>
             </div>
-            <p class="profile-card-desc">These are the devices currently logged into your account.</p>
-            <ul class="session-list" id="session-list">
-              <li class="session-item">
-                <div><strong>Loading sessions…</strong></div>
-              </li>
+
+            <div class="linked-id-card" id="linked-id-card-2" data-slot="2">
+              <div class="profile-card-head">
+                <h4>Linked ID 2</h4>
+                <span class="status-pill status-pill--neutral" data-linked-id-status>Empty</span>
+              </div>
+              <div class="linked-id-empty">
+                <p>No identification document linked.</p>
+                <button type="button" class="btn btn-ghost" data-add-document-for="2">Add document</button>
+              </div>
+              <dl class="linked-id-fields" hidden>
+                <div><dt>ID type</dt><dd data-field="id_type">—</dd></div>
+                <div><dt>Full name</dt><dd data-field="full_name">—</dd></div>
+                <div><dt>ID number</dt><dd class="mono" data-field="id_number">—</dd></div>
+                <div><dt>Date of birth</dt><dd data-field="date_of_birth">—</dd></div>
+                <div><dt>Gender</dt><dd data-field="gender">—</dd></div>
+              </dl>
+            </div>
+
+            <div class="linked-id-card" id="linked-id-card-3" data-slot="3">
+              <div class="profile-card-head">
+                <h4>Linked ID 3</h4>
+                <span class="status-pill status-pill--neutral" data-linked-id-status>Empty</span>
+              </div>
+              <div class="linked-id-empty">
+                <p>No identification document linked.</p>
+                <button type="button" class="btn btn-ghost" data-add-document-for="3">Add document</button>
+              </div>
+              <dl class="linked-id-fields" hidden>
+                <div><dt>ID type</dt><dd data-field="id_type">—</dd></div>
+                <div><dt>Full name</dt><dd data-field="full_name">—</dd></div>
+                <div><dt>ID number</dt><dd class="mono" data-field="id_number">—</dd></div>
+                <div><dt>Date of birth</dt><dd data-field="date_of_birth">—</dd></div>
+                <div><dt>Gender</dt><dd data-field="gender">—</dd></div>
+              </dl>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ ACCOUNT LIMITS > Accepted documents (content) ============ -->
+      <section class="settings-screen" id="screen-limits-accepted-docs" data-screen="limits-accepted-docs" data-screen-type="content" data-parent="screen-account-limits">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-account-limits" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Accepted documents</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">You can submit any one of the following as identification, plus one proof of address.</p>
+
+          <div class="accepted-docs-group">
+            <p class="profile-form-subhead" style="padding-top:0;border-top:none;">Identity documents</p>
+            <ul class="accepted-docs-list">
+              <li>National Identification Number (NIN)</li>
+              <li>Driver's license</li>
+              <li>International passport</li>
             </ul>
           </div>
-        </section>
 
-        <!-- =========================================================
-             NOTIFICATIONS
-             ========================================================= -->
-        <section class="profile-panel" id="notifications" data-panel="notifications">
-          <div class="profile-panel-head">
-            <h2>Notifications</h2>
-            <p>Choose what Meridian keeps you updated on, and how.</p>
-          </div>
-
-          <div class="profile-card">
-            <ul class="preference-list">
-              <li class="preference-row">
-                <div>
-                  <strong>Transaction alerts</strong>
-                  <span>Get notified for every payment, transfer, or card charge.</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox">
-                  <span class="switch-track"></span>
-                </label>
-              </li>
-              <li class="preference-row">
-                <div>
-                  <strong>Security alerts</strong>
-                  <span>New device logins, password changes, and suspicious activity.</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" checked disabled>
-                  <span class="switch-track"></span>
-                </label>
-              </li>
-              <li class="preference-row">
-                <div>
-                  <strong>Exchange rate alerts</strong>
-                  <span>When a currency you hold moves more than 1% in a day.</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox">
-                  <span class="switch-track"></span>
-                </label>
-              </li>
-              <li class="preference-row">
-                <div>
-                  <strong>Product news</strong>
-                  <span>New features and market updates, at most twice a month.</span>
-                </div>
-                <label class="switch">
-                  <input type="checkbox">
-                  <span class="switch-track"></span>
-                </label>
-              </li>
+          <div class="accepted-docs-group">
+            <p class="profile-form-subhead">Proof of address</p>
+            <ul class="accepted-docs-list">
+              <li>Electricity bill</li>
+              <li>Bank statement</li>
+              <li>Waste bill</li>
+              <li>Water bill</li>
+              <li>House rent receipt</li>
+              <li>Tenancy agreement</li>
+              <li>Land Use Charge document</li>
             </ul>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <!-- =========================================================
-             NEW — LOGIN SETTINGS  (Account & Security > Login Settings)
-             1. Change password  2. Forgot password
-             3. Auto logout settings (password-free / 60-min / always)
-             4. Login with Face ID
-             Every input/button below has an id profile.js binds to.
-             ========================================================= -->
-        <section class="profile-panel" id="login-settings" data-panel="login-settings">
-          <div class="profile-panel-head">
-            <h2>Login settings</h2>
-            <p>Control your password, recovery options, and how long you stay signed in.</p>
+      <!-- ============ ACCOUNT LIMITS > Upload documents (content) ============ -->
+      <section class="settings-screen" id="screen-limits-upload" data-screen="limits-upload" data-screen-type="content" data-parent="screen-account-limits">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-account-limits" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Upload documents</h2>
+        </header>
+
+        <div class="profile-card">
+          <p class="profile-card-desc">Submit a document for verification. Accepted formats: PDF, JPG, PNG — up to 10MB.</p>
+
+          <form id="document-upload-form" class="profile-form" novalidate>
+            <div class="field">
+              <label for="document-type-select">Document type</label>
+              <select id="document-type-select" name="document_type">
+                <option value="">Select document type</option>
+                <optgroup label="Identity">
+                  <option value="nin">National Identification Number (NIN)</option>
+                  <option value="drivers_license">Driver's license</option>
+                  <option value="passport">International passport</option>
+                </optgroup>
+                <optgroup label="Proof of address">
+                  <option value="electricity_bill">Electricity bill</option>
+                  <option value="bank_statement">Bank statement</option>
+                  <option value="waste_bill">Waste bill</option>
+                  <option value="water_bill">Water bill</option>
+                  <option value="house_rent_receipt">House rent receipt</option>
+                  <option value="tenancy_agreement">Tenancy agreement</option>
+                  <option value="land_use_charge">Land Use Charge document</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="document-upload-input">Upload document</label>
+              <div class="document-dropzone" id="document-upload-dropzone">
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 13V4M10 4 6.5 7.5M10 4l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v1.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                <p>Drag &amp; drop a file here, or <span class="document-dropzone-browse">browse files</span></p>
+                <input type="file" id="document-upload-input" accept=".pdf,.jpg,.jpeg,.png" hidden>
+              </div>
+            </div>
+
+            <div class="document-upload-preview" id="document-upload-preview" hidden>
+              <span class="document-upload-preview-name" id="document-upload-preview-name">—</span>
+              <button type="button" class="link-arrow-sm" id="document-upload-remove">Remove</button>
+            </div>
+
+            <div class="document-upload-progress" id="document-upload-progress" hidden>
+              <div class="document-upload-progress-bar" id="document-upload-progress-bar"></div>
+            </div>
+
+            <p class="field-error" id="document-upload-error" role="alert"></p>
+
+            <div class="profile-form-actions">
+              <span class="status-pill status-pill--neutral" id="document-upload-status" hidden>Pending verification</span>
+              <button type="submit" class="btn btn-primary" id="document-upload-submit-btn" disabled>Submit for verification</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ============ DANGER ZONE (content) ============ -->
+      <section class="settings-screen" id="screen-danger" data-screen="danger" data-screen-type="content" data-parent="screen-root">
+        <header class="settings-header">
+          <button type="button" class="settings-back" data-target="screen-root" aria-label="Back">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3.5 5 8l5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <h2>Danger zone</h2>
+        </header>
+        <p class="profile-panel-lede">These actions are significant and, in some cases, permanent.</p>
+
+        <div class="profile-card profile-card--danger">
+          <div class="profile-card-head">
+            <h3>Download your data</h3>
           </div>
+          <p class="profile-card-desc">Request a copy of your personal data and account history, in line with our privacy policy.</p>
+          <button type="button" class="btn btn-ghost">Request data export</button>
+        </div>
 
-          <!-- ---- 1. Change password ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Change password</h3>
-            </div>
-            <p class="profile-card-desc">Use a password you don't use anywhere else.</p>
-            <form id="login-password-change-form" class="profile-form" novalidate>
-              <div class="field">
-                <label for="login-current-password">Current password</label>
-                <div class="password-field-wrap">
-                  <input type="password" id="login-current-password" name="current_password" autocomplete="current-password">
-                  <button type="button" class="password-toggle" aria-pressed="false" aria-label="Show password">
-                    <svg class="icon-show" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M1.5 10S4.5 4 10 4s8.5 6 8.5 6-3 6-8.5 6-8.5-6-8.5-6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.4" stroke="currentColor" stroke-width="1.4"/></svg>
-                    <svg class="icon-hide" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M2.5 2.5l15 15M8.3 8.4a2.4 2.4 0 0 0 3.3 3.3M6.2 6.1C3.6 7.4 1.5 10 1.5 10s3 6 8.5 6c1.5 0 2.8-.4 3.9-1M13.9 5.2C12.7 4.5 11.4 4 10 4c-.4 0-.7 0-1.1.1M15.6 6.6c1.5 1.3 2.9 3.4 2.9 3.4s-.6 1.2-1.7 2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                  </button>
-                </div>
-              </div>
-              <div class="form-row-2">
-                <div class="field">
-                  <label for="login-new-password">New password</label>
-                  <input type="password" id="login-new-password" name="new_password" autocomplete="new-password" minlength="10">
-                </div>
-                <div class="field">
-                  <label for="login-new-password-confirm">Confirm new password</label>
-                  <input type="password" id="login-new-password-confirm" name="new_password_confirm" autocomplete="new-password">
-                </div>
-              </div>
-              <!-- Password requirements — shown before submission, plus a
-                   strength meter profile.js injects next to the new-password field. -->
-              <ul class="field-hint" id="login-password-requirements">
-                <li>At least 10 characters</li>
-                <li>A mix of upper and lower case letters</li>
-                <li>At least one number</li>
-                <li>At least one symbol</li>
-              </ul>
-              <div class="profile-form-actions">
-                <button type="submit" class="btn btn-primary">Update password</button>
-              </div>
-            </form>
+        <div class="profile-card profile-card--danger">
+          <div class="profile-card-head">
+            <h3>Close your account</h3>
           </div>
+          <p class="profile-card-desc">Your account must have a zero balance in every currency before it can be closed. This cannot be undone.</p>
+          <button type="button" class="btn btn-danger">Close my account</button>
+        </div>
+      </section>
 
-          <!-- ---- 2. Forgot password ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Forgot password</h3>
-            </div>
-            <p class="profile-card-desc">Send a password-reset link to your email on file. You'll be signed out of this device once the reset is complete.</p>
-            <div class="profile-form-actions" style="justify-content:flex-start;">
-              <button type="button" class="btn btn-ghost" id="login-forgot-password-btn">Send reset email</button>
-            </div>
-            <p class="field-hint" id="login-forgot-password-status" aria-live="polite"></p>
-          </div>
-
-          <!-- ---- 3. Auto logout settings ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Auto logout settings</h3>
-            </div>
-            <p class="profile-card-desc">Choose how long you stay signed in before we ask for your password again.</p>
-
-            <form id="login-session-preference-form" class="profile-form" novalidate>
-              <div class="session-preference-options" role="radiogroup" aria-label="Login session preference">
-                <label class="session-preference-option">
-                  <input type="radio" name="login_session_preference" value="until_logout" id="session-pref-until-logout">
-                  <span>
-                    <strong>Keep me logged in until I log out</strong>
-                    <span class="field-hint">Only use this on a private, trusted device — anyone with access to it can open your account.</span>
-                  </span>
-                </label>
-                <label class="session-preference-option">
-                  <input type="radio" name="login_session_preference" value="sixty_minutes" id="session-pref-60min">
-                  <span>
-                    <strong>Keep me logged in for 60 minutes</strong>
-                    <span class="field-hint">You won't need to re-enter your password for an hour of activity.</span>
-                  </span>
-                </label>
-                <label class="session-preference-option">
-                  <input type="radio" name="login_session_preference" value="always" id="session-pref-always" checked>
-                  <span>
-                    <strong>Always require authentication</strong>
-                    <span class="field-hint">The most secure option — password or biometrics every time you open Meridian.</span>
-                  </span>
-                </label>
-              </div>
-              <div class="profile-form-actions">
-                <button type="submit" class="btn btn-primary" id="save-session-preference-btn">Save changes</button>
-              </div>
-              <p class="field-hint" id="login-session-preference-status" aria-live="polite"></p>
-            </form>
-          </div>
-
-          <!-- ---- 4. Login with Face ID ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Login with Face ID</h3>
-              <span class="status-pill status-pill--neutral" id="faceid-status-pill">Face ID: Disabled</span>
-            </div>
-            <p class="profile-card-desc">Use Face ID or another supported device biometric to authenticate securely, instead of typing your password every time.</p>
-            <div class="profile-form-actions" style="justify-content:flex-start;">
-              <button type="button" class="btn btn-primary" id="faceid-toggle-btn">Enable Face ID</button>
-            </div>
-            <p class="field-hint" id="faceid-unavailable" hidden>Biometric authentication isn't available on this device or browser. You can still use your password to sign in.</p>
-          </div>
-        </section>
-
-        <!-- =========================================================
-             NEW — ACCOUNT LIMITS  (Account & Security > Account Limits)
-             1. Account info + tier badge
-             2. Linked ID (re-auth → 3 detail boxes)
-             3. Accepted documents (reference list)
-             4. Upload documents
-             ========================================================= -->
-        <section class="profile-panel" id="account-limits" data-panel="account-limits">
-          <div class="profile-panel-head">
-            <h2>Account limits</h2>
-            <p>Your account tier, verification status, and linked identification.</p>
-          </div>
-
-          <!-- ---- 1. Account information + tier badge ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Account information</h3>
-              <span class="tier-badge" id="account-tier-badge" data-tier="1">Tier 1</span>
-            </div>
-            <dl class="account-info-grid">
-              <div>
-                <dt>Account name</dt>
-                <dd id="account-info-name">—</dd>
-              </div>
-              <div>
-                <dt>Account number</dt>
-                <dd>
-                  <span id="account-number-value" class="mono">•••• •••• ••</span>
-                  <button type="button" class="link-arrow-sm" id="account-number-toggle" aria-pressed="false">Show</button>
-                </dd>
-              </div>
-            </dl>
-          </div>
-
-          <!-- ---- 2. Linked ID ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Linked ID</h3>
-            </div>
-            <p class="profile-card-desc">View the identification documents linked to your account. For your security, we'll ask you to re-enter your password first.</p>
-            <div class="profile-form-actions" style="justify-content:flex-start;">
-              <button type="button" class="btn btn-primary" id="view-linked-id-btn">View Linked ID</button>
-            </div>
-
-            <!-- Revealed only after linked-id-auth-modal succeeds -->
-            <div id="linked-id-details" class="linked-id-grid" hidden>
-
-              <div class="linked-id-card" id="linked-id-card-1" data-slot="1">
-                <div class="profile-card-head">
-                  <h4>Linked ID 1</h4>
-                  <span class="status-pill status-pill--neutral" data-linked-id-status>Empty</span>
-                </div>
-                <div class="linked-id-empty">
-                  <p>No identification document linked.</p>
-                  <button type="button" class="btn btn-ghost" data-add-document-for="1">Add document</button>
-                </div>
-                <dl class="linked-id-fields" hidden>
-                  <div><dt>ID type</dt><dd data-field="id_type">—</dd></div>
-                  <div><dt>Full name</dt><dd data-field="full_name">—</dd></div>
-                  <div><dt>ID number</dt><dd class="mono" data-field="id_number">—</dd></div>
-                  <div><dt>Date of birth</dt><dd data-field="date_of_birth">—</dd></div>
-                  <div><dt>Gender</dt><dd data-field="gender">—</dd></div>
-                </dl>
-              </div>
-
-              <div class="linked-id-card" id="linked-id-card-2" data-slot="2">
-                <div class="profile-card-head">
-                  <h4>Linked ID 2</h4>
-                  <span class="status-pill status-pill--neutral" data-linked-id-status>Empty</span>
-                </div>
-                <div class="linked-id-empty">
-                  <p>No identification document linked.</p>
-                  <button type="button" class="btn btn-ghost" data-add-document-for="2">Add document</button>
-                </div>
-                <dl class="linked-id-fields" hidden>
-                  <div><dt>ID type</dt><dd data-field="id_type">—</dd></div>
-                  <div><dt>Full name</dt><dd data-field="full_name">—</dd></div>
-                  <div><dt>ID number</dt><dd class="mono" data-field="id_number">—</dd></div>
-                  <div><dt>Date of birth</dt><dd data-field="date_of_birth">—</dd></div>
-                  <div><dt>Gender</dt><dd data-field="gender">—</dd></div>
-                </dl>
-              </div>
-
-              <div class="linked-id-card" id="linked-id-card-3" data-slot="3">
-                <div class="profile-card-head">
-                  <h4>Linked ID 3</h4>
-                  <span class="status-pill status-pill--neutral" data-linked-id-status>Empty</span>
-                </div>
-                <div class="linked-id-empty">
-                  <p>No identification document linked.</p>
-                  <button type="button" class="btn btn-ghost" data-add-document-for="3">Add document</button>
-                </div>
-                <dl class="linked-id-fields" hidden>
-                  <div><dt>ID type</dt><dd data-field="id_type">—</dd></div>
-                  <div><dt>Full name</dt><dd data-field="full_name">—</dd></div>
-                  <div><dt>ID number</dt><dd class="mono" data-field="id_number">—</dd></div>
-                  <div><dt>Date of birth</dt><dd data-field="date_of_birth">—</dd></div>
-                  <div><dt>Gender</dt><dd data-field="gender">—</dd></div>
-                </dl>
-              </div>
-
-            </div>
-          </div>
-
-          <!-- ---- 3. Accepted identification documents (static reference) ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Accepted documents</h3>
-            </div>
-            <p class="profile-card-desc">You can submit any one of the following as identification, plus one proof of address.</p>
-
-            <div class="accepted-docs-group">
-              <p class="profile-form-subhead" style="padding-top:0;border-top:none;">Identity documents</p>
-              <ul class="accepted-docs-list">
-                <li>National Identification Number (NIN)</li>
-                <li>Driver's license</li>
-                <li>International passport</li>
-              </ul>
-            </div>
-
-            <div class="accepted-docs-group">
-              <p class="profile-form-subhead">Proof of address</p>
-              <ul class="accepted-docs-list">
-                <li>Electricity bill</li>
-                <li>Bank statement</li>
-                <li>Waste bill</li>
-                <li>Water bill</li>
-                <li>House rent receipt</li>
-                <li>Tenancy agreement</li>
-                <li>Land Use Charge document</li>
-              </ul>
-            </div>
-          </div>
-
-          <!-- ---- 4. Upload documents ---- -->
-          <div class="profile-card">
-            <div class="profile-card-head">
-              <h3>Upload documents</h3>
-            </div>
-            <p class="profile-card-desc">Submit a document for verification. Accepted formats: PDF, JPG, PNG — up to 10MB.</p>
-
-            <form id="document-upload-form" class="profile-form" novalidate>
-              <div class="field">
-                <label for="document-type-select">Document type</label>
-                <select id="document-type-select" name="document_type">
-                  <option value="">Select document type</option>
-                  <optgroup label="Identity">
-                    <option value="nin">National Identification Number (NIN)</option>
-                    <option value="drivers_license">Driver's license</option>
-                    <option value="passport">International passport</option>
-                  </optgroup>
-                  <optgroup label="Proof of address">
-                    <option value="electricity_bill">Electricity bill</option>
-                    <option value="bank_statement">Bank statement</option>
-                    <option value="waste_bill">Waste bill</option>
-                    <option value="water_bill">Water bill</option>
-                    <option value="house_rent_receipt">House rent receipt</option>
-                    <option value="tenancy_agreement">Tenancy agreement</option>
-                    <option value="land_use_charge">Land Use Charge document</option>
-                  </optgroup>
-                </select>
-              </div>
-
-              <div class="field">
-                <label for="document-upload-input">Upload document</label>
-                <div class="document-dropzone" id="document-upload-dropzone">
-                  <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 13V4M10 4 6.5 7.5M10 4l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v1.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-                  <p>Drag &amp; drop a file here, or <span class="document-dropzone-browse">browse files</span></p>
-                  <input type="file" id="document-upload-input" accept=".pdf,.jpg,.jpeg,.png" hidden>
-                </div>
-              </div>
-
-              <div class="document-upload-preview" id="document-upload-preview" hidden>
-                <span class="document-upload-preview-name" id="document-upload-preview-name">—</span>
-                <button type="button" class="link-arrow-sm" id="document-upload-remove">Remove</button>
-              </div>
-
-              <div class="document-upload-progress" id="document-upload-progress" hidden>
-                <div class="document-upload-progress-bar" id="document-upload-progress-bar"></div>
-              </div>
-
-              <p class="field-error" id="document-upload-error" role="alert"></p>
-
-              <div class="profile-form-actions">
-                <span class="status-pill status-pill--neutral" id="document-upload-status" hidden>Pending verification</span>
-                <button type="submit" class="btn btn-primary" id="document-upload-submit-btn" disabled>Submit for verification</button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        <!-- =========================================================
-             DANGER ZONE
-             ========================================================= -->
-        <section class="profile-panel" id="danger" data-panel="danger">
-          <div class="profile-panel-head">
-            <h2>Danger zone</h2>
-            <p>These actions are significant and, in some cases, permanent.</p>
-          </div>
-
-          <div class="profile-card profile-card--danger">
-            <div class="profile-card-head">
-              <h3>Download your data</h3>
-            </div>
-            <p class="profile-card-desc">Request a copy of your personal data and account history, in line with our privacy policy.</p>
-            <button type="button" class="btn btn-ghost">Request data export</button>
-          </div>
-
-          <div class="profile-card profile-card--danger">
-            <div class="profile-card-head">
-              <h3>Close your account</h3>
-            </div>
-            <p class="profile-card-desc">Your account must have a zero balance in every currency before it can be closed. This cannot be undone.</p>
-            <button type="button" class="btn btn-danger">Close my account</button>
-          </div>
-        </section>
-
-      </div>
     </div>
   </div>
 </main>
 
 <!-- =========================================================
-     NEW — Linked ID re-authentication modal
-     Shared, single instance — view-linked-id-btn opens it;
-     linked-id-verify-form posts the password to a
-     verifyCurrentPassword()-backed handler, same pattern
-     transfer.js's step-4 confirm-send password check already
-     uses. On success: hide this modal, un-hide
-     #linked-id-details, and populate the three cards.
+     Linked ID re-authentication modal — unchanged from before
      ========================================================= -->
 <div class="modal-overlay" id="linked-id-auth-modal" hidden>
   <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="linked-id-modal-title">
