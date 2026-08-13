@@ -39,14 +39,25 @@
      any activity feed) in database.js, so the Overview activity
      list honestly says it isn't wired up yet instead of spinning
      forever or fabricating entries.
-   - NOTIFICATION PREFERENCES + LOGIN SESSION PREFERENCE: no
-     known user_profiles column for either. Both are wired for
-     immediate UI feedback only (not persisted server-side) and
-     say so in their toast/status text.
-   - ACCOUNT TIER (Tier 1/2/3 badges): no confirmed field for
-     this in user_profiles or elsewhere, so the tier badges are
-     left exactly as they are in the HTML (static "Tier 1")
-     rather than guessing a column name.
+   - NOTIFICATION PREFERENCES: still no known user_profiles
+     column for these, so the toggles remain UI feedback only
+     (not persisted server-side) and say so in their toast text.
+     (Login session preference — previously flagged the same way
+     — is now backed by user_profiles.login_session_preference
+     per migration 016 PART D and is persisted for real below.
+     Per that migration's own honesty note, the column records
+     stated intent only; it doesn't yet shorten or lengthen any
+     actual Supabase session.)
+   - ACCOUNT TIER: backed by user_profiles.account_tier
+     (migration 016 PART A — admin-write-only via a DB trigger).
+     Tier badges render the real value; this file never attempts
+     to write it.
+   - ACCOUNT NUMBER: user_profiles.account_number (migration 016
+     PART B) is the single, stable, server-generated customer
+     number shown on Account information — distinct from each
+     currency account's own account_number/iban on the `accounts`
+     table. The reveal toggle reads the former, not a currency
+     account's number.
    - DANGER ZONE (data export / close account): no backend
      functions exist yet, so both buttons show an honest "not
      available yet — contact support" message instead of doing
