@@ -729,6 +729,7 @@ const IDENTITY_CATEGORY_BY_TYPE = {
 function wireDocumentUpload() {
   const form = document.getElementById('document-upload-form');
   const typeSelect = document.getElementById('document-type-select');
+  const fileField = document.getElementById('document-upload-file-field');
   const dropzone = document.getElementById('document-upload-dropzone');
   const fileInput = document.getElementById('document-upload-input');
   const preview = document.getElementById('document-upload-preview');
@@ -739,13 +740,18 @@ function wireDocumentUpload() {
   const errorEl = document.getElementById('document-upload-error');
   const statusPill = document.getElementById('document-upload-status');
   const submitBtn = document.getElementById('document-upload-submit-btn');
+  const detailFields = document.getElementById('document-detail-fields');
+  const fullNameInput = document.getElementById('document-full-name');
+  const idNumberInput = document.getElementById('document-id-number');
+  const dobInput = document.getElementById('document-dob');
+  const genderInput = document.getElementById('document-gender');
   if (!form || !dropzone || !fileInput) return;
 
   let selectedFile = null;
 
-  function updateSubmitState() {
-    if (submitBtn) submitBtn.disabled = !(selectedFile && typeSelect?.value);
-  }
+  const currentCategory = () => IDENTITY_CATEGORY_BY_TYPE[typeSelect?.value] || null;
+  const requiresFileFor = (category) => category !== 'bvn';
+  const requiresDetailsFor = (category) => category === 'bvn' || category === 'identity';
 
   function setSelectedFile(file) {
     selectedFile = file || null;
@@ -757,6 +763,23 @@ function wireDocumentUpload() {
       fileInput.value = '';
     }
     updateSubmitState();
+  }
+
+  function updateFieldVisibility() {
+    const category = currentCategory();
+    if (fileField) fileField.hidden = category === 'bvn';
+    if (detailFields) detailFields.hidden = !requiresDetailsFor(category);
+    if (category === 'bvn') setSelectedFile(null);
+  }
+
+  function updateSubmitState() {
+    const category = currentCategory();
+    const hasType = !!typeSelect?.value;
+    const hasFile = !requiresFileFor(category) || !!selectedFile;
+    const hasDetails =
+      !requiresDetailsFor(category) ||
+      (fullNameInput?.value.trim() && idNumberInput?.value.trim() && dobInput?.value && genderInput?.value);
+    if (submitBtn) submitBtn.disabled = !(hasType && hasFile && hasDetails);
   }
 
   dropzone.setAttribute('tabindex', '0');
@@ -787,7 +810,16 @@ function wireDocumentUpload() {
 
   fileInput.addEventListener('change', () => setSelectedFile(fileInput.files?.[0] || null));
   removeBtn?.addEventListener('click', () => setSelectedFile(null));
-  typeSelect?.addEventListener('change', updateSubmitState);
+  typeSelect?.addEventListener('change', () => {
+    updateFieldVisibility();
+    updateSubmitState();
+  });
+  [fullNameInput, idNumberInput, dobInput, genderInput].forEach((el) => {
+    el?.addEventListener('input', updateSubmitState);
+    el?.addEventListener('change', updateSubmitState);
+  });
+
+  updateFieldVisibility();
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -800,24 +832,43 @@ function wireDocumentUpload() {
       if (errorEl) errorEl.textContent = 'Choose a document type.';
       return;
     }
-    if (!selectedFile) {
+    if (requiresFileFor(documentCategory) && !selectedFile) {
       if (errorEl) errorEl.textContent = 'Choose a file to upload.';
       return;
     }
 
+    let fullName, idNumber, dateOfBirth, gender;
+    if (requiresDetailsFor(documentCategory)) {
+      fullName = fullNameInput?.value.trim();
+      idNumber = idNumberInput?.value.trim();
+      dateOfBirth = dobInput?.value;
+      gender = genderInput?.value;
+      if (!fullName || !idNumber || !dateOfBirth || !gender) {
+        if (errorEl) errorEl.textContent = 'Fill in full name, ID number, date of birth, and gender.';
+        return;
+      }
+    }
+
     if (submitBtn) submitBtn.disabled = true;
     submitBtn?.classList.add('is-loading');
-    if (progress) progress.hidden = false;
-    if (progressBar) progressBar.style.width = '15%';
+    const showsProgress = requiresFileFor(documentCategory);
+    if (showsProgress) {
+      if (progress) progress.hidden = false;
+      if (progressBar) progressBar.style.width = '15%';
+    }
 
     try {
-      // supabase-js's storage.upload() doesn't expose an upload-progress
-      // callback in this client version, so this bar is indicative
-      // (jumps to ~60% while the request is in flight, 100% on success)
-      // rather than a byte-accurate readout.
-      if (progressBar) progressBar.style.width = '60%';
-      const { error } = await submitIdentityDocument({ file: selectedFile, documentType, documentCategory });
-      if (progressBar) progressBar.style.width = '100%';
+      if (showsProgress && progressBar) progressBar.style.width = '60%';
+      const { error } = await submitIdentityDocument({
+        file: selectedFile,
+        documentType,
+        documentCategory,
+        fullName,
+        idNumber,
+        dateOfBirth,
+        gender,
+      });
+      if (showsProgress && progressBar) progressBar.style.width = '100%';
 
       if (error) {
         if (errorEl) errorEl.textContent = error;
@@ -829,6 +880,7 @@ function wireDocumentUpload() {
       toast('Document submitted for verification.');
       form.reset();
       setSelectedFile(null);
+      updateFieldVisibility();
     } catch (err) {
       if (errorEl) errorEl.textContent = 'Upload failed. Please try again.';
     } finally {
