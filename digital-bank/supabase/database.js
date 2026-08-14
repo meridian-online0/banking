@@ -915,49 +915,83 @@ export async function getMyIdentityDocumentHistory(userId) {
 }
 
 
-export async function submitIdentityDocument({ file, documentType, documentCategory, userId }) {
-  if (!file) return { data: null, error: 'Choose a file to upload.' };
+
+export async function submitIdentityDocument({
+  file,
+  documentType,
+  documentCategory,
+  fullName,
+  idNumber,
+  dateOfBirth,
+  gender,
+  userId,
+}) {
   if (!documentType || !documentCategory) return { data: null, error: 'Choose a document type.' };
-  if (!IDENTITY_DOC_ALLOWED_TYPES.includes(file.type)) {
-    return { data: null, error: 'Only PDF, JPG, or PNG files are accepted.' };
+
+  // BVN (tier 1) is data-only — every other category still requires a file.
+  const requiresFile = documentCategory !== 'bvn';
+  if (requiresFile) {
+    if (!file) return { data: null, error: 'Choose a file to upload.' };
+    if (!IDENTITY_DOC_ALLOWED_TYPES.includes(file.type)) {
+      return { data: null, error: 'Only PDF, JPG, or PNG files are accepted.' };
+    }
+    if (file.size > IDENTITY_DOC_MAX_BYTES) {
+      return { data: null, error: 'File is larger than the 10MB limit.' };
+    }
   }
-  if (file.size > IDENTITY_DOC_MAX_BYTES) {
-    return { data: null, error: 'File is larger than the 10MB limit.' };
+
+  // BVN and identity docs (tier 1 & 2) collect these at submission time.
+  // Proof of address (tier 3) does not.
+  const requiresDetails = documentCategory === 'bvn' || documentCategory === 'identity';
+  if (requiresDetails) {
+    if (!fullName?.trim() || !idNumber?.trim() || !dateOfBirth || !gender) {
+      return { data: null, error: 'Fill in full name, ID number, date of birth, and gender.' };
+    }
   }
 
   const uid = await resolveUserId(userId);
   if (!uid) return { data: null, error: 'Not signed in.' };
 
-  // Generated client-side so the storage path (which must exist
-  // before the row does) and the identity_documents.id it belongs
-  // to line up. identity_documents.id defaults to gen_random_uuid()
-  // server-side, but nothing stops an explicit id on insert.
   const documentId = crypto.randomUUID();
-  const extension = (file.name.split('.').pop() || 'bin').toLowerCase();
-  const storagePath = `${uid}/${documentId}/${documentId}.${extension}`;
+  let storagePath = null;
 
-  const { error: uploadError } = await supabase.storage
-    .from('identity-documents')
-    .upload(storagePath, file, { upsert: false, contentType: file.type });
-  if (uploadError) return { data: null, error: 'Upload failed. Check your connection and try again.' };
+  if (requiresFile) {
+    const extension = (file.name.split('.').pop() || 'bin').toLowerCase();
+    storagePath = `${uid}/${documentId}/${documentId}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('identity-documents')
+      .upload(storagePath, file, { upsert: false, contentType: file.type });
+    if (uploadError) return { data: null, error: 'Upload failed. Check your connection and try again.' };
+  }
+
+  const insertPayload = {
+    id: documentId,
+    user_id: uid,
+    document_category: documentCategory,
+    document_type: documentType,
+    file_path: storagePath,
+    file_name: file?.name || null,
+  };
+
+  if (requiresDetails) {
+    insertPayload.id_type = documentType;
+    insertPayload.full_name = fullName.trim();
+    insertPayload.id_number = idNumber.trim();
+    insertPayload.date_of_birth = dateOfBirth;
+    insertPayload.gender = gender;
+  }
 
   const { data, error } = await supabase
     .from('identity_documents')
-    .insert({
-      id: documentId,
-      user_id: uid,
-      document_category: documentCategory,
-      document_type: documentType,
-      file_path: storagePath,
-      file_name: file.name,
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
   if (error) {
-    // Don't leave an orphaned file in the private bucket with no
-    // identity_documents row pointing to it if the insert failed.
-    await supabase.storage.from('identity-documents').remove([storagePath]);
+    if (storagePath) {
+      await supabase.storage.from('identity-documents').remove([storagePath]);
+    }
     return { data: null, error: error.message };
   }
 
