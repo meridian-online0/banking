@@ -799,16 +799,24 @@
           <p class="profile-card-desc">You can submit any one of the following as identification, plus one proof of address.</p>
 
           <div class="accepted-docs-group">
-            <p class="profile-form-subhead" style="padding-top:0;border-top:none;">Identity documents</p>
+            <p class="profile-form-subhead" style="padding-top:0;border-top:none;">Tier 1 — BVN</p>
             <ul class="accepted-docs-list">
-              <li>National Identification Number (NIN)</li>
-              <li>Driver's license</li>
-              <li>International passport</li>
+              <li>Bank Verification Number (BVN)</li>
             </ul>
           </div>
 
           <div class="accepted-docs-group">
-            <p class="profile-form-subhead">Proof of address</p>
+            <p class="profile-form-subhead">Tier 2 — Identity documents</p>
+            <ul class="accepted-docs-list">
+              <li>National Identification Number (NIN)</li>
+              <li>Driver's license</li>
+              <li>International passport</li>
+              <li>Voter's card</li>
+            </ul>
+          </div>
+
+          <div class="accepted-docs-group">
+            <p class="profile-form-subhead">Tier 3 — Proof of address</p>
             <ul class="accepted-docs-list">
               <li>Electricity bill</li>
               <li>Bank statement</li>
@@ -839,12 +847,16 @@
               <label for="document-type-select">Document type</label>
               <select id="document-type-select" name="document_type">
                 <option value="">Select document type</option>
-                <optgroup label="Identity">
+                <optgroup label="Tier 1 — BVN">
+                  <option value="bvn">Bank Verification Number (BVN)</option>
+                </optgroup>
+                <optgroup label="Tier 2 — Identity">
                   <option value="nin">National Identification Number (NIN)</option>
                   <option value="drivers_license">Driver's license</option>
                   <option value="passport">International passport</option>
+                  <option value="voters_card">Voter's card</option>
                 </optgroup>
-                <optgroup label="Proof of address">
+                <optgroup label="Tier 3 — Proof of address">
                   <option value="electricity_bill">Electricity bill</option>
                   <option value="bank_statement">Bank statement</option>
                   <option value="waste_bill">Waste bill</option>
@@ -856,12 +868,40 @@
               </select>
             </div>
 
-            <div class="field">
+            <div class="field" id="document-upload-file-field">
               <label for="document-upload-input">Upload document</label>
               <div class="document-dropzone" id="document-upload-dropzone">
                 <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 13V4M10 4 6.5 7.5M10 4l3.5 3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 14v1.5A1.5 1.5 0 0 0 5.5 17h9a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
                 <p>Drag &amp; drop a file here, or <span class="document-dropzone-browse">browse files</span></p>
                 <input type="file" id="document-upload-input" accept=".pdf,.jpg,.jpeg,.png" hidden>
+              </div>
+            </div>
+
+            <div id="document-detail-fields" hidden>
+              <div class="form-row-2">
+                <div class="field">
+                  <label for="document-full-name">Full name</label>
+                  <input type="text" id="document-full-name" name="full_name" autocomplete="name">
+                </div>
+                <div class="field">
+                  <label for="document-id-number">ID number</label>
+                  <input type="text" id="document-id-number" name="id_number">
+                </div>
+              </div>
+              <div class="form-row-2">
+                <div class="field">
+                  <label for="document-dob">Date of birth</label>
+                  <input type="date" id="document-dob" name="date_of_birth">
+                </div>
+                <div class="field">
+                  <label for="document-gender">Gender</label>
+                  <select id="document-gender" name="gender">
+                    <option value="">Select</option>
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                    <option value="nonbinary">Non-binary</option>
+                  </select>
+                </div>
               </div>
             </div>
 
