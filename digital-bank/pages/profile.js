@@ -714,9 +714,11 @@ async function renderLinkedIdCards() {
    7b. Document upload
    ----------------------------------------------------------- */
 const IDENTITY_CATEGORY_BY_TYPE = {
+  bvn: 'bvn',
   nin: 'identity',
   drivers_license: 'identity',
   passport: 'identity',
+  voters_card: 'identity',
   electricity_bill: 'proof_of_address',
   bank_statement: 'proof_of_address',
   waste_bill: 'proof_of_address',
