@@ -1,5 +1,5 @@
 /* =============================================================
-   MERIDIAN — International Digital Banking
+   MERIDIAN — International Digital Banking g
    Components loader: components/components.js (imported by
    assets/js/main.js on every page)
 
