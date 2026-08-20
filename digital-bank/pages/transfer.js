@@ -1,50 +1,49 @@
 /* =============================================================
    MERIDIAN — Send money page
-   Script: pages/transfer.js   (REDESIGN + FIXES)
-   ...same structure as before. Changes in this pass:
+   Script: pages/transfer.js
 
-   1. Send amount now defaults to empty ($0.00 shown everywhere)
-      instead of the HTML's value="1000" — nothing gets typed in
-      for the user anymore. See the amount-reset block in init()
-      and resetWizard(), plus recalcConversion() now runs once on
-      load so the ledger's rate/fee rows aren't blank until step 2.
-   2. A "Save this recipient as a beneficiary" option now also
-      appears when the recipient was auto-verified as an internal
-      Meridian account holder (source: 'internal') — previously
-      that save option only existed for the manual-entry fallback,
-      so an auto-matched recipient could never be saved. See
-      toggleVerifiedSaveOption() and the new branch in
-      handleConfirmSend().
-   3. The verified-recipient card now shows the account identifier
-      the person actually typed (previously hardcoded to null for
-      internal matches) and a best-effort country hint derived from
-      the account's currency (also previously hardcoded to null).
-      See CURRENCY_COUNTRY_HINT and showVerifiedCard().
-   4. Step 5 (success) now generates a downloadable PDF receipt via
-      jsPDF, loaded from a CDN at runtime the first time it's
-      needed — no changes to transfer.html required. See
-      loadJsPDF(), buildReceiptPdf(), handleDownloadReceipt(), and
-      ensureDownloadReceiptButton().
-   5. NEW — Transfer limits (max_single_transfer / min_transfer) are
-      now actually enforced against the customer's real
-      bank_policies / user_limit_overrides rows, override-wins-
-      over-global. Previously validateStep2() only checked amount
-      > 0 and available balance — the admin panel's "Transfer limit
-      overrides" card had nothing on the customer side reading it
-      back. See getEffectiveTransferLimits() and the new checks in
-      validateStep2(). NOTE: this is client-side only — see the
-      caveat in this function's own comment block.
+   Changes in THIS pass:
 
-   STILL OUTSTANDING (not fixable in this file): the receiver in a
-   cross-currency transfer is credited the sender-side amount
-   as-is — process_transfer() never converts it into the receiver's
-   own currency. That's a SQL-side fix in the migration, not here.
+   A. HEADER — transfer.html now loads the shared app-navbar
+      component (same as dashboard.html/profile.html) instead of
+      its own hand-written header, which never had a notification
+      dropdown panel at all. Since that component now loads
+      asynchronously, populateHeader()/initUserMenu()/initLogout()
+      are deferred behind waitForNavbar() — same pattern
+      dashboard.js already uses — instead of running immediately
+      and silently finding nothing.
 
-   Also still outstanding: daily/weekly/monthly transfer limits
-   (daily_transfer_limit etc.) are read by getEffectiveTransferLimits()
-   but NOT enforced yet — that needs summing the customer's already-
-   sent transfers in the period, which wasn't specified. See that
-   function's comment.
+   B. EXCHANGE RATE STABILITY — recalcConversion() previously ran
+      a fresh network round-trip (getExchangeRate + a second one
+      inside getLimitsInCurrency for non-USD currencies) on EVERY
+      keystroke in the amount field. Typing quickly fired several
+      overlapping requests that could resolve out of order, so an
+      older/slower response could land after a newer one and the
+      displayed rate would visibly flip back and forth. This also
+      made the minimum-transfer warning feel slow, since it was
+      re-doing that full round trip on every keystroke too, even
+      though the rate for a given currency pair doesn't change
+      between keystrokes.
+
+      Fixed two ways:
+        1. getCachedRate() and the cache added to
+           getLimitsInCurrency() only hit the network when the
+           CURRENCY PAIR changes, not on every amount keystroke.
+        2. rateCallToken is a staleness guard — if a newer
+           recalcConversion() call starts while an older one is
+           still awaiting the network, the older one's result is
+           discarded instead of painting over the newer one.
+
+   C. HERO_COPY reworded for a warmer, more professional tone.
+
+   NOTE: the "beneficiaries not displaying" issue is NOT touched
+   in this pass. RLS and the addBeneficiary()/getMyBeneficiaries()
+   code were checked and are correct — the open question is
+   whether rows exist in the table at all, which needs one more
+   SQL query before a real fix (vs. a guess) can be written.
+
+   ---- Everything below this point is unchanged from the previous
+   revision except where marked NEW/CHANGED above. ----
    ============================================================= */
 
 import { signOutUser } from '../supabase/auth.js';
@@ -59,8 +58,8 @@ import {
   findRecipient,
   getExchangeRate,
   createTransfer,
-  getTransferPolicy,          // NEW
-  getMyTransferLimitOverrides, // NEW
+  getTransferPolicy,
+  getMyTransferLimitOverrides,
 } from '../supabase/database.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
@@ -87,26 +86,27 @@ const AUTH_LOCKOUT_MS = 60000;
 
 const ACCOUNT_NUMBER_MIN_LENGTH = 10;
 
+// CHANGED — reworded for a warmer, more professional tone.
 const HERO_COPY = {
   1: {
-    title: "Where's this going?",
-    sub: "Enter an account number, IBAN, or Meridian tag and we'll verify the recipient automatically — at the mid-market rate, with every fee shown up front.",
+    title: "Who's this transfer for?",
+    sub: "Enter an account number, IBAN, or Meridian tag and we'll verify your recipient automatically — always at the mid-market rate, with every fee shown upfront.",
   },
   2: {
-    title: 'How much are you sending?',
-    sub: 'Check the numbers on the right as you type — nothing here is a surprise later.',
+    title: 'How much would you like to send?',
+    sub: "We'll show you exactly what arrives on the other end, so there's never a surprise later.",
   },
   3: {
     title: 'Review your transfer',
-    sub: "Take a good look. You can still change anything before you confirm.",
+    sub: 'Take a moment to check everything below — you can still make changes before confirming.',
   },
   4: {
-    title: "Confirm it's you",
-    sub: 'One last check before the money moves.',
+    title: "Let's confirm it's you",
+    sub: 'Just one more step to keep your money safe.',
   },
   5: {
-    title: 'Transfer sent',
-    sub: 'Your ledger entry is complete — track it anytime from your transaction history.',
+    title: 'Transfer sent!',
+    sub: "You're all set — track this transfer anytime from your transaction history.",
   },
 };
 
@@ -145,16 +145,17 @@ let identifierLookupTimer = null;
 let authFailedAttempts = 0;
 let authLockedUntil = 0;
 let lastTransferReceipt = null; // populated right before step 5, read by the PDF download
-let effectiveLimits = null; // NEW — { maxSingleTransfer, minTransfer, dailyTransferLimit }, resolved once per wizard pass
+let effectiveLimits = null; // { maxSingleTransfer, minTransfer, dailyTransferLimit }, resolved once per wizard pass
+
+// NEW — caches so recalcConversion() only hits the network when the
+// currency pair actually changes, not on every amount keystroke.
+let limitsByCurrency = new Map();  // currency -> converted limits
+let rateCallToken = 0;             // staleness guard for recalcConversion
+let cachedRatePair = null;         // `${from}_${to}` of the last-fetched rate
+let cachedRateResult = null;       // { rate, isFallback } for cachedRatePair
 
 /* -----------------------------------------------------------
    Toasts
-   -----------------------------------------------------------
-   Matches accounts.js's showToast() exactly — same inline fade
-   pattern (no .is-visible toggle). My previous revision here
-   switched to the .is-visible convention admin-policy.js uses,
-   which doesn't match this app's customer-facing toast styling
-   and made things worse, not better. Reverted.
    ----------------------------------------------------------- */
 function showToast(message, variant = 'success') {
   const stack = $('#toast-stack');
@@ -245,6 +246,27 @@ function initLogout() {
     event.preventDefault();
     await signOutUser();
     window.location.href = logoutLink.getAttribute('href');
+  });
+}
+
+/* -----------------------------------------------------------
+   NEW — wait for the app-navbar component
+   transfer.html now loads its header from components/app-navbar.html
+   via components.js's loadComponents(), same as dashboard.html/
+   profile.js. That can resolve before OR after this module's own
+   async init — calling header-dependent functions before the
+   partial lands means they each query for elements that aren't in
+   the DOM yet and silently no-op. This checks whether the navbar
+   markup is already there first, and only falls back to listening
+   for the event if it isn't yet.
+   ----------------------------------------------------------- */
+function waitForNavbar() {
+  return new Promise((resolve) => {
+    if ($('.app-user-menu')) {
+      resolve();
+      return;
+    }
+    document.addEventListener('component:loaded', () => resolve(), { once: true });
   });
 }
 
@@ -715,8 +737,32 @@ function ensureFeeCache() {
   document.body.appendChild(cache);
 }
 
+/**
+ * NEW — only re-fetches the exchange rate when the currency pair
+ * itself changes. The rate doesn't move between keystrokes on the
+ * amount field, so there's no reason to hit the network on every
+ * single one. This is what makes the rate row (and the
+ * minimum-transfer message, which depends on it) feel instant
+ * instead of laggy, and stops the flicker from overlapping
+ * requests resolving out of order.
+ */
+async function getCachedRate(fromCurrency, toCurrency) {
+  const pairKey = `${fromCurrency}_${toCurrency}`;
+  if (cachedRatePair === pairKey && cachedRateResult) return cachedRateResult;
+
+  const { data: rateData } = await getExchangeRate(fromCurrency, toCurrency);
+  const rate = Number(rateData?.exchange_rate ?? 1);
+  const isFallback = fromCurrency !== toCurrency && rate === 1;
+  const result = { rate, isFallback };
+  cachedRatePair = pairKey;
+  cachedRateResult = result;
+  return result;
+}
+
 async function recalcConversion() {
   ensureFeeCache();
+  const callId = ++rateCallToken; // NEW — staleness guard
+
   const fromAccount = currentFromAccount();
   const fromCurrency = fromAccount?.currency || 'USD';
   $('#transfer-send-currency-tag').textContent = fromCurrency;
@@ -735,11 +781,17 @@ async function recalcConversion() {
   const speed = $('input[name="speed"]:checked')?.value || 'standard';
   const fee = computeFee(sendAmount, speed);
 
-  const { data: rateData } = await getExchangeRate(fromCurrency, toCurrency);
-  const rate = Number(rateData?.exchange_rate ?? 1);
-  const isFallback = fromCurrency !== toCurrency && rate === 1;
-  const receiveAmount = sendAmount * rate;
+  const { rate, isFallback } = await getCachedRate(fromCurrency, toCurrency); // CHANGED — cached
+  const limits = await getLimitsInCurrency(fromCurrency); // CHANGED — cached
 
+  // NEW — if a newer call started while these awaits were in
+  // flight (fast typing, quick currency switches), drop this pass
+  // instead of painting stale numbers over a newer result. This is
+  // what was causing the rate/limit note to visibly flip back and
+  // forth.
+  if (callId !== rateCallToken) return null;
+
+  const receiveAmount = sendAmount * rate;
   $('#transfer-receive-amount').value = receiveAmount.toFixed(2);
 
   $('#fee-rate-note-value').textContent = `1 ${fromCurrency} = ${rate.toFixed(4)} ${toCurrency}${isFallback ? ' · indicative' : ' · mid-market'}`;
@@ -752,12 +804,8 @@ async function recalcConversion() {
   $('#fee-available-value').textContent = fromAccount ? `${currencySymbol(fromCurrency)}${formatAmount(available)}` : '—';
   $('#fee-remaining-value').textContent = fromAccount ? `${currencySymbol(fromCurrency)}${formatAmount(Math.max(0, available - total))}` : '—';
 
-// NEW — live-updates on every keystroke (recalcConversion runs on
-  // #transfer-send-amount's input listener), not just on Continue.
-  // See buildAmountNote() for the priority order.
   const noteEl = $('#balance-note');
-  const limitsInCurrency = await getLimitsInCurrency(fromCurrency);
-  const note = buildAmountNote({ fromAccount, fromCurrency, sendAmount, total, available }, limitsInCurrency);
+  const note = buildAmountNote({ fromAccount, fromCurrency, sendAmount, total, available }, limits);
   if (note) {
     noteEl.textContent = note.message;
     noteEl.classList.toggle('balance-note--warning', note.type === 'error');
@@ -772,7 +820,7 @@ async function recalcConversion() {
 }
 
 /* -----------------------------------------------------------
-   NEW — Transfer limits (override-wins-over-global)
+   Transfer limits (override-wins-over-global)
    -----------------------------------------------------------
    Mirrors the precedence admin-policy.html documents for the admin
    side ("Leave blank to inherit the global value"): a value in the
@@ -819,31 +867,31 @@ async function getEffectiveTransferLimits() {
 }
 
 /**
- * Converts the USD-denominated limits into `currency` — see the
- * header note above import block: bank_policies'
- * transfer_controls fields are all USD, but the amount on this
- * page is in the from-account's own currency. Uses the same
- * getExchangeRate() every other conversion in this file goes
- * through, so it benefits from that function's existing caching.
+ * CHANGED — now caches the converted result per currency, so this
+ * only does a network round-trip the first time a given currency
+ * is seen in this wizard pass, not on every keystroke.
  */
 async function getLimitsInCurrency(currency) {
   if (!effectiveLimits) effectiveLimits = await getEffectiveTransferLimits();
   if (currency === 'USD') return effectiveLimits;
+  if (limitsByCurrency.has(currency)) return limitsByCurrency.get(currency);
 
   const { data: rateData } = await getExchangeRate('USD', currency);
   const rate = Number(rateData?.exchange_rate ?? 1);
   const convert = (v) => (v == null ? null : v * rate);
 
-  return {
+  const converted = {
     maxSingleTransfer: convert(effectiveLimits.maxSingleTransfer),
     minTransfer: convert(effectiveLimits.minTransfer),
     dailyTransferLimit: convert(effectiveLimits.dailyTransferLimit),
   };
+  limitsByCurrency.set(currency, converted);
+  return converted;
 }
 
 /**
- * NEW — single source of truth for the #balance-note message,
- * used by both recalcConversion() (live, on every keystroke) and
+ * Single source of truth for the #balance-note message, used by
+ * both recalcConversion() (live, on every keystroke) and
  * validateStep2() (blocking, on Continue) so the two can never
  * disagree. Priority: insufficient balance > below minimum > above
  * per-transfer maximum > above daily limit > default "remaining
@@ -854,7 +902,7 @@ async function getLimitsInCurrency(currency) {
  * customer's already-sent transfers today, since that needs a
  * getTransactions()-style aggregation this function doesn't
  * attempt (see the same caveat on getEffectiveTransferLimits()'s
- * dailyTransferLimit field from the previous revision).
+ * dailyTransferLimit field).
  */
 function buildAmountNote(info, limits) {
   if (!info.fromAccount || info.sendAmount <= 0) return null;
@@ -877,8 +925,17 @@ function buildAmountNote(info, limits) {
   return { type: 'info', message: `${sym}${formatAmount(Math.max(0, info.available - info.total))} left in this account after sending.` };
 }
 
+/**
+ * CHANGED — recalcConversion() can now return null if a newer call
+ * superseded it (see the staleness guard above). This is a
+ * deliberate click, not rapid typing, so a second call is
+ * essentially guaranteed to land — retry once rather than treat a
+ * superseded pass as "no account selected".
+ */
 async function validateStep2() {
-  const info = await recalcConversion();
+  let info = await recalcConversion();
+  if (!info) info = await recalcConversion();
+
   if (!info.fromAccount) {
     showToast('Open a currency account before sending money.', 'error');
     return false;
@@ -921,8 +978,7 @@ async function populateReview() {
   const fee = computeFee(sendAmount, speed);
   const receiveAmount = Number($('#transfer-receive-amount').value) || 0;
   const toCurrency = $('#transfer-receive-currency').value;
-  const { data: rateData } = await getExchangeRate(fromAccount?.currency || 'USD', toCurrency);
-  const rate = Number(rateData?.exchange_rate ?? 1);
+  const { rate } = await getCachedRate(fromAccount?.currency || 'USD', toCurrency); // CHANGED — cached
 
   const scheduleText = `${speed === 'instant' ? 'Instant' : 'Standard'} · ${
     schedule === 'later' ? `Scheduled for ${formatScheduledDate()}` : 'Sending now'
@@ -1279,7 +1335,10 @@ function resetWizard() {
   $('#recipient-identifier').value = '';
   $('#beneficiary-search').value = '';
   $('#transfer-send-amount').value = '';
-  effectiveLimits = null; // NEW — re-resolve limits on next step-2 validation
+  effectiveLimits = null; // re-resolve limits on next step-2 validation
+  limitsByCurrency.clear(); // NEW
+  cachedRatePair = null;    // NEW
+  cachedRateResult = null;  // NEW
   $('#recipient-saved-toggle').open = false;
   $('#auth-password-error').textContent = '';
   authFailedAttempts = 0;
@@ -1336,9 +1395,15 @@ function initPasswordToggle() {
   const user = await guardPage();
   if (!user) return;
 
-  populateHeader();
-  initUserMenu();
-  initLogout();
+  // CHANGED — header now loads asynchronously via the shared
+  // app-navbar component, so header-dependent init waits for it,
+  // same pattern dashboard.js uses.
+  waitForNavbar().then(() => {
+    populateHeader();
+    initUserMenu();
+    initLogout();
+  });
+
   initPasswordToggle();
   wireSegmented('speed');
   wireSegmented('schedule');
@@ -1398,16 +1463,16 @@ function initPasswordToggle() {
     }
   });
 
-const [{ data: accs, error: accError }, { data: bens, error: benError }, limits] = await Promise.all([
+  const [{ data: accs, error: accError }, { data: bens, error: benError }, limits] = await Promise.all([
     getMyAccounts(user.id),
     getMyBeneficiaries(user.id),
-    getEffectiveTransferLimits(), // NEW — prefetch so the first keystroke on step 2 is instant
+    getEffectiveTransferLimits(), // prefetch so the first keystroke on step 2 is instant
   ]);
   if (accError) showToast("Couldn't load your accounts. Please refresh.", 'error');
   if (benError) showToast("Couldn't load your beneficiaries. Please refresh.", 'error');
   accounts = accs || [];
   beneficiaries = bens || [];
-  effectiveLimits = limits; // NEW
+  effectiveLimits = limits;
 
   applyQueryParams();
   renderFromAccountStrip();
