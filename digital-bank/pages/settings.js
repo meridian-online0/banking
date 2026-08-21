@@ -45,6 +45,38 @@
    logout). Calling those before the partial lands would just
    silently no-op — every one of them has an early `if (!el)
    return`.
+
+   I18N WIRING (NEW)
+   ----------------------------------------------------------------
+   translation.js loads before this module (see settings.html) and
+   exposes window.MeridianI18n. Two things happen here:
+
+     1. Every dynamic string (toasts, confirm() dialogs, re-rendered
+        empty states, status labels) now goes through the local
+        t(key, fallback) helper below instead of a hardcoded
+        English literal. t() prefers MeridianI18n's dictionary
+        lookup and falls back to the English string passed in if
+        the key isn't in the dictionary yet — so this file is safe
+        to ship even before every key below is merged into
+        translation.js's TRANSLATIONS object, and will pick up the
+        real translation automatically once it is.
+
+     2. The #settings-language <select> now calls
+        MeridianI18n.setLanguage(code, { persist: true }) AND
+        updateMyProfile({ language: code }) the moment it changes,
+        instead of waiting for the "Save preferences" button. This
+        matches the product decision from earlier in the thread —
+        switching language should apply immediately, no refresh.
+        The general form's own submit handler still saves language
+        too (in case it's changed alongside other fields and Save
+        is clicked), so either path works.
+
+   NEW TRANSLATION KEYS THIS FILE NEEDS (see list at bottom of file)
+   ----------------------------------------------------------------
+   All net-new — not yet in translation.js's TRANSLATIONS dictionary.
+   English fallbacks are inline above so functionality doesn't wait
+   on the merge; say the word and I'll send the same key set across
+   the other 9 languages next, same pattern as the last two batches.
    ============================================================= */
 
 import { getMyProfile, updateMyProfile, getMyAccounts, getTransactions, getUnreadNotificationCount } from '../supabase/database.js';
@@ -56,11 +88,35 @@ const $$ = (selector, scope) => Array.from((scope || document).querySelectorAll(
 
 const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', SGD: 'S$', JPY: '¥', NGN: '₦', CAD: 'C$', AUD: 'A$', CHF: 'CHF' };
 const currencySymbol = (code) => CURRENCY_SYMBOLS[code] || code || '';
-const formatAmount = (value) => Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatAmount = (value) => Number(value || 0).toLocaleString(currentLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 let currentUser = null;
 let currentProfile = null;
 let myAccounts = [];
+
+/* -----------------------------------------------------------
+   i18n helpers
+   ----------------------------------------------------------- */
+function t(key, fallback) {
+  if (window.MeridianI18n) {
+    const val = window.MeridianI18n.t(key);
+    if (val && val !== key) return val;
+  }
+  return fallback !== undefined ? fallback : key;
+}
+
+// Maps Meridian's 2-letter language codes to a concrete locale for
+// Intl/toLocaleString calls. Extend this if a language ever ships
+// in more than one regional flavor.
+const LOCALE_MAP = {
+  en: 'en-US', fr: 'fr-FR', es: 'es-ES', ko: 'ko-KR', de: 'de-DE',
+  pt: 'pt-PT', ar: 'ar-SA', zh: 'zh-CN', ja: 'ja-JP', ha: 'ha-NG',
+};
+
+function currentLocale() {
+  const lang = window.MeridianI18n ? window.MeridianI18n.getLanguage() : 'en';
+  return LOCALE_MAP[lang] || 'en-US';
+}
 
 /* -----------------------------------------------------------
    Toast helper
@@ -121,17 +177,6 @@ function paintAvatar(url, firstName, lastName) {
 
 /* -----------------------------------------------------------
    Wait for the app-navbar component
-   settings.html loads its header from components/app-navbar.html
-   via components.js's loadComponents(), which runs as its own
-   module and dispatches `component:loaded` on `document` once
-   injection finishes. That can resolve before OR after this
-   module's own async init — calling initUserMenu()/initLogout()/
-   initMobileNav() before the partial lands means they each query
-   for elements that aren't in the DOM yet, silently no-op, and
-   never get wired up on that page load. This checks whether the
-   navbar markup is already in the DOM first, and only falls back
-   to listening for the event if it isn't there yet, so it's
-   correct either way.
    ----------------------------------------------------------- */
 function waitForNavbar() {
   return new Promise((resolve) => {
@@ -145,12 +190,10 @@ function waitForNavbar() {
 
 /* -----------------------------------------------------------
    Header identity + notification badge
-   Same approach as dashboard.js / profile.js against the shared
-   navbar component (components/app-navbar.html).
    ----------------------------------------------------------- */
 function populateHeader(profile) {
   const nameEl = $('.app-user-name');
-  if (nameEl) nameEl.textContent = profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : 'Your account';
+  if (nameEl) nameEl.textContent = profile?.first_name ? `${profile.first_name} ${profile.last_name || ''}`.trim() : t('common.your_account', 'Your account');
   paintAvatar(profile?.profile_photo, profile?.first_name, profile?.last_name);
 }
 
@@ -196,9 +239,6 @@ function initUserMenu() {
   });
 }
 
-/* -----------------------------------------------------------
-   Log out — targets the navbar component's #logout-link
-   ----------------------------------------------------------- */
 function initLogout() {
   const logoutLink = $('#logout-link');
   if (!logoutLink) return;
@@ -278,7 +318,7 @@ function populateGeneralForm(profile) {
     const field = form.elements[name];
     if (field) field.value = value ?? fallback ?? field.value;
   };
-  setValue('language', profile?.language, 'en');
+  setValue('language', profile?.language, (window.MeridianI18n ? window.MeridianI18n.getLanguage() : 'en'));
   setValue('timezone', profile?.timezone, 'Africa/Lagos');
   setValue('default_currency', profile?.default_currency, 'USD');
   setValue('date_format', profile?.date_format, 'MDY');
@@ -303,7 +343,48 @@ function initGeneralForm() {
       return;
     }
     currentProfile = { ...currentProfile, ...data };
-    showToast('Preferences saved.');
+    showToast(t('settings.general.save_success', 'Preferences saved.'));
+  });
+}
+
+/* -----------------------------------------------------------
+   Language select — applies + persists immediately on change,
+   independent of the Save button, per the product decision that
+   switching language shouldn't require a form submit or refresh.
+   ----------------------------------------------------------- */
+function initLanguageSelect() {
+  const select = $('#settings-language');
+  if (!select || !window.MeridianI18n) return;
+
+  select.addEventListener('change', async () => {
+    const code = select.value;
+
+    // Apply + remember locally straight away — the visible UI
+    // updates before the network round-trip even starts.
+    window.MeridianI18n.setLanguage(code, { persist: true });
+
+    // Re-run the bits of this page whose text/dates depend on the
+    // active language but aren't covered by [data-i18n] markup.
+    renderMonthlyStatements();
+    const previewContainer = $('#statement-preview');
+    if (previewContainer && !previewContainer.hidden) {
+      // Preview list has already-fetched rows re-rendered with the
+      // new locale's date formatting.
+      const list = $('.statement-preview-list', previewContainer);
+      if (list) renderStatementPreview(lastPreviewedTransactions);
+    }
+    loadLinkedAccounts();
+    loadConnectedApps();
+    loadApiKeys();
+
+    if (!currentUser) return;
+    const { data, error } = await updateMyProfile({ language: code }, currentUser.id);
+    if (error) {
+      showToast(error, 'error');
+      return;
+    }
+    currentProfile = { ...currentProfile, ...data };
+    showToast(t('settings.general.save_success', 'Preferences saved.'));
   });
 }
 
@@ -321,7 +402,7 @@ function initAppearanceSwitches(profile) {
       document.documentElement.classList.toggle('force-reduce-motion', reduceMotion.checked);
       const { error } = await updateMyProfile({ reduce_motion: reduceMotion.checked }, currentUser.id);
       if (error) { showToast(error, 'error'); return; }
-      showToast('Appearance updated.');
+      showToast(t('settings.appearance.save_success', 'Appearance updated.'));
     });
   }
 
@@ -330,7 +411,7 @@ function initAppearanceSwitches(profile) {
     compactList.addEventListener('change', async () => {
       const { error } = await updateMyProfile({ compact_list: compactList.checked }, currentUser.id);
       if (error) { showToast(error, 'error'); return; }
-      showToast('Appearance updated.');
+      showToast(t('settings.appearance.save_success', 'Appearance updated.'));
     });
   }
 }
@@ -343,19 +424,17 @@ function initSignOutEverywhere() {
   if (!btn) return;
 
   btn.addEventListener('click', async () => {
-    const confirmed = window.confirm('Sign out of every device, including this one?');
+    const confirmed = window.confirm(t('settings.danger.confirm', 'Sign out of every device, including this one?'));
     if (!confirmed) return;
 
     setButtonLoading(btn, true);
 
-    // Close every open session row we've been tracking...
     await supabase
       .from('login_sessions')
       .update({ logout_time: new Date().toISOString() })
       .eq('user_id', currentUser.id)
       .is('logout_time', null);
 
-    // ...then actually revoke every refresh token for this user.
     const { error } = await supabase.auth.signOut({ scope: 'global' });
 
     setButtonLoading(btn, false);
@@ -371,11 +450,14 @@ function initSignOutEverywhere() {
 /* -----------------------------------------------------------
    Statements — account select + preview + CSV download
    ----------------------------------------------------------- */
+let lastPreviewedTransactions = [];
+
 function populateStatementAccountSelect(accounts) {
   const select = $('#statement-account');
   if (!select) return;
-  const options = accounts.map((a) => `<option value="${a.id}">${a.currency} account${a.available_balance !== undefined ? ` — ${formatAmount(a.available_balance)}` : ''}</option>`).join('');
-  select.innerHTML = `<option value="all">All currencies</option>${options}`;
+  const accountWord = t('settings.statements.account.suffix', 'account');
+  const options = accounts.map((a) => `<option value="${a.id}">${a.currency} ${accountWord}${a.available_balance !== undefined ? ` — ${formatAmount(a.available_balance)}` : ''}</option>`).join('');
+  select.innerHTML = `<option value="all">${t('settings.statements.account.all', 'All currencies')}</option>${options}`;
 }
 
 async function fetchStatementTransactions({ accountId, from, to, limit = 500 }) {
@@ -391,6 +473,10 @@ async function fetchStatementTransactions({ accountId, from, to, limit = 500 }) 
   return { data: Array.from(merged.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)), error: null };
 }
 
+// CSV content is deliberately kept in a stable en-US/ISO format
+// regardless of UI language — it's an exported data file, not
+// on-screen UI, and a consistent format keeps it easy to re-import
+// or reconcile no matter who opens it.
 function toCsv(rows) {
   const escape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const header = ['Date', 'Description', 'Type', 'Amount', 'Currency', 'Status', 'Reference'];
@@ -423,23 +509,24 @@ function downloadCsv(rows, filenamePrefix) {
 }
 
 function renderStatementPreview(transactions) {
+  lastPreviewedTransactions = transactions;
   const container = $('#statement-preview');
   const countEl = $('.statement-preview-count', container);
   const list = $('.statement-preview-list', container);
   if (!container) return;
 
   container.hidden = false;
-  countEl.textContent = `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}`;
+  countEl.textContent = t('settings.statements.preview_count', '{count} transaction(s)').replace('{count}', transactions.length);
 
   if (!transactions.length) {
-    list.innerHTML = '<li class="statement-preview-empty">No transactions in this range.</li>';
+    list.innerHTML = `<li class="statement-preview-empty">${t('settings.statements.preview_empty', 'No transactions in this range.')}</li>`;
     return;
   }
 
   list.innerHTML = transactions.slice(0, 20).map((tx) => `
     <li>
-      <span class="desc">${tx.description || tx.transaction_reference || 'Transaction'}</span>
-      <span class="meta">${new Date(tx.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+      <span class="desc">${tx.description || tx.transaction_reference || t('settings.statements.default_desc', 'Transaction')}</span>
+      <span class="meta">${new Date(tx.created_at).toLocaleDateString(currentLocale(), { month: 'short', day: 'numeric' })}</span>
       <span class="amt mono">${currencySymbol(tx.currency)}${formatAmount(tx.amount)}</span>
     </li>
   `).join('');
@@ -451,11 +538,11 @@ function getStatementFormValues(form) {
   errorEl.textContent = '';
 
   if (!values.statement_from || !values.statement_to) {
-    errorEl.textContent = 'Choose both a start and end date.';
+    errorEl.textContent = t('settings.statements.error_missing_dates', 'Choose both a start and end date.');
     return null;
   }
   if (new Date(values.statement_from) > new Date(values.statement_to)) {
-    errorEl.textContent = 'The start date must be before the end date.';
+    errorEl.textContent = t('settings.statements.error_date_order', 'The start date must be before the end date.');
     return null;
   }
   return values;
@@ -497,10 +584,10 @@ function initStatementForm() {
     setButtonLoading(btn, false);
 
     if (error) { showToast(error, 'error'); return; }
-    if (!data.length) { showToast('No transactions in that range to export.', 'error'); return; }
+    if (!data.length) { showToast(t('settings.statements.error_empty', 'No transactions in that range to export.'), 'error'); return; }
 
     downloadCsv(data, `meridian-statement-${values.statement_account}`);
-    showToast('Statement downloaded.');
+    showToast(t('settings.statements.download_success', 'Statement downloaded.'));
   });
 }
 
@@ -510,16 +597,17 @@ function initStatementForm() {
 async function renderMonthlyStatements() {
   const body = $('#monthly-statement-body');
   if (!body || !myAccounts.length) {
-    if (body) body.innerHTML = '<tr><td colspan="4" class="statement-table-empty">Open an account to see statements here.</td></tr>';
+    if (body) body.innerHTML = `<tr><td colspan="4" class="statement-table-empty">${t('settings.statements.table.open_account', 'Open an account to see statements here.')}</td></tr>`;
     return;
   }
 
+  const locale = currentLocale();
   const months = [];
   const now = new Date();
   for (let i = 0; i < 3; i++) {
     const start = new Date(now.getFullYear(), now.getMonth() - i, 1);
     const end = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
-    months.push({ start, end, label: start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+    months.push({ start, end, label: start.toLocaleDateString(locale, { month: 'long', year: 'numeric' }) });
   }
 
   const rows = await Promise.all(months.map(async (month) => {
@@ -532,19 +620,22 @@ async function renderMonthlyStatements() {
     return { ...month, count: data.length, data };
   }));
 
+  const allCurrenciesLabel = t('settings.statements.account.all', 'All currencies');
+  const downloadLabel = t('settings.statements.table.download', 'Download');
+
   body.innerHTML = rows.map((row, i) => `
     <tr>
-      <td data-label="Period">${row.label}</td>
-      <td data-label="Account">All currencies</td>
-      <td data-label="Transactions">${row.count}</td>
-      <td><button type="button" class="link-arrow-sm" data-month-index="${i}" ${row.count ? '' : 'disabled'}>Download</button></td>
+      <td data-label="${t('settings.statements.table.period', 'Period')}">${row.label}</td>
+      <td data-label="${t('settings.statements.table.account', 'Account')}">${allCurrenciesLabel}</td>
+      <td data-label="${t('settings.statements.table.transactions', 'Transactions')}">${row.count}</td>
+      <td><button type="button" class="link-arrow-sm" data-month-index="${i}" ${row.count ? '' : 'disabled'}>${downloadLabel}</button></td>
     </tr>
   `).join('');
 
   $$('button[data-month-index]', body).forEach((btn, i) => {
     btn.addEventListener('click', () => {
       downloadCsv(rows[i].data, `meridian-statement-${rows[i].label.replace(' ', '-').toLowerCase()}`);
-      showToast('Statement downloaded.');
+      showToast(t('settings.statements.download_success', 'Statement downloaded.'));
     });
   });
 }
@@ -563,14 +654,19 @@ async function loadLinkedAccounts() {
     .order('created_at', { ascending: false });
 
   if (error) {
-    list.innerHTML = `<li class="linked-account-empty">Couldn't load linked accounts.</li>`;
+    list.innerHTML = `<li class="linked-account-empty">${t('settings.linked.load_error', "Couldn't load linked accounts.")}</li>`;
     return;
   }
 
   if (!data.length) {
-    list.innerHTML = '<li class="linked-account-empty">No external accounts linked yet.</li>';
+    list.innerHTML = `<li class="linked-account-empty">${t('settings.linked.empty', 'No external accounts linked yet.')}</li>`;
     return;
   }
+
+  const endingLabel = t('settings.linked.account_ending', 'Account ending');
+  const verifiedLabel = t('settings.linked.status.verified', 'Verified');
+  const pendingLabel = t('settings.linked.status.pending', 'Pending verification');
+  const removeLabel = t('common.remove', 'Remove');
 
   list.innerHTML = data.map((account) => `
     <li class="linked-account-item" data-linked-id="${account.id}">
@@ -579,10 +675,10 @@ async function loadLinkedAccounts() {
       </span>
       <div>
         <strong>${account.bank_name}</strong>
-        <span>Account ending ${String(account.account_number).slice(-4)} · ${account.currency}</span>
+        <span>${endingLabel} ${String(account.account_number).slice(-4)} · ${account.currency}</span>
       </div>
-      <span class="status-pill ${account.status === 'verified' ? 'status-pill--verified' : 'status-pill--pending'}">${account.status === 'verified' ? 'Verified' : 'Pending verification'}</span>
-      <button type="button" class="wizard-edit-link" data-remove-linked="${account.id}">Remove</button>
+      <span class="status-pill ${account.status === 'verified' ? 'status-pill--verified' : 'status-pill--pending'}">${account.status === 'verified' ? verifiedLabel : pendingLabel}</span>
+      <button type="button" class="wizard-edit-link" data-remove-linked="${account.id}">${removeLabel}</button>
     </li>
   `).join('');
 
@@ -597,8 +693,8 @@ async function loadLinkedAccounts() {
         return;
       }
       btn.closest('.linked-account-item').remove();
-      if (!list.children.length) list.innerHTML = '<li class="linked-account-empty">No external accounts linked yet.</li>';
-      showToast('External account removed.');
+      if (!list.children.length) list.innerHTML = `<li class="linked-account-empty">${t('settings.linked.empty', 'No external accounts linked yet.')}</li>`;
+      showToast(t('settings.linked.removed_toast', 'External account removed.'));
     });
   });
 }
@@ -640,7 +736,7 @@ function initAddLinkedAccount() {
 
     form.reset();
     close();
-    showToast('External account added — verification usually takes 1–2 business days.');
+    showToast(t('settings.modal.linked.added_toast', 'External account added — verification usually takes 1–2 business days.'));
     loadLinkedAccounts();
   });
 }
@@ -659,9 +755,14 @@ async function loadConnectedApps() {
     .order('created_at', { ascending: false });
 
   if (error || !data?.length) {
-    list.innerHTML = '<li class="linked-account-empty">No third-party apps are connected to your account.</li>';
+    list.innerHTML = `<li class="linked-account-empty">${t('settings.apps.empty', 'No third-party apps are connected to your account.')}</li>`;
     return;
   }
+
+  const locale = currentLocale();
+  const defaultScope = t('settings.apps.default_scope', 'Read-only access');
+  const connectedPrefix = t('settings.apps.connected_prefix', 'Connected');
+  const revokeLabel = t('settings.apps.revoke_button', 'Revoke');
 
   list.innerHTML = data.map((app) => `
     <li class="linked-account-item" data-app-id="${app.id}">
@@ -670,9 +771,9 @@ async function loadConnectedApps() {
       </span>
       <div>
         <strong>${app.name}</strong>
-        <span>${app.access_scope || 'Read-only access'} · Connected ${new Date(app.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+        <span>${app.access_scope || defaultScope} · ${connectedPrefix} ${new Date(app.created_at).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
       </div>
-      <button type="button" class="wizard-edit-link" data-revoke-app="${app.id}">Revoke</button>
+      <button type="button" class="wizard-edit-link" data-revoke-app="${app.id}">${revokeLabel}</button>
     </li>
   `).join('');
 
@@ -683,8 +784,8 @@ async function loadConnectedApps() {
       const { error } = await supabase.from('connected_apps').delete().eq('id', id);
       if (error) { showToast(error.message, 'error'); btn.disabled = false; return; }
       btn.closest('.linked-account-item').remove();
-      if (!list.children.length) list.innerHTML = '<li class="linked-account-empty">No third-party apps are connected to your account.</li>';
-      showToast('Access revoked.');
+      if (!list.children.length) list.innerHTML = `<li class="linked-account-empty">${t('settings.apps.empty', 'No third-party apps are connected to your account.')}</li>`;
+      showToast(t('settings.apps.revoked_toast', 'Access revoked.'));
     });
   });
 }
@@ -712,16 +813,20 @@ async function loadApiKeys() {
     .order('created_at', { ascending: false });
 
   if (error || !data?.length) {
-    body.innerHTML = '<tr><td colspan="4" class="statement-table-empty">No API keys yet.</td></tr>';
+    body.innerHTML = `<tr><td colspan="4" class="statement-table-empty">${t('settings.apps.keys.empty', 'No API keys yet.')}</td></tr>`;
     return;
   }
 
+  const locale = currentLocale();
+  const neverLabel = t('settings.apps.keys.never_used', 'Never');
+  const revokeLabel = t('settings.apps.revoke_button', 'Revoke');
+
   body.innerHTML = data.map((key) => `
     <tr data-key-id="${key.id}">
-      <td data-label="Name">${key.name}</td>
-      <td data-label="Created">${new Date(key.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-      <td data-label="Last used">${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Never'}</td>
-      <td><button type="button" class="wizard-edit-link" data-revoke-key="${key.id}">Revoke</button></td>
+      <td data-label="${t('settings.apps.keys.table.name', 'Name')}">${key.name}</td>
+      <td data-label="${t('settings.apps.keys.table.created', 'Created')}">${new Date(key.created_at).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+      <td data-label="${t('settings.apps.keys.table.last_used', 'Last used')}">${key.last_used_at ? new Date(key.last_used_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) : neverLabel}</td>
+      <td><button type="button" class="wizard-edit-link" data-revoke-key="${key.id}">${revokeLabel}</button></td>
     </tr>
   `).join('');
 
@@ -732,8 +837,8 @@ async function loadApiKeys() {
       const { error } = await supabase.from('api_keys').delete().eq('id', id);
       if (error) { showToast(error.message, 'error'); btn.disabled = false; return; }
       btn.closest('tr').remove();
-      if (!body.children.length) body.innerHTML = '<tr><td colspan="4" class="statement-table-empty">No API keys yet.</td></tr>';
-      showToast('API key revoked.');
+      if (!body.children.length) body.innerHTML = `<tr><td colspan="4" class="statement-table-empty">${t('settings.apps.keys.empty', 'No API keys yet.')}</td></tr>`;
+      showToast(t('settings.apps.keys.revoked_toast', 'API key revoked.'));
     });
   });
 }
@@ -795,9 +900,9 @@ function initApiKeyModal() {
   $('#api-key-copy-btn', overlay).addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText($('#api-key-value', overlay).textContent);
-      showToast('Key copied — store it somewhere safe.');
+      showToast(t('settings.modal.api_key.copy_success', 'Key copied — store it somewhere safe.'));
     } catch {
-      showToast("Couldn't copy — select and copy manually.", 'error');
+      showToast(t('settings.modal.api_key.copy_error', "Couldn't copy — select and copy manually."), 'error');
     }
   });
 
@@ -812,8 +917,6 @@ function initApiKeyModal() {
   if (!user) return;
   currentUser = user;
 
-  // Header-dependent init waits for the app-navbar component to
-  // actually be in the DOM — see waitForNavbar() above.
   waitForNavbar().then(() => {
     populateNotificationBadge();
     initUserMenu();
@@ -823,6 +926,7 @@ function initApiKeyModal() {
 
   initSectionNav();
   initGeneralForm();
+  initLanguageSelect();
   initSignOutEverywhere();
   initStatementForm();
   initAddLinkedAccount();
@@ -835,6 +939,13 @@ function initApiKeyModal() {
 
   currentProfile = profile;
   myAccounts = accounts || [];
+
+  // Source of truth for a logged-in user is their saved profile
+  // language, not whatever localStorage/geo guessed before login
+  // resolved. persist:false — this is a re-apply, not a new choice.
+  if (profile?.language && window.MeridianI18n) {
+    window.MeridianI18n.setLanguage(profile.language, { persist: false });
+  }
 
   waitForNavbar().then(() => populateHeader(profile));
   populateGeneralForm(profile);
