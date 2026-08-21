@@ -1,37 +1,139 @@
 /* =============================================================
    MERIDIAN — International Digital Banking
    Stylesheet: assets/css/settings.css
-   SCOPE: settings.html only. Loaded after profile.css, which
-          already provides the app shell, sidebar nav, panels,
-          cards, forms, and switches this page reuses.
+   SCOPE: settings.html only. Loaded after profile.css.
 
    Load order on settings.html:
      1. style.css
      2. auth-guard.css
-     3. profile.css     (shell, sidebar, panels, cards, switches)
-     4. settings.css    (this file)
+     3. components.css (shared app widgets — toasts, status pills,
+                         switches, app-navbar)
+     4. notifications.css
+     5. profile.css     (app shell, cards, forms, switches — no
+                         longer includes the sidebar-tabs layout,
+                         see section 0 below)
+     6. settings.css    (this file)
+
+   -------------------------------------------------------------
+   IMPORTANT — why section 0 exists
+   -------------------------------------------------------------
+   profile.css was rewritten for profile.html's new single-column
+   "settings stack" UI and, in that rewrite, deleted the two-column
+   sidebar-tabs layout it used to share with this page:
+   .profile-layout / .profile-nav / .profile-nav-link / .profile-panel
+   (see profile.css's own changelog comment). settings.html was NOT
+   migrated off that markup — it still uses it, and settings.js's
+   initSectionNav() still toggles .is-active the same tab way it
+   always did. So those rules have to live somewhere, and since
+   profile.css no longer owns them and nothing else does either,
+   they're restored here, scoped to this page only. If settings.html
+   is ever migrated to the same screen-stack pattern as profile.html,
+   section 0 can be deleted along with the markup that needs it.
 
    Contents:
-     1. Page head
-     2. Statement table
-     3. Statement preview
-     4. Linked accounts / connected apps list
-     5. Modal (add external account / API key)
-     6. API key reveal
-     7. Manual "reduce motion" override
-     8. Responsive
+     0.  Sidebar-tabs layout (restored — see note above)
+     1.  Page head
+     2.  Statement table
+     3.  Statement preview
+     4.  Linked accounts / connected apps list
+     5.  Modal (add external account / API key)
+     6.  API key reveal
+     7.  Manual "reduce motion" override
+     8.  Responsive
    ============================================================= */
+
+/* -------------------------------------------------------------
+   0. Sidebar-tabs layout (restored)
+   ------------------------------------------------------------- */
+.profile-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  align-items: start;
+  gap: 2rem;
+}
+
+.profile-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 0.6rem;
+  position: sticky;
+  top: calc(var(--app-header-h, 64px) + 1.5rem);
+}
+
+.profile-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--slate-dark);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.profile-nav-link svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  color: var(--slate);
+  transition: color 0.15s ease;
+}
+
+.profile-nav-link:hover {
+  background: var(--ivory);
+  color: var(--ink);
+}
+
+.profile-nav-link.is-active {
+  background: rgba(181, 138, 68, 0.1);
+  color: var(--ink);
+}
+
+.profile-nav-link.is-active svg {
+  color: var(--brass-dark);
+}
+
+.profile-content {
+  min-width: 0;
+}
+
+.profile-panel {
+  display: none;
+}
+
+.profile-panel.is-active {
+  display: block;
+  animation: settings-panel-in 0.2s ease;
+}
+
+@keyframes settings-panel-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.profile-panel-head {
+  margin-bottom: 1.5rem;
+}
+
+.profile-panel-head h2 {
+  font-size: 1.3rem;
+  margin-bottom: 0.3rem;
+}
+
+.profile-panel-head p {
+  font-size: 0.9rem;
+  color: var(--slate);
+  max-width: 56ch;
+}
 
 /* -------------------------------------------------------------
    1. Page head
    ------------------------------------------------------------- */
-/* Wasn't defined anywhere in style.css / auth-guard.css /
-   profile.css, so it had no margin-bottom of its own — .page-head
-   and .profile-layout were sitting flush against each other.
-   Numbers here match profile.css's .profile-panel-head convention
-   (margin-bottom on the block + heading only; the paragraph relies
-   on style.css's global margin reset rather than resetting it
-   again here), just at page-title scale instead of panel-title. */
 .page-head {
   margin-bottom: 2rem;
 }
@@ -97,6 +199,14 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.85rem;
+}
+
+.statement-preview-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--slate);
+  font-weight: 600;
 }
 
 .statement-preview-count {
@@ -325,6 +435,24 @@ html.force-reduce-motion *::after {
 /* -------------------------------------------------------------
    8. Responsive
    ------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .profile-layout {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .profile-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 0.4rem;
+  }
+
+  .profile-nav-link {
+    flex-shrink: 0;
+  }
+}
+
 @media (max-width: 760px) {
   .statement-table thead {
     display: none;
