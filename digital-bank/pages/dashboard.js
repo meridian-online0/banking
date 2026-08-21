@@ -35,6 +35,29 @@
         feed is unreachable (never fakes "live" data)
     11. Automation showcase — animates a real stat (total saved
         across the user's goals) into the sidebar upsell card
+
+   FIX LOG
+   ----------------------------------------------------------------
+   translation.js self-inits on DOMContentLoaded using only
+   localStorage -> geo -> browser language -> English. It has no
+   access to the logged-in user's saved user_profiles.language on
+   its own (see that file's own header comment) — every
+   authenticated page has to hand that value over once its own
+   profile fetch resolves, by calling
+   window.MeridianI18n.setLanguage(profile.language, { persist: false }).
+   settings.js already does this in its init(). dashboard.js never
+   did, so the dashboard ignored the saved profile language and
+   just showed whatever localStorage/geo/browser guessed. Fixed
+   below inside populateGreeting(), since it already fetches the
+   profile.
+
+   Note: this only fixes the static data-i18n markup in
+   dashboard.html. The dynamic strings this file builds itself
+   (greeting text, "Yesterday", transaction/type labels, empty
+   states, "Last login...", market news panel, automation copy)
+   are still hardcoded English with no t()-style lookup, unlike
+   settings.js — those need to be wired through a translation
+   helper separately.
    ============================================================= */
 
 import { guardPage } from '../supabase/page-guard.js';
@@ -179,6 +202,17 @@ async function populateGreeting() {
   if (!heading) return;
 
   const { data: profile } = await getMyProfile();
+
+  // FIX: apply the logged-in user's saved language preference.
+  // translation.js can't know this on its own (see its header
+  // comment) — every authenticated page has to hand it over once
+  // its own profile fetch resolves, same as settings.js already
+  // does in its init(). persist: false because this is re-applying
+  // the DB's existing value, not registering a fresh manual choice.
+  if (profile?.language && window.MeridianI18n) {
+    window.MeridianI18n.setLanguage(profile.language, { persist: false });
+  }
+
   const firstName = profile?.first_name;
   unskeleton(heading);
   heading.textContent = `${timeOfDayGreeting()}${firstName ? `, ${firstName}` : ''}.`;
