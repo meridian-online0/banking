@@ -46,7 +46,7 @@
    silently no-op — every one of them has an early `if (!el)
    return`.
 
-   I18N WIRING (NEW)
+   I18N WIRING
    ----------------------------------------------------------------
    translation.js loads before this module (see settings.html) and
    exposes window.MeridianI18n. Two things happen here:
@@ -61,15 +61,24 @@
         translation.js's TRANSLATIONS object, and will pick up the
         real translation automatically once it is.
 
-     2. The #settings-language <select> now calls
+     2. The #settings-language <select> calls
         MeridianI18n.setLanguage(code, { persist: true }) AND
         updateMyProfile({ language: code }) the moment it changes,
-        instead of waiting for the "Save preferences" button. This
-        matches the product decision from earlier in the thread —
-        switching language should apply immediately, no refresh.
-        The general form's own submit handler still saves language
-        too (in case it's changed alongside other fields and Save
-        is clicked), so either path works.
+        instead of waiting for the "Save preferences" button —
+        switching language applies immediately, no refresh.
+
+   FIX LOG
+   ----------------------------------------------------------------
+   initGeneralForm()'s submit handler saved `language` to the DB
+   (it was already part of the form's FormData, via
+   populateGeneralForm) but never called MeridianI18n.setLanguage()
+   itself — so clicking Save with a changed language persisted the
+   value with no visible effect until the next full page load (and
+   only then because init() re-applies profile.language on fetch).
+   Fixed below: the submit handler now calls setLanguage() right
+   after a successful save, same as initLanguageSelect() already
+   does on its own change event, so both paths keep the UI and the
+   DB in sync immediately.
 
    NEW TRANSLATION KEYS THIS FILE NEEDS (see list at bottom of file)
    ----------------------------------------------------------------
@@ -343,6 +352,18 @@ function initGeneralForm() {
       return;
     }
     currentProfile = { ...currentProfile, ...data };
+
+    // FIX: the language field travels in `values` via this form's
+    // own FormData (see populateGeneralForm), so updateMyProfile()
+    // above already persists it — but nothing used to re-apply it
+    // to the live DOM. initLanguageSelect()'s own change handler
+    // covers the "just switch the dropdown" case; this covers
+    // "changed the dropdown, then clicked Save" instead of relying
+    // on the change event alone.
+    if (values.language && window.MeridianI18n) {
+      window.MeridianI18n.setLanguage(values.language, { persist: true });
+    }
+
     showToast(t('settings.general.save_success', 'Preferences saved.'));
   });
 }
