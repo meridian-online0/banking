@@ -15,51 +15,6 @@
      9. Avatar upload
 
    -----------------------------------------------------------
-   I18N WIRING — added in THIS pass, same method settings.js uses:
-
-     1. The local t(key, fallback) helper below prefers
-        window.MeridianI18n's dictionary lookup and falls back to
-        the English string passed in if the key isn't in the
-        dictionary yet — so every dynamic string in this file
-        (toasts, re-rendered lists, status labels, confirm
-        dialogs) is safe to ship even before these keys are
-        merged into translation.js's TRANSLATIONS object, and
-        will pick up the real translation automatically once
-        they are. Static markup with data-i18n attributes in
-        profile.html is handled by translation.js itself, same
-        as everywhere else — this file only ever needed to cover
-        the strings it builds dynamically in JS.
-
-     2. currentLocale() maps MeridianI18n's active 2-letter
-        language code to a concrete locale for
-        toLocaleString()/toLocaleDateString() calls (session
-        timestamps, etc.) — previously these always formatted in
-        the browser's default locale regardless of the user's
-        chosen Meridian language.
-
-     3. init() now re-applies profile.language via
-        MeridianI18n.setLanguage(profile.language, { persist:
-        false }) once the profile loads — same as settings.js —
-        so a returning user's saved language preference is
-        honored on this page too, not just on settings.html.
-        persist:false because this is a re-apply of an existing
-        choice, not a new one.
-
-   translation.js and its window.MeridianI18n global are expected
-   to already be loaded before this module runs — same load order
-   as settings.html (translation.js, then this script). If
-   profile.html doesn't yet load translation.js, t() still works
-   correctly (falls back to the English string every time) — it's
-   only fully "live" once that script tag + a data-i18n pass over
-   profile.html's static markup are added.
-
-   See the NEW TRANSLATION KEYS list at the bottom of this file —
-   same as settings.js's own fix log, these are all net-new and
-   not yet in translation.js's TRANSLATIONS dictionary. English
-   fallbacks are inline above so functionality doesn't wait on the
-   merge.
-
-   -----------------------------------------------------------
    KNOWN GAPS / ASSUMPTIONS — flagged rather than silently
    guessed, per the files actually available at the time this
    was written:
@@ -136,31 +91,6 @@ const $$ = (selector, scope) => Array.from((scope || document).querySelectorAll(
 let currentUser = null;
 let currentProfile = null;
 let screenStack = null;
-
-/* -----------------------------------------------------------
-   NEW — i18n helpers (same method settings.js uses)
-   ----------------------------------------------------------- */
-function t(key, fallback) {
-  if (window.MeridianI18n) {
-    const val = window.MeridianI18n.t(key);
-    if (val && val !== key) return val;
-  }
-  return fallback !== undefined ? fallback : key;
-}
-
-// Maps Meridian's 2-letter language codes to a concrete locale for
-// Intl/toLocaleString calls — same map as settings.js, kept in
-// sync with it. Extend both if a language ever ships in more than
-// one regional flavor.
-const LOCALE_MAP = {
-  en: 'en-US', fr: 'fr-FR', es: 'es-ES', ko: 'ko-KR', de: 'de-DE',
-  pt: 'pt-PT', ar: 'ar-SA', zh: 'zh-CN', ja: 'ja-JP', ha: 'ha-NG',
-};
-
-function currentLocale() {
-  const lang = window.MeridianI18n ? window.MeridianI18n.getLanguage() : 'en';
-  return LOCALE_MAP[lang] || 'en-US';
-}
 
 /* -----------------------------------------------------------
    Small shared helpers
@@ -299,7 +229,7 @@ function wirePasswordToggles() {
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       btn.setAttribute('aria-pressed', String(show));
-      btn.setAttribute('aria-label', show ? t('profile.password.hide', 'Hide password') : t('profile.password.show', 'Show password'));
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
     });
   });
 }
@@ -312,7 +242,7 @@ function populateBanner(user, profile) {
   const meta = user.user_metadata || {};
   const firstName = profile?.first_name || meta.first_name || '';
   const lastName = profile?.last_name || meta.last_name || '';
-  const fullName = [firstName, lastName].filter(Boolean).join(' ') || user.email || t('profile.banner.default_name', 'Meridian customer');
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || user.email || 'Meridian customer';
   if (h1) h1.textContent = fullName;
 
   const avatarEl = document.querySelector('.profile-avatar-wrap .avatar-initial');
@@ -331,12 +261,7 @@ function populateBanner(user, profile) {
         : lower === 'suspended' || lower === 'closed'
         ? 'status-pill--blocked'
         : 'status-pill--neutral';
-    // Account status itself comes from the database (a data value,
-    // not UI copy) — translate it through a status.* key set so a
-    // Supabase-side value like "Pending" still renders in the
-    // user's language, with the raw string as a safe fallback.
-    const statusLabel = t(`profile.status.${lower}`, status);
-    statusWrap.innerHTML = `<span class="status-pill ${cls}">${escapeHtml(statusLabel)}</span>`;
+    statusWrap.innerHTML = `<span class="status-pill ${cls}">${escapeHtml(status)}</span>`;
   }
 }
 
@@ -383,7 +308,7 @@ function wireAccountNumberToggle(accounts) {
   const full = primary?.account_number || primary?.iban || null;
 
   if (!full) {
-    valueEl.textContent = t('profile.account_info.no_account', 'No account on file');
+    valueEl.textContent = 'No account on file';
     toggleBtn.disabled = true;
     return;
   }
@@ -391,13 +316,10 @@ function wireAccountNumberToggle(accounts) {
   const masked = `•••• •••• ${String(full).slice(-2)}`;
   valueEl.textContent = masked;
 
-  const showLabel = t('profile.account_info.show', 'Show');
-  const hideLabel = t('profile.account_info.hide', 'Hide');
-
   toggleBtn.addEventListener('click', () => {
     const showing = toggleBtn.getAttribute('aria-pressed') === 'true';
     toggleBtn.setAttribute('aria-pressed', String(!showing));
-    toggleBtn.textContent = showing ? showLabel : hideLabel;
+    toggleBtn.textContent = showing ? 'Show' : 'Hide';
     valueEl.textContent = showing ? masked : full;
   });
 }
@@ -411,7 +333,7 @@ function populateActivityPlaceholder() {
   list.innerHTML = `
     <li>
       <span class="activity-dot"></span>
-      <div><strong>${t('profile.activity.unavailable_title', "Activity history isn't available yet")}</strong><span>${t('profile.activity.unavailable_desc', 'This screen needs a backend endpoint before it can show real activity.')}</span></div>
+      <div><strong>Activity history isn't available yet</strong><span>This screen needs a backend endpoint before it can show real activity.</span></div>
     </li>`;
 }
 
@@ -419,10 +341,7 @@ async function loadOverviewSummary(userId, accounts) {
   const cards = $$('.profile-summary-card .profile-summary-value');
   const [accountStatusEl, linkedEl, cardsEl, sessionsEl] = cards;
 
-  if (accountStatusEl) {
-    const status = currentProfile?.account_status || '—';
-    accountStatusEl.textContent = status === '—' ? status : t(`profile.status.${String(status).toLowerCase()}`, status);
-  }
+  if (accountStatusEl) accountStatusEl.textContent = currentProfile?.account_status || '—';
 
   const { data: idDocs } = await getMyIdentityDocuments(userId);
   if (linkedEl) linkedEl.textContent = `${idDocs?.length || 0} / 3`;
@@ -464,31 +383,23 @@ async function loadSessions(userId) {
 
   if (error || !sessions.length) {
     list.innerHTML = `<li class="session-item"><div><strong>${
-      error ? t('profile.sessions.load_error', "Couldn't load sessions") : t('profile.sessions.empty', 'No sessions on record')
+      error ? "Couldn't load sessions" : 'No sessions on record'
     }</strong></div></li>`;
     return;
   }
 
-  const unknownBrowser = t('profile.sessions.unknown_browser', 'Unknown browser');
-  const unknownDevice = t('profile.sessions.unknown_device', 'Unknown device');
-  const activeNow = t('profile.sessions.active_now', 'Active now');
-  const signedOut = t('profile.sessions.signed_out', 'Signed out');
-  const unknownTime = t('profile.sessions.unknown_time', 'Unknown time');
-
   list.innerHTML = sessions
     .map((s) => {
       const active = !s.logout_time;
-      // CHANGED — now formats in the user's active Meridian
-      // language, not always the browser's default locale.
-      const when = s.login_time ? new Date(s.login_time).toLocaleString(currentLocale()) : unknownTime;
+      const when = s.login_time ? new Date(s.login_time).toLocaleString() : 'Unknown time';
       return `
       <li class="session-item">
         <span class="session-icon">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4" width="15" height="10" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M7 17h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </span>
         <div>
-          <strong>${escapeHtml(s.browser || unknownBrowser)} · ${escapeHtml(s.device || unknownDevice)}</strong>
-          <span>${active ? activeNow : signedOut} · ${escapeHtml(when)}</span>
+          <strong>${escapeHtml(s.browser || 'Unknown browser')} · ${escapeHtml(s.device || 'Unknown device')}</strong>
+          <span>${active ? 'Active now' : 'Signed out'} · ${escapeHtml(when)}</span>
         </div>
       </li>`;
     })
@@ -526,17 +437,17 @@ function wirePasswordForms() {
       const confirmPassword = confirmInput?.value || '';
 
       if (!currentPassword) {
-        toast(t('profile.password.enter_current', 'Enter your current password.'), 'error');
+        toast('Enter your current password.', 'error');
         currentInput?.focus();
         return;
       }
       if (!passwordMeetsRequirements(newPassword)) {
-        toast(t('profile.password.requirements', 'New password needs 10+ characters, upper and lower case, a number, and a symbol.'), 'error');
+        toast('New password needs 10+ characters, upper and lower case, a number, and a symbol.', 'error');
         newInput?.focus();
         return;
       }
       if (newPassword !== confirmPassword) {
-        toast(t('profile.password.mismatch', 'New password and confirmation do not match.'), 'error');
+        toast('New password and confirmation do not match.', 'error');
         confirmInput?.focus();
         return;
       }
@@ -547,7 +458,7 @@ function wirePasswordForms() {
       try {
         const { data: verified, error: verifyError } = await verifyCurrentPassword(currentPassword);
         if (verifyError || !verified) {
-          toast(verifyError || t('profile.password.incorrect', 'Current password is incorrect.'), 'error');
+          toast(verifyError || 'Current password is incorrect.', 'error');
           return;
         }
         const { error: updateError } = await updateUserPassword(newPassword);
@@ -555,10 +466,10 @@ function wirePasswordForms() {
           toast(updateError, 'error');
           return;
         }
-        toast(t('profile.password.updated', 'Password updated.'));
+        toast('Password updated.');
         form.reset();
       } catch (err) {
-        toast(t('profile.password.update_error', 'Something went wrong updating your password.'), 'error');
+        toast('Something went wrong updating your password.', 'error');
       } finally {
         submitBtn?.classList.remove('is-loading');
         if (submitBtn) submitBtn.disabled = false;
@@ -577,7 +488,7 @@ function wireForgotPassword() {
 
   btn.addEventListener('click', async () => {
     if (!currentUser?.email) {
-      if (status) status.textContent = t('profile.forgot_password.no_email', 'Could not determine your email address.');
+      if (status) status.textContent = 'Could not determine your email address.';
       return;
     }
     btn.classList.add('is-loading');
@@ -586,10 +497,8 @@ function wireForgotPassword() {
     btn.classList.remove('is-loading');
     btn.disabled = false;
 
-    if (status) {
-      status.textContent = error || t('profile.forgot_password.sent', 'Reset link sent to {email}.').replace('{email}', currentUser.email);
-    }
-    toast(error ? t('profile.forgot_password.error_toast', 'Could not send reset email.') : t('profile.forgot_password.sent_toast', 'Reset email sent.'), error ? 'error' : 'success');
+    if (status) status.textContent = error || `Reset link sent to ${currentUser.email}.`;
+    toast(error ? 'Could not send reset email.' : 'Reset email sent.', error ? 'error' : 'success');
   });
 }
 
@@ -601,11 +510,8 @@ function wireTwoFactorPicker() {
   $$('.auth-method-btn[data-method]').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('is-selected')) return;
-      const methodKey = btn.getAttribute('data-method') === 'authenticator' ? 'authenticator' : 'email_code';
-      const methodLabel = methodKey === 'authenticator'
-        ? t('profile.two_factor.method.authenticator', 'an authenticator app')
-        : t('profile.two_factor.method.email_code', 'an email code');
-      toast(t('profile.two_factor.switch_unavailable', 'Switching to {method} isn\'t available yet.').replace('{method}', methodLabel), 'error');
+      const method = btn.getAttribute('data-method') === 'authenticator' ? 'an authenticator app' : 'an email code';
+      toast(`Switching to ${method} isn't available yet.`, 'error');
     });
   });
 }
@@ -616,7 +522,7 @@ function wireTwoFactorPicker() {
 function wireNotificationToggles() {
   $$('.preference-row .switch input:not(:disabled)').forEach((input) => {
     input.addEventListener('change', () => {
-      toast(t('profile.notifications.not_persisted', "Saved for this session — notification preferences aren't stored on your account yet."));
+      toast("Saved for this session — notification preferences aren't stored on your account yet.");
     });
   });
 }
@@ -631,18 +537,18 @@ function wireLoginSessionPreference() {
   if (!form) return;
 
   const labels = {
-    until_logout: t('profile.session_pref.until_logout', 'Until I log out'),
-    sixty_minutes: t('profile.session_pref.sixty_minutes', '60 minutes'),
-    always: t('profile.session_pref.always', 'Always require'),
+    until_logout: 'Until I log out',
+    sixty_minutes: '60 minutes',
+    always: 'Always require',
   };
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const selected = form.querySelector('input[name="login_session_preference"]:checked');
     const value = selected?.value || 'always';
-    if (preview) preview.textContent = labels[value] || labels.always;
-    if (status) status.textContent = t('profile.session_pref.not_synced', "Saved for this device — this preference isn't synced to your account yet.");
-    toast(t('profile.session_pref.updated_toast', 'Session preference updated for this device.'));
+    if (preview) preview.textContent = labels[value] || 'Always require';
+    if (status) status.textContent = "Saved for this device — this preference isn't synced to your account yet.";
+    toast('Session preference updated for this device.');
   });
 }
 
@@ -653,28 +559,25 @@ async function loadFaceIdStatus(userId) {
   const { data: creds } = await getMyWebauthnCredentials(userId);
   const enabled = !!(creds && creds.length);
 
-  const enabledLabel = t('profile.faceid.enabled', 'Enabled');
-  const disabledLabel = t('profile.faceid.disabled', 'Disabled');
-
   const previewPill = document.getElementById('login-faceid-preview');
   if (previewPill) {
-    previewPill.textContent = enabled ? enabledLabel : disabledLabel;
+    previewPill.textContent = enabled ? 'Enabled' : 'Disabled';
     previewPill.classList.toggle('status-pill--verified', enabled);
     previewPill.classList.toggle('status-pill--neutral', !enabled);
   }
 
   const statusPill = document.getElementById('faceid-status-pill');
   if (statusPill) {
-    statusPill.textContent = t('profile.faceid.status_label', 'Face ID: {status}').replace('{status}', enabled ? enabledLabel : disabledLabel);
+    statusPill.textContent = `Face ID: ${enabled ? 'Enabled' : 'Disabled'}`;
     statusPill.classList.toggle('status-pill--verified', enabled);
     statusPill.classList.toggle('status-pill--neutral', !enabled);
   }
 
   const toggleBtn = document.getElementById('faceid-toggle-btn');
   if (toggleBtn) {
-    toggleBtn.textContent = t('profile.faceid.coming_soon', 'Coming soon');
+    toggleBtn.textContent = 'Coming soon';
     toggleBtn.disabled = true;
-    toggleBtn.title = t('profile.faceid.coming_soon_title', "Face ID sign-in is being built — enrollment and login verification aren't wired up yet.");
+    toggleBtn.title = "Face ID sign-in is being built — enrollment and login verification aren't wired up yet.";
   }
 
   const unavailableNote = document.getElementById('faceid-unavailable');
@@ -728,7 +631,7 @@ function wireLinkedId() {
     const password = passwordInput?.value || '';
 
     if (!password) {
-      if (errorEl) errorEl.textContent = t('profile.linked_id.enter_password', 'Enter your password to continue.');
+      if (errorEl) errorEl.textContent = 'Enter your password to continue.';
       return;
     }
 
@@ -738,7 +641,7 @@ function wireLinkedId() {
     try {
       const { data: verified, error } = await verifyCurrentPassword(password);
       if (error || !verified) {
-        if (errorEl) errorEl.textContent = error || t('profile.linked_id.incorrect_password', 'Incorrect password.');
+        if (errorEl) errorEl.textContent = error || 'Incorrect password.';
         return;
       }
       await renderLinkedIdCards();
@@ -761,14 +664,11 @@ async function renderLinkedIdCards() {
   if (!currentUser) return;
   const { data: docs, error } = await getMyIdentityDocuments(currentUser.id);
   if (error) {
-    toast(t('profile.linked_id.load_error', 'Could not load your linked ID details.'), 'error');
+    toast('Could not load your linked ID details.', 'error');
     return;
   }
 
   const bySlot = new Map((docs || []).map((d) => [String(d.slot), d]));
-  const emptyLabel = t('profile.linked_id.status.empty', 'Empty');
-  const verifiedLabel = t('profile.linked_id.status.verified', 'Verified');
-  const dashPlaceholder = '—';
 
   [1, 2, 3].forEach((slot) => {
     const card = document.getElementById(`linked-id-card-${slot}`);
@@ -780,7 +680,7 @@ async function renderLinkedIdCards() {
 
     if (!doc) {
       if (statusPill) {
-        statusPill.textContent = emptyLabel;
+        statusPill.textContent = 'Empty';
         statusPill.className = 'status-pill status-pill--neutral';
         statusPill.setAttribute('data-linked-id-status', '');
       }
@@ -790,7 +690,7 @@ async function renderLinkedIdCards() {
     }
 
     if (statusPill) {
-      statusPill.textContent = verifiedLabel;
+      statusPill.textContent = 'Verified';
       statusPill.className = 'status-pill status-pill--verified';
       statusPill.setAttribute('data-linked-id-status', '');
     }
@@ -799,7 +699,7 @@ async function renderLinkedIdCards() {
       fieldsList.hidden = false;
       const setField = (name, value) => {
         const dd = fieldsList.querySelector(`[data-field="${name}"]`);
-        if (dd) dd.textContent = value || dashPlaceholder;
+        if (dd) dd.textContent = value || '—';
       };
       setField('id_type', doc.id_type || doc.document_type);
       setField('full_name', doc.full_name);
@@ -931,11 +831,11 @@ function wireDocumentUpload() {
     const documentCategory = IDENTITY_CATEGORY_BY_TYPE[documentType];
 
     if (!documentType || !documentCategory) {
-      if (errorEl) errorEl.textContent = t('profile.upload.choose_type', 'Choose a document type.');
+      if (errorEl) errorEl.textContent = 'Choose a document type.';
       return;
     }
     if (requiresFileFor(documentCategory) && !selectedFile) {
-      if (errorEl) errorEl.textContent = t('profile.upload.choose_file', 'Choose a file to upload.');
+      if (errorEl) errorEl.textContent = 'Choose a file to upload.';
       return;
     }
 
@@ -946,7 +846,7 @@ function wireDocumentUpload() {
       dateOfBirth = dobInput?.value;
       gender = genderInput?.value;
       if (!fullName || !idNumber || !dateOfBirth || !gender) {
-        if (errorEl) errorEl.textContent = t('profile.upload.fill_details', 'Fill in full name, ID number, date of birth, and gender.');
+        if (errorEl) errorEl.textContent = 'Fill in full name, ID number, date of birth, and gender.';
         return;
       }
     }
@@ -979,12 +879,12 @@ function wireDocumentUpload() {
       }
 
       if (statusPill) statusPill.hidden = false;
-      toast(t('profile.upload.submitted', 'Document submitted for verification.'));
+      toast('Document submitted for verification.');
       form.reset();
       setSelectedFile(null);
       updateFieldVisibility();
     } catch (err) {
-      if (errorEl) errorEl.textContent = t('profile.upload.failed', 'Upload failed. Please try again.');
+      if (errorEl) errorEl.textContent = 'Upload failed. Please try again.';
     } finally {
       submitBtn?.classList.remove('is-loading');
       updateSubmitState();
@@ -1007,11 +907,11 @@ function wireDangerZone() {
   const closeBtn = dangerScreen.querySelector('.btn-danger');
 
   exportBtn?.addEventListener('click', () => {
-    toast(t('profile.danger.export_unavailable', "Data export requests aren't wired up yet — contact support in the meantime."), 'error');
+    toast("Data export requests aren't wired up yet — contact support in the meantime.", 'error');
   });
 
   closeBtn?.addEventListener('click', () => {
-    toast(t('profile.danger.close_unavailable', "Account closure isn't available from this screen yet — contact support."), 'error');
+    toast("Account closure isn't available from this screen yet — contact support.", 'error');
   });
 }
 
@@ -1049,7 +949,7 @@ function wireAvatarUpload() {
       renderAvatarLocal(document.querySelector('.profile-avatar-wrap .avatar-initial'), data.url, initials);
       $$('.app-user-menu .avatar-initial').forEach((el) => renderAvatarLocal(el, data.url, initials));
 
-      toast(t('profile.avatar.updated', 'Profile photo updated.'));
+      toast('Profile photo updated.');
     } finally {
       editBtn.classList.remove('is-loading');
       input.value = '';
@@ -1072,14 +972,6 @@ async function init() {
   const { data: profile, error: profileError } = await getMyProfile(user.id);
   if (profileError) console.warn('[Meridian] Could not load profile:', profileError);
   currentProfile = profile;
-
-  // NEW — same as settings.js: source of truth for a logged-in
-  // user's language is their saved profile, not whatever
-  // localStorage/geo guessed before login resolved. persist:false
-  // because this re-applies an existing choice, it isn't a new one.
-  if (profile?.language && window.MeridianI18n) {
-    window.MeridianI18n.setLanguage(profile.language, { persist: false });
-  }
 
   const { data: accounts } = await getMyAccounts(user.id);
 
@@ -1105,67 +997,3 @@ async function init() {
 }
 
 document.addEventListener('DOMContentLoaded', init);
-
-/* =============================================================
-   NEW TRANSLATION KEYS THIS FILE NEEDS
-   -----------------------------------------------------------
-   All net-new — not yet in translation.js's TRANSLATIONS
-   dictionary. English fallbacks are inline above so functionality
-   doesn't wait on the merge; say the word and these can go across
-   the other 9 languages next, same pattern as settings.js's key
-   batches.
-
-   profile.password.hide
-   profile.password.show
-   profile.banner.default_name
-   profile.status.<status>              (dynamic — pending/active/verified/suspended/closed etc., built from account_status)
-   profile.account_info.no_account
-   profile.account_info.show
-   profile.account_info.hide
-   profile.activity.unavailable_title
-   profile.activity.unavailable_desc
-   profile.sessions.load_error
-   profile.sessions.empty
-   profile.sessions.unknown_browser
-   profile.sessions.unknown_device
-   profile.sessions.active_now
-   profile.sessions.signed_out
-   profile.sessions.unknown_time
-   profile.password.enter_current
-   profile.password.requirements
-   profile.password.mismatch
-   profile.password.incorrect
-   profile.password.updated
-   profile.password.update_error
-   profile.forgot_password.no_email
-   profile.forgot_password.sent          (uses {email} placeholder)
-   profile.forgot_password.error_toast
-   profile.forgot_password.sent_toast
-   profile.two_factor.method.authenticator
-   profile.two_factor.method.email_code
-   profile.two_factor.switch_unavailable (uses {method} placeholder)
-   profile.notifications.not_persisted
-   profile.session_pref.until_logout
-   profile.session_pref.sixty_minutes
-   profile.session_pref.always
-   profile.session_pref.not_synced
-   profile.session_pref.updated_toast
-   profile.faceid.enabled
-   profile.faceid.disabled
-   profile.faceid.status_label           (uses {status} placeholder)
-   profile.faceid.coming_soon
-   profile.faceid.coming_soon_title
-   profile.linked_id.enter_password
-   profile.linked_id.incorrect_password
-   profile.linked_id.load_error
-   profile.linked_id.status.empty
-   profile.linked_id.status.verified
-   profile.upload.choose_type
-   profile.upload.choose_file
-   profile.upload.fill_details
-   profile.upload.submitted
-   profile.upload.failed
-   profile.danger.export_unavailable
-   profile.danger.close_unavailable
-   profile.avatar.updated
-   ============================================================= */
