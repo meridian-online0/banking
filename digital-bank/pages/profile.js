@@ -71,6 +71,16 @@
      enable/disable button with a "Coming soon" label. It does
      NOT attempt navigator.credentials.create()/get() or any
      enrollment/login flow.
+
+   I18N WIRING (new) -------------------------------------------
+   assets/js/translation.js exposes window.MeridianI18n with
+   t(key), getLanguage(), setLanguage(code, opts), and
+   applyTranslations() — confirmed against that file directly.
+   Every user-facing string generated in this file (toasts,
+   status pills, tier badges, session/date text) now goes
+   through the small t() wrapper below instead of a hardcoded
+   English literal, so a language switch mid-session is picked
+   up without a reload for anything this file renders.
    ============================================================= */
 
 import { getCurrentUser, updateUserPassword, verifyCurrentPassword, requestPasswordReset } from '../supabase/auth.js';
@@ -87,6 +97,26 @@ import { supabase } from '../supabase/config.js';
 
 const $ = (selector, scope) => (scope || document).querySelector(selector);
 const $$ = (selector, scope) => Array.from((scope || document).querySelectorAll(selector));
+
+function t(key) {
+  return (window.MeridianI18n && typeof window.MeridianI18n.t === 'function')
+    ? window.MeridianI18n.t(key)
+    : key;
+}
+
+// Same BCP-47 map used by settings.js, kept local here so this
+// file doesn't depend on settings.js having run first.
+const LOCALE_MAP = {
+  en: 'en-US', fr: 'fr-FR', es: 'es-ES', ko: 'ko-KR', de: 'de-DE',
+  pt: 'pt-PT', ar: 'ar-SA', zh: 'zh-CN', ja: 'ja-JP', ha: 'ha-NG',
+};
+
+function currentLocale() {
+  const lang = (window.MeridianI18n && typeof window.MeridianI18n.getLanguage === 'function')
+    ? window.MeridianI18n.getLanguage()
+    : 'en';
+  return LOCALE_MAP[lang] || 'en-US';
+}
 
 let currentUser = null;
 let currentProfile = null;
@@ -229,7 +259,7 @@ function wirePasswordToggles() {
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       btn.setAttribute('aria-pressed', String(show));
-      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      btn.setAttribute('aria-label', show ? t('profile.password.hide') : t('profile.password.show'));
     });
   });
 }
@@ -242,7 +272,7 @@ function populateBanner(user, profile) {
   const meta = user.user_metadata || {};
   const firstName = profile?.first_name || meta.first_name || '';
   const lastName = profile?.last_name || meta.last_name || '';
-  const fullName = [firstName, lastName].filter(Boolean).join(' ') || user.email || 'Meridian customer';
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || user.email || t('profile.default.customer');
   if (h1) h1.textContent = fullName;
 
   const avatarEl = document.querySelector('.profile-avatar-wrap .avatar-initial');
@@ -251,7 +281,7 @@ function populateBanner(user, profile) {
 
   const statusWrap = document.querySelector('.profile-banner-status');
   if (statusWrap) {
-    const status = profile?.account_status || 'Pending';
+    const status = profile?.account_status || t('profile.status.pending');
     const lower = String(status).toLowerCase();
     const cls =
       lower === 'active' || lower === 'verified'
@@ -308,7 +338,7 @@ function wireAccountNumberToggle(accounts) {
   const full = primary?.account_number || primary?.iban || null;
 
   if (!full) {
-    valueEl.textContent = 'No account on file';
+    valueEl.textContent = t('profile.limits_info.no_account');
     toggleBtn.disabled = true;
     return;
   }
@@ -319,7 +349,7 @@ function wireAccountNumberToggle(accounts) {
   toggleBtn.addEventListener('click', () => {
     const showing = toggleBtn.getAttribute('aria-pressed') === 'true';
     toggleBtn.setAttribute('aria-pressed', String(!showing));
-    toggleBtn.textContent = showing ? 'Show' : 'Hide';
+    toggleBtn.textContent = showing ? t('profile.limits_info.show') : t('profile.limits_info.hide');
     valueEl.textContent = showing ? masked : full;
   });
 }
@@ -333,7 +363,7 @@ function populateActivityPlaceholder() {
   list.innerHTML = `
     <li>
       <span class="activity-dot"></span>
-      <div><strong>Activity history isn't available yet</strong><span>This screen needs a backend endpoint before it can show real activity.</span></div>
+      <div><strong>${t('profile.overview.activity_unavailable_title')}</strong><span>${t('profile.overview.activity_unavailable_desc')}</span></div>
     </li>`;
 }
 
@@ -383,23 +413,24 @@ async function loadSessions(userId) {
 
   if (error || !sessions.length) {
     list.innerHTML = `<li class="session-item"><div><strong>${
-      error ? "Couldn't load sessions" : 'No sessions on record'
+      error ? t('profile.security.sessions.error') : t('profile.security.sessions.empty')
     }</strong></div></li>`;
     return;
   }
 
+  const locale = currentLocale();
   list.innerHTML = sessions
     .map((s) => {
       const active = !s.logout_time;
-      const when = s.login_time ? new Date(s.login_time).toLocaleString() : 'Unknown time';
+      const when = s.login_time ? new Date(s.login_time).toLocaleString(locale) : t('profile.security.sessions.unknown_time');
       return `
       <li class="session-item">
         <span class="session-icon">
           <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4" width="15" height="10" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M7 17h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </span>
         <div>
-          <strong>${escapeHtml(s.browser || 'Unknown browser')} · ${escapeHtml(s.device || 'Unknown device')}</strong>
-          <span>${active ? 'Active now' : 'Signed out'} · ${escapeHtml(when)}</span>
+          <strong>${escapeHtml(s.browser || t('profile.security.sessions.unknown_browser'))} · ${escapeHtml(s.device || t('profile.security.sessions.unknown_device'))}</strong>
+          <span>${active ? t('profile.security.sessions.active_now') : t('profile.security.sessions.signed_out')} · ${escapeHtml(when)}</span>
         </div>
       </li>`;
     })
@@ -437,17 +468,17 @@ function wirePasswordForms() {
       const confirmPassword = confirmInput?.value || '';
 
       if (!currentPassword) {
-        toast('Enter your current password.', 'error');
+        toast(t('profile.password_toast.enter_current'), 'error');
         currentInput?.focus();
         return;
       }
       if (!passwordMeetsRequirements(newPassword)) {
-        toast('New password needs 10+ characters, upper and lower case, a number, and a symbol.', 'error');
+        toast(t('profile.password_toast.requirements'), 'error');
         newInput?.focus();
         return;
       }
       if (newPassword !== confirmPassword) {
-        toast('New password and confirmation do not match.', 'error');
+        toast(t('profile.password_toast.mismatch'), 'error');
         confirmInput?.focus();
         return;
       }
@@ -458,7 +489,7 @@ function wirePasswordForms() {
       try {
         const { data: verified, error: verifyError } = await verifyCurrentPassword(currentPassword);
         if (verifyError || !verified) {
-          toast(verifyError || 'Current password is incorrect.', 'error');
+          toast(verifyError || t('profile.password_toast.incorrect_current'), 'error');
           return;
         }
         const { error: updateError } = await updateUserPassword(newPassword);
@@ -466,10 +497,10 @@ function wirePasswordForms() {
           toast(updateError, 'error');
           return;
         }
-        toast('Password updated.');
+        toast(t('profile.password_toast.updated'));
         form.reset();
       } catch (err) {
-        toast('Something went wrong updating your password.', 'error');
+        toast(t('profile.password_toast.generic_error'), 'error');
       } finally {
         submitBtn?.classList.remove('is-loading');
         if (submitBtn) submitBtn.disabled = false;
@@ -488,7 +519,7 @@ function wireForgotPassword() {
 
   btn.addEventListener('click', async () => {
     if (!currentUser?.email) {
-      if (status) status.textContent = 'Could not determine your email address.';
+      if (status) status.textContent = t('profile.forgot_password.error_no_email');
       return;
     }
     btn.classList.add('is-loading');
@@ -497,8 +528,8 @@ function wireForgotPassword() {
     btn.classList.remove('is-loading');
     btn.disabled = false;
 
-    if (status) status.textContent = error || `Reset link sent to ${currentUser.email}.`;
-    toast(error ? 'Could not send reset email.' : 'Reset email sent.', error ? 'error' : 'success');
+    if (status) status.textContent = error || t('profile.forgot_password.sent_status').replace('{email}', currentUser.email);
+    toast(error ? t('profile.forgot_password.toast_error') : t('profile.forgot_password.toast_sent'), error ? 'error' : 'success');
   });
 }
 
@@ -510,8 +541,8 @@ function wireTwoFactorPicker() {
   $$('.auth-method-btn[data-method]').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('is-selected')) return;
-      const method = btn.getAttribute('data-method') === 'authenticator' ? 'an authenticator app' : 'an email code';
-      toast(`Switching to ${method} isn't available yet.`, 'error');
+      const method = btn.getAttribute('data-method') === 'authenticator' ? t('profile.security.twofa.method_name_app') : t('profile.security.twofa.method_name_email');
+      toast(t('profile.security.twofa.switch_unavailable').replace('{method}', method), 'error');
     });
   });
 }
@@ -522,7 +553,7 @@ function wireTwoFactorPicker() {
 function wireNotificationToggles() {
   $$('.preference-row .switch input:not(:disabled)').forEach((input) => {
     input.addEventListener('change', () => {
-      toast("Saved for this session — notification preferences aren't stored on your account yet.");
+      toast(t('profile.notifications.toast_unsaved'));
     });
   });
 }
@@ -536,19 +567,19 @@ function wireLoginSessionPreference() {
   const status = document.getElementById('login-session-preference-status');
   if (!form) return;
 
-  const labels = {
-    until_logout: 'Until I log out',
-    sixty_minutes: '60 minutes',
-    always: 'Always require',
+  const labelKeys = {
+    until_logout: 'profile.login_session.value.until_logout',
+    sixty_minutes: 'profile.login_session.value.sixty',
+    always: 'profile.login_session.value.always',
   };
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const selected = form.querySelector('input[name="login_session_preference"]:checked');
     const value = selected?.value || 'always';
-    if (preview) preview.textContent = labels[value] || 'Always require';
-    if (status) status.textContent = "Saved for this device — this preference isn't synced to your account yet.";
-    toast('Session preference updated for this device.');
+    if (preview) preview.textContent = t(labelKeys[value] || labelKeys.always);
+    if (status) status.textContent = t('profile.login_session.status_saved');
+    toast(t('profile.login_session.toast_saved'));
   });
 }
 
@@ -561,23 +592,23 @@ async function loadFaceIdStatus(userId) {
 
   const previewPill = document.getElementById('login-faceid-preview');
   if (previewPill) {
-    previewPill.textContent = enabled ? 'Enabled' : 'Disabled';
+    previewPill.textContent = enabled ? t('profile.faceid.enabled') : t('profile.faceid.disabled');
     previewPill.classList.toggle('status-pill--verified', enabled);
     previewPill.classList.toggle('status-pill--neutral', !enabled);
   }
 
   const statusPill = document.getElementById('faceid-status-pill');
   if (statusPill) {
-    statusPill.textContent = `Face ID: ${enabled ? 'Enabled' : 'Disabled'}`;
+    statusPill.textContent = `${t('profile.faceid.status_prefix')} ${enabled ? t('profile.faceid.enabled') : t('profile.faceid.disabled')}`;
     statusPill.classList.toggle('status-pill--verified', enabled);
     statusPill.classList.toggle('status-pill--neutral', !enabled);
   }
 
   const toggleBtn = document.getElementById('faceid-toggle-btn');
   if (toggleBtn) {
-    toggleBtn.textContent = 'Coming soon';
+    toggleBtn.textContent = t('profile.faceid.button_coming_soon');
     toggleBtn.disabled = true;
-    toggleBtn.title = "Face ID sign-in is being built — enrollment and login verification aren't wired up yet.";
+    toggleBtn.title = t('profile.faceid.button_title');
   }
 
   const unavailableNote = document.getElementById('faceid-unavailable');
@@ -631,7 +662,7 @@ function wireLinkedId() {
     const password = passwordInput?.value || '';
 
     if (!password) {
-      if (errorEl) errorEl.textContent = 'Enter your password to continue.';
+      if (errorEl) errorEl.textContent = t('profile.linked_id.modal.error_empty');
       return;
     }
 
@@ -641,7 +672,7 @@ function wireLinkedId() {
     try {
       const { data: verified, error } = await verifyCurrentPassword(password);
       if (error || !verified) {
-        if (errorEl) errorEl.textContent = error || 'Incorrect password.';
+        if (errorEl) errorEl.textContent = error || t('profile.password_toast.incorrect_current');
         return;
       }
       await renderLinkedIdCards();
@@ -664,7 +695,7 @@ async function renderLinkedIdCards() {
   if (!currentUser) return;
   const { data: docs, error } = await getMyIdentityDocuments(currentUser.id);
   if (error) {
-    toast('Could not load your linked ID details.', 'error');
+    toast(t('profile.linked_id.load_error'), 'error');
     return;
   }
 
@@ -680,7 +711,7 @@ async function renderLinkedIdCards() {
 
     if (!doc) {
       if (statusPill) {
-        statusPill.textContent = 'Empty';
+        statusPill.textContent = t('profile.linked_id.status_empty');
         statusPill.className = 'status-pill status-pill--neutral';
         statusPill.setAttribute('data-linked-id-status', '');
       }
@@ -690,7 +721,7 @@ async function renderLinkedIdCards() {
     }
 
     if (statusPill) {
-      statusPill.textContent = 'Verified';
+      statusPill.textContent = t('profile.linked_id.status_verified');
       statusPill.className = 'status-pill status-pill--verified';
       statusPill.setAttribute('data-linked-id-status', '');
     }
@@ -831,11 +862,11 @@ function wireDocumentUpload() {
     const documentCategory = IDENTITY_CATEGORY_BY_TYPE[documentType];
 
     if (!documentType || !documentCategory) {
-      if (errorEl) errorEl.textContent = 'Choose a document type.';
+      if (errorEl) errorEl.textContent = t('profile.upload.error_choose_type');
       return;
     }
     if (requiresFileFor(documentCategory) && !selectedFile) {
-      if (errorEl) errorEl.textContent = 'Choose a file to upload.';
+      if (errorEl) errorEl.textContent = t('profile.upload.error_choose_file');
       return;
     }
 
@@ -846,7 +877,7 @@ function wireDocumentUpload() {
       dateOfBirth = dobInput?.value;
       gender = genderInput?.value;
       if (!fullName || !idNumber || !dateOfBirth || !gender) {
-        if (errorEl) errorEl.textContent = 'Fill in full name, ID number, date of birth, and gender.';
+        if (errorEl) errorEl.textContent = t('profile.upload.error_fill_details');
         return;
       }
     }
@@ -879,12 +910,12 @@ function wireDocumentUpload() {
       }
 
       if (statusPill) statusPill.hidden = false;
-      toast('Document submitted for verification.');
+      toast(t('profile.upload.toast_submitted'));
       form.reset();
       setSelectedFile(null);
       updateFieldVisibility();
     } catch (err) {
-      if (errorEl) errorEl.textContent = 'Upload failed. Please try again.';
+      if (errorEl) errorEl.textContent = t('profile.upload.error_failed');
     } finally {
       submitBtn?.classList.remove('is-loading');
       updateSubmitState();
@@ -907,11 +938,11 @@ function wireDangerZone() {
   const closeBtn = dangerScreen.querySelector('.btn-danger');
 
   exportBtn?.addEventListener('click', () => {
-    toast("Data export requests aren't wired up yet — contact support in the meantime.", 'error');
+    toast(t('profile.danger.export.toast'), 'error');
   });
 
   closeBtn?.addEventListener('click', () => {
-    toast("Account closure isn't available from this screen yet — contact support.", 'error');
+    toast(t('profile.danger.close.toast'), 'error');
   });
 }
 
@@ -949,7 +980,7 @@ function wireAvatarUpload() {
       renderAvatarLocal(document.querySelector('.profile-avatar-wrap .avatar-initial'), data.url, initials);
       $$('.app-user-menu .avatar-initial').forEach((el) => renderAvatarLocal(el, data.url, initials));
 
-      toast('Profile photo updated.');
+      toast(t('profile.avatar.toast_updated'));
     } finally {
       editBtn.classList.remove('is-loading');
       input.value = '';
@@ -972,6 +1003,15 @@ async function init() {
   const { data: profile, error: profileError } = await getMyProfile(user.id);
   if (profileError) console.warn('[Meridian] Could not load profile:', profileError);
   currentProfile = profile;
+
+  // The logged-in user's saved language preference is the source
+  // of truth once it's known — apply it now (persist: false, per
+  // translation.js's own contract, since this isn't a fresh manual
+  // choice). Harmless no-op if the profile has no language yet or
+  // MeridianI18n isn't present for some reason.
+  if (profile?.language && window.MeridianI18n?.setLanguage) {
+    window.MeridianI18n.setLanguage(profile.language, { persist: false });
+  }
 
   const { data: accounts } = await getMyAccounts(user.id);
 
